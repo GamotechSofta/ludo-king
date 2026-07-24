@@ -34,10 +34,17 @@ html {
 html,
 body {
   background-color: var(--bg-navy);
-  background-image: var(--bg-image);
-  background-size: cover;
-  background-position: center center;
-  background-repeat: no-repeat;
+  background-image:
+    radial-gradient(
+      ellipse at 50% 42%,
+      rgba(30, 100, 190, 0.15) 0%,
+      rgba(10, 42, 92, 0.35) 45%,
+      rgba(5, 18, 45, 0.82) 100%
+    ),
+    var(--bg-image);
+  background-size: auto, 220px 220px;
+  background-position: center center, 0 0;
+  background-repeat: no-repeat, repeat;
   font-family: "Fredoka", Arial, Helvetica, sans-serif;
   height: 100%;
   position: fixed;

@@ -9,10 +9,17 @@
 .screen {
   align-items: center;
   background-color: #0a2a5c;
-  background-image: var(--bg-image);
-  background-size: cover;
-  background-position: center center;
-  background-repeat: no-repeat;
+  background-image:
+    radial-gradient(
+      ellipse at 50% 42%,
+      rgba(30, 100, 190, 0.15) 0%,
+      rgba(10, 42, 92, 0.35) 45%,
+      rgba(5, 18, 45, 0.82) 100%
+    ),
+    var(--bg-image);
+  background-size: auto, 220px 220px;
+  background-position: center center, 0 0;
+  background-repeat: no-repeat, repeat;
   display: flex;
   height: var(--base-height);
   justify-content: center;
@@ -29,9 +36,16 @@
 
   body {
     background-color: #0a2a5c;
-    background-image: var(--bg-image);
-    background-size: cover;
-    background-position: center center;
-    background-repeat: no-repeat;
+    background-image:
+      radial-gradient(
+        ellipse at 50% 42%,
+        rgba(30, 100, 190, 0.15) 0%,
+        rgba(10, 42, 92, 0.35) 45%,
+        rgba(5, 18, 45, 0.82) 100%
+      ),
+      var(--bg-image);
+    background-size: auto, 180px 180px;
+    background-position: center center, 0 0;
+    background-repeat: no-repeat, repeat;
   }
 }
