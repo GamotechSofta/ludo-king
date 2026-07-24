@@ -23,59 +23,36 @@
   min-height: 48px;
 }
 
-.game-top-bar {
+/* Floating back arrow only — no full navbar */
+.game-back-arrow {
+  -webkit-tap-highlight-color: transparent;
   align-items: center;
-  background: #2196f3;
-  display: flex;
-  justify-content: space-between;
-  padding: 8px 14px;
-  width: 100%;
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35);
-  z-index: 10;
-}
-
-.game-top-bar-btn {
-  align-items: center;
-  background: transparent;
-  border: none;
+  background: rgba(0, 30, 80, 0.45);
+  border: 2px solid rgba(255, 255, 255, 0.55);
   border-radius: 50%;
-  color: #fff;
+  color: #ffffff;
   cursor: pointer;
   display: flex;
-  font-size: 1.35rem;
-  font-weight: 700;
-  height: 36px;
+  height: 42px;
   justify-content: center;
-  line-height: 1;
-  width: 36px;
+  left: 10px;
+  position: absolute;
+  top: 10px;
+  touch-action: manipulation;
+  width: 42px;
+  z-index: 30;
 }
 
-.game-top-bar-btn.help {
-  background: #fff;
-  color: #2196f3;
-  font-size: 1.15rem;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+.game-back-arrow:active {
+  transform: scale(0.94);
+  background: rgba(0, 30, 80, 0.65);
 }
 
-.game-top-bar-coins {
-  align-items: center;
-  background: #1565c0;
-  border-radius: 999px;
-  color: #fff;
-  display: flex;
-  font-family: "Fredoka", sans-serif;
-  font-size: 0.95rem;
-  font-weight: 700;
-  gap: 6px;
-  padding: 6px 14px;
-}
-
-.game-top-bar-coins::before {
-  content: "";
-  background: radial-gradient(circle at 30% 30%, #ffe082, #ffb300 55%, #f57c00);
-  border-radius: 50%;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35), inset 0 -2px 0 rgba(0, 0, 0, 0.2);
-  display: inline-block;
-  height: 18px;
-  width: 18px;
+@media (max-width: 420px) {
+  .game-back-arrow {
+    height: 44px;
+    left: 8px;
+    top: max(8px, env(safe-area-inset-top, 0px));
+    width: 44px;
+  }
 }

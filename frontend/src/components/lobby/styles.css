@@ -446,3 +446,24 @@
 .game-exit-btn:active {
   transform: translateY(1px);
 }
+
+.game-back-arrow {
+  -webkit-tap-highlight-color: transparent;
+  align-items: center;
+  background: rgba(0, 30, 80, 0.45);
+  border: 2px solid rgba(255, 255, 255, 0.55);
+  border-radius: 50%;
+  color: #ffffff;
+  cursor: pointer;
+  display: flex;
+  height: 42px;
+  justify-content: center;
+  touch-action: manipulation;
+  width: 42px;
+  z-index: 30;
+}
+
+.game-back-arrow:active {
+  transform: scale(0.94);
+  background: rgba(0, 30, 80, 0.65);
+}

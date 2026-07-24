@@ -573,20 +573,25 @@ const Game = ({
 
   return (
     <PageWrapper>
-      <div className="game-top-bar">
+      {onExit && (
         <button
-          className="game-top-bar-btn"
+          className="game-back-arrow"
           type="button"
-          aria-label="Menu"
+          aria-label="Back"
           onClick={onExit}
         >
-          ☰
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden>
+            <path
+              d="M15.5 4.5L8 12l7.5 7.5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
         </button>
-        <div className="game-top-bar-coins">350</div>
-        <button className="game-top-bar-btn help" type="button" aria-label="Help">
-          ?
-        </button>
-      </div>
+      )}
       <BoardWrapper>
         <ProfileSection
           basePosition={EPositionProfiles.TOP}

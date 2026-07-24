@@ -90,12 +90,22 @@ const OnlineGame = ({ guest, roomId, onExit, onPlayAgain }: OnlineGameProps) => 
       style={{ justifyContent: "flex-start", paddingTop: 48 }}
     >
       <button
-        className="game-exit-btn"
+        className="game-back-arrow"
         type="button"
+        aria-label="Back"
         onClick={onExit}
-        style={{ alignSelf: "flex-start" }}
+        style={{ position: "absolute", top: 10, left: 10, alignSelf: "flex-start" }}
       >
-        ← Home
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden>
+          <path
+            d="M15.5 4.5L8 12l7.5 7.5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
       </button>
 
       <h2 className="lobby-heading" style={{ marginTop: 16 }}>

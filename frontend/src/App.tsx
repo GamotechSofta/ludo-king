@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { AppWrapper } from "./components/wrapper";
 import Game from "./components/game";
 import {
@@ -19,6 +19,8 @@ import Results from "./components/lobby/Results";
 import type { IUser, TTotalPlayers } from "./interfaces";
 import { ETypeGame } from "./utils/constants";
 
+type HistoryState = { screen: TLobbyScreen };
+
 const App = () => {
   const [screen, setScreen] = useState<TLobbyScreen>("home");
   const [mode, setMode] = useState<TPlayMode>("computer");
@@ -29,44 +31,94 @@ const App = () => {
   const [onlineRoomId, setOnlineRoomId] = useState<string | null>(null);
   const [onlineRoomCode, setOnlineRoomCode] = useState("");
 
-  const goHome = () => {
-    setGameConfig(null);
-    setOnlineRoomId(null);
-    setResultEntries([]);
-    setScreen("home");
-  };
+  const applyScreen = useCallback((next: TLobbyScreen) => {
+    if (next === "home") {
+      setGameConfig(null);
+      setOnlineRoomId(null);
+      setResultEntries([]);
+    }
+    if (next === "modes" || next === "setup" || next === "onlineSetup") {
+      setGameConfig(null);
+      setResultEntries([]);
+    }
+    if (next === "onlineSetup") {
+      setOnlineRoomId(null);
+    }
+    setScreen(next);
+  }, []);
+
+  const goTo = useCallback(
+    (next: TLobbyScreen, replace = false) => {
+      const state: HistoryState = { screen: next };
+      if (replace) {
+        window.history.replaceState(state, "");
+      } else {
+        window.history.pushState(state, "");
+      }
+      applyScreen(next);
+    },
+    [applyScreen]
+  );
+
+  const goHome = useCallback(() => {
+    goTo("home", true);
+  }, [goTo]);
+
+  const goBack = useCallback(() => {
+    if (window.history.state?.screen) {
+      window.history.back();
+      return;
+    }
+    goHome();
+  }, [goHome]);
+
+  useEffect(() => {
+    window.history.replaceState({ screen: "home" } satisfies HistoryState, "");
+  }, []);
+
+  useEffect(() => {
+    const onPopState = (event: PopStateEvent) => {
+      const next = (event.state as HistoryState | null)?.screen ?? "home";
+      applyScreen(next);
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [applyScreen]);
 
   const handleSelectMode = (nextMode: TPlayMode) => {
     setMode(nextMode);
     if (nextMode === "online") {
-      setScreen("onlineSetup");
+      goTo("onlineSetup");
       return;
     }
-    setScreen("setup");
+    goTo("setup");
   };
 
   const handleStart = (config: IGameConfig) => {
     setGameConfig(config);
-    setScreen("game");
+    goTo("game");
   };
 
-  const handleOfflineGameOver = useCallback((entries: IResultEntry[]) => {
-    setResultEntries(entries);
-    setScreen("results");
-  }, []);
+  const handleOfflineGameOver = useCallback(
+    (entries: IResultEntry[]) => {
+      setResultEntries(entries);
+      goTo("results");
+    },
+    [goTo]
+  );
 
   const handlePlayAgain = () => {
     setResultEntries([]);
     if (mode === "online") {
       setOnlineRoomId(null);
-      setScreen("onlineSetup");
+      goTo("onlineSetup", true);
       return;
     }
     if (gameConfig) {
-      setScreen("setup");
+      goTo("setup", true);
       return;
     }
-    setScreen("modes");
+    goTo("modes", true);
   };
 
   const handleOnlineQueued = (
@@ -77,12 +129,15 @@ const App = () => {
     setGuest(g);
     setOnlineRoomId(roomId);
     setOnlineRoomCode(roomCode);
-    setScreen("onlineLobby");
+    goTo("onlineLobby");
   };
 
-  const handleOnlineStart = useCallback((_room: IOnlineRoom) => {
-    setScreen("onlineGame");
-  }, []);
+  const handleOnlineStart = useCallback(
+    (_room: IOnlineRoom) => {
+      goTo("onlineGame");
+    },
+    [goTo]
+  );
 
   if (screen === "game" && gameConfig) {
     const users: IUser[] = gameConfig.players.map((player) => ({
@@ -102,7 +157,7 @@ const App = () => {
           totalPlayers={gameConfig.totalPlayers as TTotalPlayers}
           typeGame={ETypeGame.OFFLINE}
           debug={false}
-          onExit={goHome}
+          onExit={goBack}
           onGameOver={handleOfflineGameOver}
         />
       </AppWrapper>
@@ -111,29 +166,22 @@ const App = () => {
 
   return (
     <AppWrapper>
-      {screen === "home" && <Home onPlay={() => setScreen("modes")} />}
+      {screen === "home" && <Home onPlay={() => goTo("modes")} />}
       {screen === "modes" && (
-        <ModeSelect onBack={() => setScreen("home")} onSelect={handleSelectMode} />
+        <ModeSelect onBack={goBack} onSelect={handleSelectMode} />
       )}
       {screen === "setup" && (
-        <Setup
-          mode={mode}
-          onBack={() => setScreen("modes")}
-          onStart={handleStart}
-        />
+        <Setup mode={mode} onBack={goBack} onStart={handleStart} />
       )}
       {screen === "onlineSetup" && (
-        <OnlineSetup
-          onBack={() => setScreen("modes")}
-          onQueued={handleOnlineQueued}
-        />
+        <OnlineSetup onBack={goBack} onQueued={handleOnlineQueued} />
       )}
       {screen === "onlineLobby" && guest && onlineRoomId && (
         <OnlineLobby
           guest={guest}
           roomId={onlineRoomId}
           roomCode={onlineRoomCode}
-          onBack={() => setScreen("onlineSetup")}
+          onBack={goBack}
           onStart={handleOnlineStart}
         />
       )}
@@ -141,7 +189,7 @@ const App = () => {
         <OnlineGame
           guest={guest}
           roomId={onlineRoomId}
-          onExit={goHome}
+          onExit={goBack}
           onPlayAgain={handlePlayAgain}
         />
       )}
