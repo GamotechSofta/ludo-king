@@ -20,7 +20,7 @@ import {
   EtypeTile,
   TOKEN_MOVEMENT_INTERVAL_VALUE,
 } from "../../utils/constants";
-import { playSound, preloadGameSounds } from "../../utils/sounds";
+import { playSound, preloadGameSounds, startBackgroundMusic, stopBackgroundMusic } from "../../utils/sounds";
 import { PageWrapper } from "../wrapper";
 import {
   Board,
@@ -131,6 +131,10 @@ const Game = ({
   useEffect(() => {
     resetDiceKeyCounter();
     preloadGameSounds();
+    startBackgroundMusic();
+    return () => {
+      stopBackgroundMusic();
+    };
   }, []);
 
   const passToNextPlayer = useCallback(
@@ -169,6 +173,7 @@ const Game = ({
                 isBot: !!p.isBot,
                 isYou: !p.isBot && p.index === 0,
               }));
+            stopBackgroundMusic();
             window.setTimeout(() => onGameOver(entries), 500);
           }
         }
@@ -282,6 +287,9 @@ const Game = ({
       });
 
       const landing = resolveLanding(working, currentPlayers, turn, tokenIndex);
+      if (landing.captured) {
+        playSound("capture");
+      }
       const remainingDice = actions.diceList.filter((_, i) => i !== diceIndex);
       const usedSix = dice.value === DICE_VALUE_GET_OUT_JAIL;
       const playerFinished = !!landing.players[turn]?.finished;

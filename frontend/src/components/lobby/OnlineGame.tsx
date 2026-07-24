@@ -1,8 +1,38 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useGameSocket } from "../../hooks/useGameSocket";
-import type { IGuestUser, IGameSnapshot, IResultEntry } from "./types";
+import type {
+  IActionsTurn,
+  IListTokens,
+  IPlayer,
+  ISelectTokenValues,
+  TDicevalues,
+} from "../../interfaces";
+import {
+  EActionsBoardGame,
+  EPositionProfiles,
+  EtypeTile,
+  TOKEN_MOVEMENT_INTERVAL_VALUE,
+} from "../../utils/constants";
+import { playSound, preloadGameSounds, startBackgroundMusic, stopBackgroundMusic } from "../../utils/sounds";
+import { PageWrapper } from "../wrapper";
+import {
+  Board,
+  BoardWrapper,
+  ProfileSection,
+  Tokens,
+} from "../game/components";
+import { getRandomValueDice } from "../game/helpers";
+import { applyTokenCell, buildMovePath, resolveLanding } from "../game/rules";
+import type { IGameSnapshot, IGuestUser, IResultEntry } from "./types";
 import Results from "./Results";
-import "./styles.css";
+import {
+  ONLINE_BOARD_COLOR,
+  actionsTurnFromSnapshot,
+  listTokensFromSnapshot,
+  playersFromSnapshot,
+  totalPlayersFromSnapshot,
+} from "./onlineSnapshotBoard";
+import "../game/game-over.css";
 
 interface OnlineGameProps {
   guest: IGuestUser;
@@ -11,17 +41,66 @@ interface OnlineGameProps {
   onPlayAgain: () => void;
 }
 
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 const OnlineGame = ({ guest, roomId, onExit, onPlayAgain }: OnlineGameProps) => {
   const { snapshot, connected, rollDice, moveToken } = useGameSocket(
     roomId,
     guest.id
   );
   const [showResults, setShowResults] = useState(false);
+  const [listTokens, setListTokens] = useState<IListTokens[]>([]);
+  const [players, setPlayers] = useState<IPlayer[]>([]);
+  const [actionsTurn, setActionsTurn] = useState<IActionsTurn>(() =>
+    actionsTurnFromSnapshot(
+      {
+        roomId: "",
+        phase: "AWAITING_ROLL",
+        currentSeatIndex: 0,
+        currentColor: "RED",
+        diceValue: 0,
+        diceList: [],
+        tokenPositions: {},
+        legalTokenIndexes: [],
+      },
+      -1
+    )
+  );
+  const [currentTurn, setCurrentTurn] = useState(0);
+  const [isBusy, setIsBusy] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
+
+  const mySeat = useMemo(() => {
+    if (!snapshot?.userIds) return -1;
+    return snapshot.userIds.findIndex((id) => id === guest.id);
+  }, [snapshot?.userIds, guest.id]);
+
+  const lastDiceSigRef = useRef("");
+  const animatingRef = useRef(false);
+  const listTokensRef = useRef(listTokens);
+  const actionsTurnRef = useRef(actionsTurn);
+
+  useEffect(() => {
+    listTokensRef.current = listTokens;
+  }, [listTokens]);
+  useEffect(() => {
+    actionsTurnRef.current = actionsTurn;
+  }, [actionsTurn]);
+
+  useEffect(() => {
+    preloadGameSounds();
+    startBackgroundMusic();
+    return () => {
+      stopBackgroundMusic();
+    };
+  }, []);
 
   useEffect(() => {
     if (snapshot?.phase === "FINISHED") {
-      const t = window.setTimeout(() => setShowResults(true), 600);
+      const t = window.setTimeout(() => {
+        stopBackgroundMusic();
+        setShowResults(true);
+      }, 600);
       return () => window.clearTimeout(t);
     }
     setShowResults(false);
@@ -49,21 +128,199 @@ const OnlineGame = ({ guest, roomId, onExit, onPlayAgain }: OnlineGameProps) => 
     snapshot?.currentSeatIndex,
   ]);
 
-  const mySeat = useMemo(() => {
-    if (!snapshot?.userIds) return -1;
-    return snapshot.userIds.findIndex((id) => id === guest.id);
-  }, [snapshot?.userIds, guest.id]);
+  const syncBoardFromSnapshot = useCallback(
+    (snap: IGameSnapshot, keepDiceVisual = false) => {
+      const nextPlayers = playersFromSnapshot(snap);
+      const isMyTurn = snap.currentSeatIndex === mySeat;
+      const canMove =
+        isMyTurn && snap.phase === "AWAITING_MOVE" && !animatingRef.current;
+      const nextTokens = listTokensFromSnapshot(snap, mySeat, canMove);
+      setPlayers(nextPlayers);
+      setListTokens(nextTokens);
+      setCurrentTurn(snap.currentSeatIndex);
+      setActionsTurn((prev) => {
+        const next = actionsTurnFromSnapshot(snap, mySeat, prev);
+        if (keepDiceVisual) {
+          next.diceValue = prev.diceValue;
+          next.diceRollNumber = prev.diceRollNumber;
+        }
+        return next;
+      });
+    },
+    [mySeat]
+  );
 
-  const isMyTurn =
-    mySeat >= 0 && snapshot?.currentSeatIndex === mySeat && connected;
+  // Apply snapshot → board (with dice roll animation when dice appear)
+  useEffect(() => {
+    if (!snapshot || mySeat < 0 || animatingRef.current) return;
 
-  const canRoll = isMyTurn && snapshot?.phase === "AWAITING_ROLL";
-  const canMove = isMyTurn && snapshot?.phase === "AWAITING_MOVE";
+    const diceSig = `${snapshot.currentSeatIndex}|${snapshot.phase}|${(
+      snapshot.diceList || []
+    ).join(",")}`;
+
+    const diceAppeared =
+      (snapshot.diceList?.length || 0) > 0 &&
+      diceSig !== lastDiceSigRef.current &&
+      snapshot.phase === "AWAITING_MOVE";
+
+    if (diceAppeared) {
+      lastDiceSigRef.current = diceSig;
+      const value = snapshot.diceList[
+        snapshot.diceList.length - 1
+      ] as TDicevalues;
+      playSound("diceRolling");
+      setPlayers(playersFromSnapshot(snapshot));
+      setCurrentTurn(snapshot.currentSeatIndex);
+      setActionsTurn((prev) => {
+        const base = actionsTurnFromSnapshot(snapshot, mySeat, prev);
+        const rolled = getRandomValueDice(base, value);
+        rolled.diceList = base.diceList;
+        rolled.actionsBoardGame = EActionsBoardGame.ROLL_DICE;
+        return rolled;
+      });
+      return;
+    }
+
+    lastDiceSigRef.current = diceSig;
+    syncBoardFromSnapshot(snapshot);
+  }, [snapshot, mySeat, syncBoardFromSnapshot]);
+
+  const handleDoneDice = useCallback(() => {
+    if (!snapshot) return;
+    syncBoardFromSnapshot(snapshot, true);
+    setActionsTurn((prev) => ({
+      ...prev,
+      ...actionsTurnFromSnapshot(snapshot, mySeat, prev),
+      diceValue: prev.diceValue,
+      diceRollNumber: prev.diceRollNumber,
+    }));
+  }, [snapshot, syncBoardFromSnapshot, mySeat]);
+
+  const handleSelectDice = useCallback(
+    (_diceValue?: TDicevalues) => {
+      if (!snapshot || isBusy || animatingRef.current) return;
+      if (snapshot.currentSeatIndex !== mySeat) return;
+      if (snapshot.phase !== "AWAITING_ROLL") return;
+      if (actionsTurnRef.current.disabledDice) return;
+      playSound("diceRolling");
+      setActionsTurn((prev) => ({
+        ...prev,
+        disabledDice: true,
+        timerActivated: false,
+      }));
+      rollDice();
+    },
+    [snapshot, isBusy, mySeat, rollDice]
+  );
+  const runMoveAnimation = useCallback(
+    async (
+      snap: IGameSnapshot,
+      tokenIndex: number,
+      diceIndex: number
+    ) => {
+      const turn = snap.currentSeatIndex;
+      const tokens = listTokensRef.current;
+      if (!tokens[turn]) return;
+
+      const diceValue = (snap.diceList || [])[diceIndex];
+      if (!diceValue) return;
+
+      const positionGame = tokens[turn].positionGame;
+      const token = tokens[turn].tokens[tokenIndex];
+      const path = buildMovePath(token, positionGame, diceValue as TDicevalues);
+      if (!path.length) return;
+
+      animatingRef.current = true;
+      setIsBusy(true);
+      setActionsTurn((prev) => ({
+        ...prev,
+        isDisabledUI: true,
+        disabledDice: true,
+        actionsBoardGame: EActionsBoardGame.SELECT_TOKEN,
+      }));
+
+      let working = tokens;
+      for (const step of path) {
+        playSound("passingNext");
+        working = working.map((group, pIdx) => {
+          if (pIdx !== turn) return group;
+          return {
+            ...group,
+            tokens: group.tokens.map((t, tIdx) => {
+              if (tIdx !== tokenIndex) {
+                return { ...t, diceAvailable: [], animated: false };
+              }
+              return applyTokenCell(
+                t,
+                positionGame,
+                step.typeTile,
+                step.positionTile,
+                true
+              );
+            }),
+          };
+        });
+        setListTokens(working);
+        listTokensRef.current = working;
+        await delay(TOKEN_MOVEMENT_INTERVAL_VALUE);
+        if (step.typeTile === EtypeTile.END) {
+          playSound("inside");
+        }
+      }
+
+      const landing = resolveLanding(
+        working,
+        playersFromSnapshot(snap),
+        turn,
+        tokenIndex
+      );
+      if (landing.captured) {
+        playSound("capture");
+        setListTokens(landing.listTokens);
+        listTokensRef.current = landing.listTokens;
+      }
+
+      animatingRef.current = false;
+      setIsBusy(false);
+    },
+    []
+  );
+
+  const handleSelectedToken = useCallback(
+    async (select: ISelectTokenValues) => {
+      if (!snapshot || isBusy || animatingRef.current) return;
+      if (snapshot.currentSeatIndex !== mySeat) return;
+      if (snapshot.phase !== "AWAITING_MOVE") return;
+
+      const { tokenIndex, diceIndex } = select;
+      await runMoveAnimation(snapshot, tokenIndex, diceIndex);
+      moveToken(tokenIndex, diceIndex);
+    },
+    [snapshot, isBusy, mySeat, runMoveAnimation, moveToken]
+  );
 
   const resultEntries: IResultEntry[] = useMemo(
     () => buildResults(snapshot, guest.id),
     [snapshot, guest.id]
   );
+
+  const totalPlayers = snapshot
+    ? totalPlayersFromSnapshot(snapshot)
+    : (4 as const);
+
+  const profileHandlers = {
+    handleTimer: () => undefined,
+    handleSelectDice,
+    handleDoneDice,
+    handleMuteChat: (_playerIndex: number) => undefined,
+  };
+
+  const profileProps = {
+    players,
+    totalPlayers,
+    currentTurn,
+    actionsTurn,
+  };
 
   if (showResults && snapshot?.phase === "FINISHED") {
     return (
@@ -76,25 +333,40 @@ const OnlineGame = ({ guest, roomId, onExit, onPlayAgain }: OnlineGameProps) => 
     );
   }
 
-  const legalMoves =
-    snapshot?.legalMoves?.length
-      ? snapshot.legalMoves
-      : (snapshot?.legalTokenIndexes || []).map((tokenIndex) => ({
-          tokenIndex,
-          diceIndex: 0,
-        }));
+  if (!snapshot || mySeat < 0) {
+    return (
+      <PageWrapper>
+        <button
+          className="game-back-arrow"
+          type="button"
+          aria-label="Back"
+          onClick={onExit}
+        >
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden>
+            <path
+              d="M15.5 4.5L8 12l7.5 7.5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+        <p className="lobby-sub" style={{ marginTop: 80, textAlign: "center" }}>
+          {connected ? "Loading board…" : "Connecting…"}
+        </p>
+      </PageWrapper>
+    );
+  }
 
   return (
-    <div
-      className="lobby"
-      style={{ justifyContent: "flex-start", paddingTop: 48 }}
-    >
+    <PageWrapper>
       <button
         className="game-back-arrow"
         type="button"
         aria-label="Back"
         onClick={onExit}
-        style={{ position: "absolute", top: 10, left: 10, alignSelf: "flex-start" }}
       >
         <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden>
           <path
@@ -107,91 +379,42 @@ const OnlineGame = ({ guest, roomId, onExit, onPlayAgain }: OnlineGameProps) => 
           />
         </svg>
       </button>
-
-      <h2 className="lobby-heading" style={{ marginTop: 16 }}>
-        Live Match
-      </h2>
-      <p className="lobby-sub">
-        {connected ? "Connected" : "Connecting…"}
-        {mySeat >= 0 ? ` · Seat ${mySeat + 1}` : ""}
-        {snapshot?.currentColor ? ` · Turn ${snapshot.currentColor}` : ""}
-        {secondsLeft != null ? ` · ${secondsLeft}s` : ""}
-      </p>
-
-      <div className="lobby-panel">
-        <p className="lobby-footer-note">
-          Phase: {snapshot?.phase || "…"}
-          {isMyTurn ? " · Your turn" : " · Wait"}
-          {snapshot?.consecutiveSixes
-            ? ` · Sixes ${snapshot.consecutiveSixes}/3`
-            : ""}
-        </p>
-        <p className="lobby-footer-note">
-          Dice: {(snapshot?.diceList || []).join(", ") || "—"}
-          {secondsLeft != null
-            ? ` · Timer ${secondsLeft}s (skip at 0)`
-            : ""}
-        </p>
-
-        <button
-          className="lobby-btn primary"
-          type="button"
-          disabled={!canRoll}
-          onClick={rollDice}
+      {secondsLeft != null && (
+        <div
+          style={{
+            position: "absolute",
+            top: 12,
+            right: 14,
+            zIndex: 20,
+            fontSize: "0.8rem",
+            fontWeight: 700,
+            opacity: 0.85,
+          }}
         >
-          ROLL DICE
-        </button>
-
-        {canMove && (
-          <div
-            style={{
-              marginTop: 12,
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
-            }}
-          >
-            <p className="lobby-footer-note">Choose a move</p>
-            {legalMoves.map((m) => (
-              <button
-                key={`${m.tokenIndex}-${m.diceIndex}`}
-                type="button"
-                className="lobby-btn secondary"
-                onClick={() => moveToken(m.tokenIndex, m.diceIndex)}
-              >
-                Token {m.tokenIndex + 1} with dice #
-                {(snapshot?.diceList || [])[m.diceIndex] ?? "?"}
-              </button>
-            ))}
-          </div>
-        )}
-
-        <div style={{ marginTop: 16 }}>
-          {snapshot?.usernames?.map((name, seat) => {
-            const color = Object.keys(snapshot.tokenPositions || {})[seat];
-            const positions = color
-              ? snapshot.tokenPositions[color]
-              : undefined;
-            return (
-              <div className="player-row" key={`${seat}-${name}`}>
-                {color && (
-                  <div className={`player-swatch ${color.toLowerCase()}`} />
-                )}
-                <span style={{ flex: 1, fontSize: "0.85rem", fontWeight: 600 }}>
-                  {name}
-                  {snapshot.isBot?.[seat] ? " (Bot)" : ""}
-                  {seat === mySeat ? " · You" : ""}
-                  {seat === snapshot.currentSeatIndex ? " · Turn" : ""}
-                </span>
-                <span style={{ fontSize: "0.75rem", opacity: 0.85 }}>
-                  {positions ? `[${positions.join(",")}]` : ""}
-                </span>
-              </div>
-            );
-          })}
+          {secondsLeft}s
         </div>
-      </div>
-    </div>
+      )}
+      <BoardWrapper>
+        <ProfileSection
+          basePosition={EPositionProfiles.TOP}
+          profileHandlers={profileHandlers}
+          {...profileProps}
+        />
+        <Board boardColor={ONLINE_BOARD_COLOR}>
+          <Tokens
+            isDisabledUI={actionsTurn.isDisabledUI || isBusy}
+            listTokens={listTokens}
+            diceList={actionsTurn.diceList}
+            handleSelectedToken={handleSelectedToken}
+          />
+        </Board>
+        <ProfileSection
+          basePosition={EPositionProfiles.BOTTOM}
+          profileHandlers={profileHandlers}
+          {...profileProps}
+        />
+      </BoardWrapper>
+    </PageWrapper>
   );
 };
 
@@ -200,10 +423,11 @@ function buildResults(
   myId: string
 ): IResultEntry[] {
   if (!snapshot?.usernames || !snapshot.standings) return [];
+  const colors = Object.keys(snapshot.tokenPositions || {});
   return snapshot.usernames.map((name, seat) => ({
     rank: snapshot.standings![seat] || seat + 1,
     name,
-    color: Object.keys(snapshot.tokenPositions || {})[seat],
+    color: colors[seat],
     isBot: snapshot.isBot?.[seat],
     isYou: snapshot.userIds?.[seat] === myId,
   }));

@@ -33,9 +33,11 @@ const OnlineSetup = ({ onBack, onQueued }: OnlineSetupProps) => {
     setError("");
     try {
       const guest = await ensureGuest();
-      const res = await queueMatch(guest.id, guest.username, maxPlayers);
+      // Classic Ludo: always 4 players
+      const seats = 4 as TPlayers;
+      const res = await queueMatch(guest.id, guest.username, seats);
       if (!res.roomId) throw new Error("No room returned");
-      onQueued(guest, res.roomId, res.roomCode, maxPlayers);
+      onQueued(guest, res.roomId, res.roomCode, seats);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Matchmaking failed");
     } finally {
@@ -82,7 +84,7 @@ const OnlineSetup = ({ onBack, onQueued }: OnlineSetupProps) => {
           ← Back
         </button>
         <h2 className="lobby-heading">Online Play</h2>
-        <p className="lobby-sub">Match with players or bots in realtime</p>
+        <p className="lobby-sub">Classic Ludo on the real board</p>
 
         <div className="lobby-panel">
           <div className="player-row" style={{ marginBottom: 12 }}>
@@ -95,6 +97,21 @@ const OnlineSetup = ({ onBack, onQueued }: OnlineSetupProps) => {
             />
           </div>
 
+          <button
+            className="lobby-btn primary"
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              setMaxPlayers(4);
+              void handleQuickMatch();
+            }}
+          >
+            QUICK MATCH · 4P
+          </button>
+
+          <p className="lobby-footer-note" style={{ marginTop: 14 }}>
+            Private room player count
+          </p>
           <div className="player-count">
             {([2, 3, 4] as TPlayers[]).map((count) => (
               <button
@@ -107,15 +124,6 @@ const OnlineSetup = ({ onBack, onQueued }: OnlineSetupProps) => {
               </button>
             ))}
           </div>
-
-          <button
-            className="lobby-btn primary"
-            type="button"
-            disabled={busy}
-            onClick={handleQuickMatch}
-          >
-            QUICK MATCH
-          </button>
 
           <button
             className="lobby-btn secondary"
