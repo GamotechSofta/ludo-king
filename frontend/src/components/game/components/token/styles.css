@@ -36,7 +36,7 @@
   border: none;
   border-radius: 50%;
   background-color: rgba(0, 0, 0, 0.08);
-  border: 2px dashed rgba(255, 255, 255, 0.95);
+  border: 2px dashed #6b7280;
   animation: rotation 5s normal linear infinite;
   -webkit-tap-highlight-color: rgba(255, 255, 255, 0);
 }
