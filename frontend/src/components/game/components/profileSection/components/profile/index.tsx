@@ -24,11 +24,6 @@ interface ProfileProps {
   handleMuteChat: ThandleMuteChat;
 }
 
-/**
- * Componente que renderiza el perfil de un jugador en el juego...
- * @param param0
- * @returns
- */
 const Profile = ({
   basePosition,
   hasTurn,
@@ -40,36 +35,44 @@ const Profile = ({
   handleSelectDice,
   handleMuteChat,
 }: ProfileProps) => {
-  const className = `game-profile ${basePosition.toLowerCase()} ${position.toLowerCase()}`;
+  const className = `game-profile ${basePosition.toLowerCase()} ${position.toLowerCase()}${
+    hasTurn ? " has-turn" : ""
+  }`;
+  const colorClass = (player.color || "RED").toLowerCase();
 
   return (
     <div className={className}>
       <div className="game-profile-dice-name">
         <Image
           player={player}
-          startTimer={actionsTurn.timerActivated}
+          startTimer={hasTurn && actionsTurn.timerActivated}
           position={position}
           handleMuteChat={handleMuteChat}
           handleInterval={(ends) => handleTimer(ends, player.index)}
         />
-        {/* Pasa la información de los dados a mostrar */}
-        <NameAndDice
-          name={player.name}
-          diceAvailable={actionsTurn.diceList}
-          hasTurn={hasTurn}
-        />
-        {/* TODO: Componente ChatBubble */}
+        <div className="game-profile-meta">
+          <NameAndDice
+            name={player.name}
+            diceAvailable={[]}
+            hasTurn={hasTurn}
+          />
+          <div className="game-profile-token-dots" aria-hidden>
+            {[0, 1, 2, 3].map((i) => (
+              <span key={i} className={`on ${colorClass}`} />
+            ))}
+          </div>
+        </div>
+        {hasTurn && (
+          <RenderDice
+            disabledDice={actionsTurn.disabledDice || !actionsTurn.showDice}
+            showDice
+            diceRollNumber={actionsTurn.diceRollNumber}
+            value={actionsTurn.diceValue}
+            handleDoneDice={handleDoneDice}
+            handleSelectDice={() => handleSelectDice()}
+          />
+        )}
       </div>
-      {hasTurn && (
-        <RenderDice
-          disabledDice={actionsTurn.disabledDice}
-          showDice={actionsTurn.showDice}
-          diceRollNumber={actionsTurn.diceRollNumber}
-          value={actionsTurn.diceValue}
-          handleDoneDice={handleDoneDice}
-          handleSelectDice={() => handleSelectDice()}
-        />
-      )}
       {player.finished && <Ranking value={player.ranking} />}
     </div>
   );

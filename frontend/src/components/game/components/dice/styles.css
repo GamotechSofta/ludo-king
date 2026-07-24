@@ -1,14 +1,16 @@
 .game-dice {
-  --point: radial-gradient(circle, black 35%, rgba(255, 255, 255, 0) 50%);
+  --point: radial-gradient(circle, #263238 40%, rgba(255, 255, 255, 0) 55%);
 }
 
 .game-dice {
-  background-color: white;
-  border-radius: 2px;
+  background: linear-gradient(145deg, #ffffff, #eceff1);
+  border-radius: 4px;
   position: relative;
-  box-shadow: rgba(0, 0, 0, 0.4) 0px 2px 4px,
-    rgba(0, 0, 0, 0.3) 0px 7px 13px -3px, rgba(0, 0, 0, 0.2) 0px -1px 0px inset;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.35),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.12);
 }
+
 
 .game-dice.animate {
   animation: bounceIn 1s both;

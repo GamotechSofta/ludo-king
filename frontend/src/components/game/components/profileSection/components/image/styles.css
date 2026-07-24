@@ -1,89 +1,64 @@
 .game-profile-image {
-  background-color: black;
-  height: 50px;
+  background-color: transparent;
+  height: 46px;
   position: relative;
-  width: 50px;
+  width: 46px;
+  flex-shrink: 0;
 }
 
-.game-profile-image-avatar {
-  background-color: #e4e4e4;
-  border-radius: 5px;
-  box-shadow: rgba(0, 0, 0, 0.16) 0px 1px 4px, rgb(51, 51, 51) 0px 0px 0px 3px;
+.game-profile-image-avatar,
+.game-profile-image-silhouette {
+  background-color: #cfd8dc;
+  border-radius: 10px;
+  box-shadow: none;
   height: 100%;
   width: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.game-profile-image-silhouette {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+}
+
+.game-profile-image-silhouette svg {
+  display: block;
+  height: 70%;
+  width: 70%;
 }
 
 .game-profile-image-progress {
-  background: conic-gradient(transparent var(--progress), #5ab340cc 0deg);
-  border-radius: 5px;
-  height: 50px;
+  background: conic-gradient(transparent var(--progress), #66bb6a 0deg);
+  border-radius: 10px;
+  height: 46px;
   left: 0;
   position: absolute;
   top: 0;
-  width: 50px;
+  width: 46px;
+  pointer-events: none;
+  opacity: 0.85;
 }
 
-/* Estilos para el contenedor que indica que el usuario esta offline */
 .game-profile-image-ofline {
   align-items: center;
-  animation: bounceIn 1s both;
   background-color: #ff0000b3;
-  border-radius: 5px;
-  box-shadow: rgba(0, 0, 0, 0.4) 0px 2px 4px,
-    rgba(0, 0, 0, 0.3) 0px 7px 13px -3px, rgba(0, 0, 0, 0.2) 0px -3px 0px inset;
+  border-radius: 10px;
   color: white;
   display: flex;
   height: 100%;
   justify-content: center;
   left: 0;
   position: absolute;
-  text-shadow: 1px 1px 1px black;
   text-transform: uppercase;
   top: 0;
   width: 100%;
   z-index: 2;
+  font-size: 0.55rem;
+  font-weight: 700;
 }
 
-/* Clase para el botón mute chat */
 .game-profile-mute-chat {
-  background-color: transparent;
-  border: none;
-  cursor: pointer;
-  height: 50px;
-  left: 0;
-  position: absolute;
-  top: 0;
-  width: 50px;
-  z-index: 2;
-}
-
-.game-profile-mute-chat .icon-wrapper {
-  align-items: center;
-  border-radius: 50%;
-  border: 1px solid white;
-  display: flex;
-  height: 20px;
-  justify-content: center;
-  position: absolute;
-  right: -5px;
-  top: -5px;
-  width: 20px;
-  background-color: #009688;
-  box-shadow: rgba(0, 0, 0, 0.12) 0px 1px 3px, rgba(0, 0, 0, 0.24) 0px 1px 2px;
-}
-
-.game-profile-mute-chat.right .icon-wrapper {
-  left: -5px;
-}
-
-.game-profile-mute-chat.left .icon-wrapper {
-  transform: scaleX(-1);
-}
-
-.game-profile-mute-chat.mute .icon-wrapper {
-  background-color: #e91e63;
-}
-
-.game-profile-mute-chat .icon-wrapper svg {
-  width: 65%;
+  display: none;
 }

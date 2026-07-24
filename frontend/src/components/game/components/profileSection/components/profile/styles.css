@@ -1,27 +1,39 @@
 .game-profile {
   position: relative;
   width: 100%;
+  background: #001a4d;
+  border: 1.5px solid rgba(90, 140, 220, 0.45);
+  border-radius: 18px;
+  padding: 7px 8px 7px 7px;
+  box-shadow: 0 5px 14px rgba(0, 0, 0, 0.45);
+  min-height: 62px;
+  box-sizing: border-box;
+  overflow: visible;
+}
+
+.game-profile.has-turn {
+  z-index: 4;
 }
 
 .game-profile-dice-name {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
   width: 100%;
-}
-
-.game-profile.bottom .game-profile-dice-name {
-  flex-direction: column-reverse;
+  overflow: visible;
 }
 
 .game-profile.right .game-profile-dice-name {
-  align-items: flex-end;
-}
-
-.game-profile.right .game-profile-dices {
   flex-direction: row-reverse;
 }
 
-.game-profile.right .game-profile-name-dice {
+.game-profile.right .game-profile-meta {
+  align-items: flex-end;
+  text-align: right;
+}
+
+.game-profile.right .game-profile-token-dots {
   justify-content: flex-end;
 }
 
@@ -29,22 +41,62 @@
   text-align: right;
 }
 
-.game-profile.bottom .game-profile-dice {
-  top: 30px;
+.game-profile-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  min-width: 0;
+  flex: 1;
+  gap: 5px;
+  padding-right: 4px;
 }
 
-.game-profile.bottom .game-profile-ranking {
-  top: 36px;
+.game-profile.right .game-profile-meta {
+  padding-right: 0;
+  padding-left: 4px;
 }
 
+.game-profile-token-dots {
+  display: flex;
+  gap: 6px;
+  margin-top: 0;
+  justify-content: flex-start;
+}
+
+.game-profile-token-dots span {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.22);
+  border: none;
+  box-shadow: inset 0 -1px 1px rgba(0, 0, 0, 0.25);
+}
+
+.game-profile-token-dots span.on.red {
+  background: #ff1744;
+}
+.game-profile-token-dots span.on.green {
+  background: #00c853;
+}
+.game-profile-token-dots span.on.blue {
+  background: #2979ff;
+}
+.game-profile-token-dots span.on.yellow {
+  background: #ffd600;
+}
+
+.game-profile.bottom .game-profile-ranking,
 .game-profile.top .game-profile-ranking {
-  top: 0;
+  top: 6px;
 }
 
 .game-profile.left .game-profile-ranking {
-  left: 55px;
+  right: 8px;
+  left: auto;
 }
 
 .game-profile.right .game-profile-ranking {
-  right: 55px;
+  left: 8px;
+  right: auto;
 }

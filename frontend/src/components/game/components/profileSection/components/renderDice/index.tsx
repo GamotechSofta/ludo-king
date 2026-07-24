@@ -1,6 +1,5 @@
 import "./styles.css";
 import { ROLL_TIME_VALUE } from "../../../../../../utils/constants";
-import Icon from "../../../../../icon/indext";
 import React, { useEffect, useRef } from "react";
 import ReactDice, { ReactDiceRef } from "react-dice-complete";
 import type { TDicevalues } from "../../../../../../interfaces";
@@ -16,7 +15,7 @@ interface RenderDiceProps {
 
 const RenderDice = ({
   disabledDice = false,
-  showDice = false,
+  showDice = true,
   value = 0,
   diceRollNumber = 0,
   handleDoneDice,
@@ -42,33 +41,37 @@ const RenderDice = ({
     }
   }, [value, diceRollNumber]);
 
+  if (!showDice) return null;
+
   return (
-    <div className={`game-profile-dice ${!showDice ? "hide" : ""}`}>
-      {!disabledDice && <Icon type="arrow" />}
+    <div className={`game-profile-dice ${disabledDice ? "rolled" : "ready"}`}>
+      {!disabledDice && <span className="game-profile-dice-arrow" aria-hidden />}
       <button
         className="game-profile-dice-button"
+        type="button"
         disabled={disabledDice}
         onClick={handleSelectDice}
-      >
+        aria-label="Roll dice"
+      />
+      <div className="game-profile-dice-face">
         <ReactDice
           ref={refDice}
           disableIndividual
           defaultRoll={1}
-          dieSize={45}
-          dotColor="black"
-          faceColor="white"
+          dieSize={36}
+          dotColor="#111111"
+          faceColor="#ffffff"
           numDice={1}
           outline
           rollTime={rollTime}
-          // Use refs — react-dice-complete may keep the initial rollDone closure
           rollDone={() => {
             if (valueRef.current !== 0) {
               handleDoneDiceRef.current();
             }
           }}
-          outlineColor="white"
+          outlineColor="#d0d0d0"
         />
-      </button>
+      </div>
     </div>
   );
 };

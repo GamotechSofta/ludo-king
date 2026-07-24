@@ -6,8 +6,22 @@
   transition: all 100ms ease;
 }
 
+.game-token.moving .game-token-piece {
+  animation: pinPulse 0.9s ease-in-out infinite;
+}
+
+@keyframes pinPulse {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(1.25);
+  }
+}
+
 .game-token.moving {
-  animation: heartBeat 1s infinite;
+  animation: none;
 }
 
 .game-token-button {

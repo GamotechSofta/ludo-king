@@ -1,29 +1,31 @@
 .game-profile-name-dice {
-  margin: 8px 0;
+  margin: 0;
   width: 100%;
   display: flex;
-  height: 20px;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .game-profile-name {
-  color: white;
-  font-size: 15px;
-  font-weight: bold;
-  opacity: 0.5;
+  color: #ffffff;
+  font-family: "Fredoka", Arial, Helvetica, sans-serif;
+  font-size: 0.95rem;
+  font-weight: 700;
+  opacity: 1;
   overflow: hidden;
   text-overflow: ellipsis;
-  text-shadow: 1px 0px 3px black;
-  transition: all 500ms ease;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
   white-space: nowrap;
-  width: 150px;
+  max-width: 110px;
+  line-height: 1.1;
+  letter-spacing: 0.01em;
 }
 
 .game-profile-name.has-turn {
+  color: #ffd600;
   opacity: 1;
 }
 
 .game-profile-dices {
-  display: flex;
-  align-items: center;
-  gap: 5px;
+  display: none;
 }

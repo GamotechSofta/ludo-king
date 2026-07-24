@@ -18,6 +18,18 @@ interface ImageProps {
   handleInterval: (ends: boolean) => void;
 }
 
+const PersonSilhouette = () => (
+  <div className="game-profile-image-silhouette" aria-hidden>
+    <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="32" cy="22" r="12" fill="#ffffff" />
+      <path
+        d="M10 58c0-14.4 9.9-24 22-24s22 9.6 22 24"
+        fill="#ffffff"
+      />
+    </svg>
+  </div>
+);
+
 const Image = ({
   player,
   startTimer,
@@ -25,9 +37,6 @@ const Image = ({
   handleMuteChat,
   handleInterval,
 }: ImageProps) => {
-  /**
-   * Se extrae la data del player que se requiere...
-   */
   const {
     index = 0,
     photo = "",
@@ -38,45 +47,22 @@ const Image = ({
   const [progress, setProgress] = useState(1);
   const [isRunning, setIsRunning] = useState(false);
 
-  /**
-   * Efecto que escucha si se indica que se ejecute el timer desde un elemento padre...
-   */
   useEffect(() => {
     setIsRunning(startTimer);
     setProgress(1);
   }, [startTimer]);
 
-  /**
-   * Ejecuta el cambio para el cronometro...
-   */
   useInterval(
     () => {
       const newProgress = progress + 1;
       setProgress(newProgress);
 
-      /**
-       * Evento para cuando se ejeucta el bot,
-       * para que se ejecute automaticamente, en el padre se valida que sea un bot
-       * y de esa forma se ejecutaría...
-       * En este caso sería para el lanzamiento del dado y
-       * además para la selección del token...
-       */
       if (newProgress === 15) {
         handleInterval(false);
       }
 
-      /**
-       * Si el progreso es de 100, quiere decir que ha terminado el couter...
-       */
       if (newProgress === 100) {
-        /**
-         * Se detiene el counter...
-         */
         setIsRunning(false);
-        /**
-         * Se devuleve un evento indicando que el counter ha terminado.
-         * El componente de arriba adiciona información adicional, como el índice del usuario...
-         */
         handleInterval(true);
       }
     },
@@ -87,25 +73,23 @@ const Image = ({
     "--progress": `${Math.round(360 * (progress / 100))}deg`,
   } as React.CSSProperties;
 
-  /**
-   * Título que se muestra dependiendo del estado del chat...
-   */
   const titleMuteChat = isMuted ? "Enable chat messages" : "Mute chat messages";
 
-  /**
-   * Para saber si se muestra la opción de silenciar el chat...
-   */
   const styleChatIcon = `game-profile-mute-chat ${position.toLowerCase()} ${
     isMuted ? "mute" : ""
   }`;
 
-  // TODO: implementar optionsGame.CHAT del contexto.
   const showMuteChat = isOnline && index !== 0 && !isOffline;
+  const useSilhouette = !photo;
 
   return (
     <div className="game-profile-image">
       {isOffline && <div className="game-profile-image-ofline">Left</div>}
-      <Avatar photo={photo} className="game-profile-image-avatar" />
+      {useSilhouette ? (
+        <PersonSilhouette />
+      ) : (
+        <Avatar photo={photo} className="game-profile-image-avatar" />
+      )}
       {showMuteChat && (
         <button
           title={titleMuteChat}

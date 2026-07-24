@@ -563,15 +563,21 @@ const Game = ({
     .sort((a, b) => a.ranking - b.ranking);
 
   return (
-    <PageWrapper
-      leftOption={
-        onExit ? (
-          <button className="game-exit-btn" type="button" onClick={onExit}>
-            ← Home
-          </button>
-        ) : undefined
-      }
-    >
+    <PageWrapper>
+      <div className="game-top-bar">
+        <button
+          className="game-top-bar-btn"
+          type="button"
+          aria-label="Menu"
+          onClick={onExit}
+        >
+          ☰
+        </button>
+        <div className="game-top-bar-coins">350</div>
+        <button className="game-top-bar-btn help" type="button" aria-label="Help">
+          ?
+        </button>
+      </div>
       <BoardWrapper>
         <ProfileSection
           basePosition={EPositionProfiles.TOP}

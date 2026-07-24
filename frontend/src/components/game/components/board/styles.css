@@ -12,9 +12,9 @@
 */
 .game-board {
   /* Color de fondo de la base del punto de inicio */
-  --nest-grid-bg: white;
-  --nest-grid-color: black;
-  --nest-start-bg: #c4c3c2;
+  --nest-grid-bg: #ffffff;
+  --nest-grid-color: #1a1a1a;
+  --nest-start-bg: #cfd8dc;
   --nest-bottom-left-bg: var(--game-red);
   --nest-top-left-bg: var(--game-green);
   --nest-top-right-bg: var(--game-yellow);
@@ -22,28 +22,28 @@
   /* Tamaño del contenedor principal del punto de inicio */
   --nest-size: calc(var(--size-tile) * 6);
   /* Para el tamaño de los circulos del punto de inicio */
-  --nest-size-circle: calc(var(--size-tile) * 3);
-  /* Color del container del punto de inicio */
-  --nest-container-bg: rgba(0, 0, 0, 0.3);
-  /* Color de los círculos en el punto de inicio */
-  --nest-circle-bg: rgba(0, 0, 0, 0.5);
-  --start-bg: white;
+  --nest-size-circle: calc(var(--size-tile) * 1.55);
+  /* Color del container del punto de inicio — white yard like photo */
+  --nest-container-bg: #ffffff;
+  /* Soft pads under home tokens */
+  --nest-circle-bg: rgba(0, 0, 0, 0.1);
+  --start-bg: #37474f;
   /* Tamaño para el contaner del punto de inicio */
-  --nest-size-container: calc(var(--size-tile) * 4.5);
+  --nest-size-container: calc(var(--size-tile) * 4.2);
   /* Posición del container del punto de inicio */
-  --nest-container-pos: calc(var(--size-tile) / 1.4);
+  --nest-container-pos: calc(var(--size-tile) * 0.9);
   /* Para los posiciones de los circulos en el punto de inicio */
-  --nest-circle-position-1-x: calc(var(--size-tile) / 2);
-  --nest-circle-position-1-y: calc(var(--size-tile) / 2);
+  --nest-circle-position-1-x: calc(var(--size-tile) * 1.35);
+  --nest-circle-position-1-y: calc(var(--size-tile) * 1.35);
 
-  --nest-circle-position-2-x: calc(calc(var(--size-tile) / 2) * 5);
-  --nest-circle-position-2-y: calc(var(--size-tile) / 2);
+  --nest-circle-position-2-x: calc(var(--size-tile) * 3.1);
+  --nest-circle-position-2-y: calc(var(--size-tile) * 1.35);
 
-  --nest-circle-position-3-x: calc(var(--size-tile) / 2);
-  --nest-circle-position-3-y: calc(calc(var(--size-tile) / 2) * 5);
+  --nest-circle-position-3-x: calc(var(--size-tile) * 1.35);
+  --nest-circle-position-3-y: calc(var(--size-tile) * 3.1);
 
-  --nest-circle-position-4-x: calc(calc(var(--size-tile) / 2) * 5);
-  --nest-circle-position-4-y: calc(calc(var(--size-tile) / 2) * 5);
+  --nest-circle-position-4-x: calc(var(--size-tile) * 3.1);
+  --nest-circle-position-4-y: calc(var(--size-tile) * 3.1);
   /* Los valores que se pondrá en el background-size para los circulos de inicio */
   --nest-size-elements: var(--nest-size-circle) var(--nest-size-circle),
     var(--nest-size-circle) var(--nest-size-circle),
@@ -60,12 +60,24 @@
   /* Para el punto de salida de la parte superior izquierda */
   --nest-top-left: radial-gradient(
       circle,
-      var(--nest-circle-bg) 30%,
-      rgba(0, 0, 0, 0) 0
+      color-mix(in srgb, var(--nest-top-left-bg) 28%, white) 48%,
+      transparent 49%
     ),
-    radial-gradient(circle, var(--nest-circle-bg) 30%, rgba(0, 0, 0, 0) 0),
-    radial-gradient(circle, var(--nest-circle-bg) 30%, rgba(0, 0, 0, 0) 0),
-    radial-gradient(circle, var(--nest-circle-bg) 30%, rgba(0, 0, 0, 0) 0),
+    radial-gradient(
+      circle,
+      color-mix(in srgb, var(--nest-top-left-bg) 28%, white) 48%,
+      transparent 49%
+    ),
+    radial-gradient(
+      circle,
+      color-mix(in srgb, var(--nest-top-left-bg) 28%, white) 48%,
+      transparent 49%
+    ),
+    radial-gradient(
+      circle,
+      color-mix(in srgb, var(--nest-top-left-bg) 28%, white) 48%,
+      transparent 49%
+    ),
     linear-gradient(var(--nest-container-bg), var(--nest-container-bg)),
     linear-gradient(var(--nest-top-left-bg), var(--nest-top-left-bg));
 
@@ -80,12 +92,24 @@
   /* Para el punto de salida de la parte superior derecha */
   --nest-top-right: radial-gradient(
       circle,
-      var(--nest-circle-bg) 30%,
-      rgba(0, 0, 0, 0) 0
+      color-mix(in srgb, var(--nest-top-right-bg) 28%, white) 48%,
+      transparent 49%
     ),
-    radial-gradient(circle, var(--nest-circle-bg) 30%, rgba(0, 0, 0, 0) 0),
-    radial-gradient(circle, var(--nest-circle-bg) 30%, rgba(0, 0, 0, 0) 0),
-    radial-gradient(circle, var(--nest-circle-bg) 30%, rgba(0, 0, 0, 0) 0),
+    radial-gradient(
+      circle,
+      color-mix(in srgb, var(--nest-top-right-bg) 28%, white) 48%,
+      transparent 49%
+    ),
+    radial-gradient(
+      circle,
+      color-mix(in srgb, var(--nest-top-right-bg) 28%, white) 48%,
+      transparent 49%
+    ),
+    radial-gradient(
+      circle,
+      color-mix(in srgb, var(--nest-top-right-bg) 28%, white) 48%,
+      transparent 49%
+    ),
     linear-gradient(var(--nest-container-bg), var(--nest-container-bg)),
     linear-gradient(var(--nest-top-right-bg), var(--nest-top-right-bg));
 
@@ -106,12 +130,24 @@
   /* Para el punto de salida de la parte abajo izquierda */
   --nest-bottom-left: radial-gradient(
       circle,
-      var(--nest-circle-bg) 30%,
-      rgba(0, 0, 0, 0) 0
+      color-mix(in srgb, var(--nest-bottom-left-bg) 28%, white) 48%,
+      transparent 49%
     ),
-    radial-gradient(circle, var(--nest-circle-bg) 30%, rgba(0, 0, 0, 0) 0),
-    radial-gradient(circle, var(--nest-circle-bg) 30%, rgba(0, 0, 0, 0) 0),
-    radial-gradient(circle, var(--nest-circle-bg) 30%, rgba(0, 0, 0, 0) 0),
+    radial-gradient(
+      circle,
+      color-mix(in srgb, var(--nest-bottom-left-bg) 28%, white) 48%,
+      transparent 49%
+    ),
+    radial-gradient(
+      circle,
+      color-mix(in srgb, var(--nest-bottom-left-bg) 28%, white) 48%,
+      transparent 49%
+    ),
+    radial-gradient(
+      circle,
+      color-mix(in srgb, var(--nest-bottom-left-bg) 28%, white) 48%,
+      transparent 49%
+    ),
     linear-gradient(var(--nest-container-bg), var(--nest-container-bg)),
     linear-gradient(var(--nest-bottom-left-bg), var(--nest-bottom-left-bg));
 
@@ -130,12 +166,24 @@
   /* Para el punto de salida de la parte abajo derecha */
   --nest-bottom-right: radial-gradient(
       circle,
-      var(--nest-circle-bg) 30%,
-      rgba(0, 0, 0, 0) 0
+      color-mix(in srgb, var(--nest-bottom-right-bg) 28%, white) 48%,
+      transparent 49%
     ),
-    radial-gradient(circle, var(--nest-circle-bg) 30%, rgba(0, 0, 0, 0) 0),
-    radial-gradient(circle, var(--nest-circle-bg) 30%, rgba(0, 0, 0, 0) 0),
-    radial-gradient(circle, var(--nest-circle-bg) 30%, rgba(0, 0, 0, 0) 0),
+    radial-gradient(
+      circle,
+      color-mix(in srgb, var(--nest-bottom-right-bg) 28%, white) 48%,
+      transparent 49%
+    ),
+    radial-gradient(
+      circle,
+      color-mix(in srgb, var(--nest-bottom-right-bg) 28%, white) 48%,
+      transparent 49%
+    ),
+    radial-gradient(
+      circle,
+      color-mix(in srgb, var(--nest-bottom-right-bg) 28%, white) 48%,
+      transparent 49%
+    ),
     linear-gradient(var(--nest-container-bg), var(--nest-container-bg)),
     linear-gradient(var(--nest-bottom-right-bg), var(--nest-bottom-right-bg));
 
@@ -442,12 +490,17 @@
 
 .game-board {
   background-color: var(--nest-grid-bg);
-  border-radius: 10px;
-  box-shadow: var(--nest-grid-color) 0px 0px 0px 3px, #be835d 0px 0px 0px 6px,
-    rgb(255, 217, 19) 0px 0px 0px 9px;
+  border-radius: 20px;
+  /* Photo: thick orange frame + white inner stroke */
+  box-shadow:
+    inset 0 0 0 4px var(--board-inner),
+    0 0 0 7px var(--board-frame),
+    0 0 0 11px var(--board-frame-dark),
+    0 10px 22px rgba(0, 0, 0, 0.5);
   height: var(--size-board);
   position: relative;
   width: var(--size-board);
+  overflow: hidden;
 
   /* Mestra las celdas de salida y las celda seguras */
   background-image: var(--finish-row-top), var(--finish-row-left),
@@ -469,21 +522,22 @@
   left: 0;
   top: 0;
   position: absolute;
-  border-radius: 10px;
+  border-radius: 18px;
   background: repeating-linear-gradient(
       to right,
       transparent,
-      transparent calc(var(--size-tile) - 1px),
-      var(--nest-grid-color) calc(var(--size-tile) - 1px),
-      var(--nest-grid-color) var(--size-tile)
+      transparent calc(var(--size-tile) - 1.5px),
+      rgba(0, 0, 0, 0.35) calc(var(--size-tile) - 1.5px),
+      rgba(0, 0, 0, 0.35) var(--size-tile)
     ),
     repeating-linear-gradient(
       to bottom,
       transparent,
-      transparent calc(var(--size-tile) - 1px),
-      var(--nest-grid-color) calc(var(--size-tile) - 1px),
-      var(--nest-grid-color) var(--size-tile)
+      transparent calc(var(--size-tile) - 1.5px),
+      rgba(0, 0, 0, 0.35) calc(var(--size-tile) - 1.5px),
+      rgba(0, 0, 0, 0.35) var(--size-tile)
     );
+  pointer-events: none;
 }
 
 .game-board::after {
@@ -493,7 +547,8 @@
   left: 0;
   top: 0;
   position: absolute;
-  border-radius: 10px;
+  border-radius: 18px;
+  pointer-events: none;
 
   /*
     * Muestra los 4 elementos de salida.
