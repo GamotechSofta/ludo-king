@@ -19,6 +19,9 @@ public class GameSnapshot {
   private Integer winnerSeat;
   private List<Integer> standings = new ArrayList<>();
   private Instant turnStartedAt;
+  private int turnTimeoutSeconds = 30;
+  private int turnSecondsRemaining = 30;
+  private int consecutiveSixes;
   private boolean[] finished;
   private boolean[] isBot;
   private List<String> userIds = new ArrayList<>();
@@ -119,6 +122,30 @@ public class GameSnapshot {
 
   public void setTurnStartedAt(Instant turnStartedAt) {
     this.turnStartedAt = turnStartedAt;
+  }
+
+  public int getTurnTimeoutSeconds() {
+    return turnTimeoutSeconds;
+  }
+
+  public void setTurnTimeoutSeconds(int turnTimeoutSeconds) {
+    this.turnTimeoutSeconds = turnTimeoutSeconds;
+  }
+
+  public int getTurnSecondsRemaining() {
+    return turnSecondsRemaining;
+  }
+
+  public void setTurnSecondsRemaining(int turnSecondsRemaining) {
+    this.turnSecondsRemaining = turnSecondsRemaining;
+  }
+
+  public int getConsecutiveSixes() {
+    return consecutiveSixes;
+  }
+
+  public void setConsecutiveSixes(int consecutiveSixes) {
+    this.consecutiveSixes = consecutiveSixes;
   }
 
   public boolean[] getFinished() {

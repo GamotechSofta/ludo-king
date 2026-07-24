@@ -16,6 +16,7 @@ import {
   ENextStepGame,
   EPositionProfiles,
   ETypeGame,
+  DICE_VALUE_GET_OUT_JAIL,
   TOKEN_MOVEMENT_INTERVAL_VALUE,
 } from "../../utils/constants";
 import { PageWrapper } from "../wrapper";
@@ -36,9 +37,13 @@ import {
   appendDiceRoll,
   applyTokenCell,
   buildMovePath,
+  clearDiceAvailable,
+  createTurnActions,
   decideAfterDiceRoll,
   decideAfterMove,
   finalizeRankings,
+  getNextTurnIndex,
+  getPossibleMoves,
   isGameOver,
   pickBotMove,
   resetDiceKeyCounter,
@@ -93,13 +98,17 @@ const Game = ({
   const [currentTurn, setCurrentTurn] = useState(initialTurn);
   const [gameOver, setGameOver] = useState(false);
   const [isBusy, setIsBusy] = useState(false);
-  const lastProcessedRollRef = useRef(0);
+
+  /** Unique id of last resolved roll — reset every turn so P1↔P2 never collide. */
+  const lastProcessedRollIdRef = useRef<string>("");
+  const rollSeqRef = useRef(0);
 
   const playersRef = useRef(players);
   const listTokensRef = useRef(listTokens);
   const actionsTurnRef = useRef(actionsTurn);
   const currentTurnRef = useRef(currentTurn);
   const busyRef = useRef(false);
+  const gameOverRef = useRef(false);
 
   useEffect(() => {
     playersRef.current = players;
@@ -113,10 +122,27 @@ const Game = ({
   useEffect(() => {
     currentTurnRef.current = currentTurn;
   }, [currentTurn]);
+  useEffect(() => {
+    gameOverRef.current = gameOver;
+  }, [gameOver]);
 
   useEffect(() => {
     resetDiceKeyCounter();
   }, []);
+
+  const passToNextPlayer = useCallback(
+    (fromTurn: number, tokens: IListTokens[], plist: IPlayer[]) => {
+      const nextTurn = getNextTurnIndex(fromTurn, plist);
+      lastProcessedRollIdRef.current = "";
+      return {
+        type: ENextStepGame.NEXT_TURN as const,
+        nextTurn,
+        listTokens: clearDiceAvailable(tokens),
+        actionsTurn: createTurnActions(nextTurn, plist),
+      };
+    },
+    []
+  );
 
   const applyDecision = useCallback(
     (
@@ -128,6 +154,7 @@ const Game = ({
         if (isGameOver(nextPlayers)) {
           finalPlayers = finalizeRankings(nextPlayers);
           setGameOver(true);
+          gameOverRef.current = true;
           if (onGameOver) {
             const entries = finalPlayers
               .slice()
@@ -154,6 +181,11 @@ const Game = ({
       if (decision.type === ENextStepGame.NEXT_TURN) {
         setCurrentTurn(decision.nextTurn);
         currentTurnRef.current = decision.nextTurn;
+        lastProcessedRollIdRef.current = "";
+      }
+
+      if (decision.type === ENextStepGame.ROLL_DICE_AGAIN) {
+        lastProcessedRollIdRef.current = "";
       }
     },
     [onGameOver]
@@ -161,7 +193,7 @@ const Game = ({
 
   const runTokenMove = useCallback(
     async (tokenIndex: number, diceIndex: number) => {
-      if (busyRef.current) return;
+      if (busyRef.current || gameOverRef.current) return;
       busyRef.current = true;
       setIsBusy(true);
 
@@ -182,19 +214,27 @@ const Game = ({
       const path = buildMovePath(token, positionGame, dice.value);
 
       if (!path.length) {
+        // Illegal / empty path → pass turn so game never sticks
+        applyDecision(
+          passToNextPlayer(turn, tokens, currentPlayers),
+          currentPlayers
+        );
         busyRef.current = false;
         setIsBusy(false);
         return;
       }
 
-      // Lock UI during movement
-      setActionsTurn((prev) => ({
-        ...prev,
-        isDisabledUI: true,
-        timerActivated: false,
-        disabledDice: true,
-        actionsBoardGame: EActionsBoardGame.SELECT_TOKEN,
-      }));
+      setActionsTurn((prev) => {
+        const next = {
+          ...prev,
+          isDisabledUI: true,
+          timerActivated: false,
+          disabledDice: true,
+          actionsBoardGame: EActionsBoardGame.SELECT_TOKEN,
+        };
+        actionsTurnRef.current = next;
+        return next;
+      });
 
       let working = listTokensRef.current;
 
@@ -223,7 +263,6 @@ const Game = ({
         await delay(TOKEN_MOVEMENT_INTERVAL_VALUE);
       }
 
-      // Stop moving flag on final cell
       working = working.map((group, pIdx) => {
         if (pIdx !== turn) return group;
         return {
@@ -236,14 +275,18 @@ const Game = ({
 
       const landing = resolveLanding(working, currentPlayers, turn, tokenIndex);
       const remainingDice = actions.diceList.filter((_, i) => i !== diceIndex);
-      const bonusRoll = landing.captured || landing.reachedHome;
+      const usedSix = dice.value === DICE_VALUE_GET_OUT_JAIL;
+      const playerFinished = !!landing.players[turn]?.finished;
+      const bonusRoll = !playerFinished && (usedSix || landing.captured);
+      const consecutiveSixes = usedSix ? actions.consecutiveSixes ?? 0 : 0;
 
       const decision = decideAfterMove(
         landing.listTokens,
         landing.players,
         turn,
         remainingDice,
-        bonusRoll
+        bonusRoll,
+        consecutiveSixes
       );
 
       applyDecision(decision, landing.players);
@@ -251,71 +294,118 @@ const Game = ({
       busyRef.current = false;
       setIsBusy(false);
     },
-    [applyDecision]
+    [applyDecision, passToNextPlayer]
   );
 
   const handleSelectedToken = (selectTokenValues: ISelectTokenValues) => {
-    if (busyRef.current || gameOver) return;
+    if (busyRef.current || gameOverRef.current) return;
+    const turn = currentTurnRef.current;
+    const player = playersRef.current[turn];
+    // Only the current non-bot seat may click tokens
+    if (player?.isBot) return;
     const { diceIndex, tokenIndex } = selectTokenValues;
     void runTokenMove(tokenIndex, diceIndex);
   };
 
-  const handleSelectDice = (
-    diceValue?: TDicevalues,
-    _isActionSocket = false
-  ) => {
-    if (busyRef.current || gameOver) return;
-    const actions = actionsTurnRef.current;
-    if (actions.disabledDice && diceValue === undefined) return;
-    if (
-      actions.actionsBoardGame !== EActionsBoardGame.ROLL_DICE &&
-      diceValue === undefined
-    ) {
-      return;
-    }
+  const handleSelectDice = useCallback(
+    (diceValue?: TDicevalues, _isActionSocket = false) => {
+      if (busyRef.current || gameOverRef.current) return;
+      const actions = actionsTurnRef.current;
+      const turnPlayer = playersRef.current[currentTurnRef.current];
 
-    setActionsTurn((current) => getRandomValueDice(current, diceValue));
-  };
+      const botAutoRoll =
+        !!turnPlayer?.isBot &&
+        diceValue === undefined &&
+        actions.actionsBoardGame === EActionsBoardGame.ROLL_DICE;
 
-  const handleDoneDice = (_isActionSocket = false) => {
-    if (busyRef.current || gameOver) return;
-
-    const actions = actionsTurnRef.current;
-    const diceValue = actions.diceValue;
-    if (!diceValue) return;
-
-    // Prevent duplicate rollDone callbacks for the same roll
-    if (lastProcessedRollRef.current === actions.diceRollNumber) return;
-    lastProcessedRollRef.current = actions.diceRollNumber;
-
-    const withDice = appendDiceRoll(actions, diceValue);
-    const decision = decideAfterDiceRoll(
-      withDice,
-      listTokensRef.current,
-      playersRef.current,
-      currentTurnRef.current
-    );
-
-    applyDecision(decision);
-
-    if (decision.type === ENextStepGame.MOVE_TOKENS_AGAIN) {
-      const human = !playersRef.current[currentTurnRef.current].isBot;
-      const moves = decision.listTokens[currentTurnRef.current].tokens
-        .flatMap((token, tokenIndex) =>
-          token.diceAvailable.map((dice) => {
-            const diceIndex = decision.actionsTurn.diceList.findIndex(
-              (d) => d.key === dice.key
-            );
-            return { tokenIndex, diceIndex };
-          })
-        )
-        .filter((m) => m.diceIndex >= 0);
-
-      if (human && moves.length === 1) {
-        void runTokenMove(moves[0].tokenIndex, moves[0].diceIndex);
+      if (actions.disabledDice && diceValue === undefined && !botAutoRoll) {
+        return;
       }
-    }
-  };
+      if (
+        actions.actionsBoardGame !== EActionsBoardGame.ROLL_DICE &&
+        diceValue === undefined
+      ) {
+        return;
+      }
+
+      // Sync ref immediately so rollDone can read diceValue without waiting for React
+      setActionsTurn((current) => {
+        const next = getRandomValueDice(current, diceValue);
+        rollSeqRef.current += 1;
+        (next as IActionsTurn & { rollId?: string }).rollId = `${
+          currentTurnRef.current
+        }:${rollSeqRef.current}:${next.diceValue}`;
+        actionsTurnRef.current = next;
+        return next;
+      });
+    },
+    []
+  );
+
+  const handleDoneDice = useCallback(
+    (_isActionSocket = false) => {
+      if (busyRef.current || gameOverRef.current) return;
+
+      const actions = actionsTurnRef.current as IActionsTurn & {
+        rollId?: string;
+      };
+      const diceValue = actions.diceValue;
+      if (!diceValue) return;
+
+      const rollId =
+        actions.rollId ||
+        `${currentTurnRef.current}:${actions.diceRollNumber}:${diceValue}`;
+
+      if (lastProcessedRollIdRef.current === rollId) return;
+      lastProcessedRollIdRef.current = rollId;
+
+      const turnAtRoll = currentTurnRef.current;
+      const withDice = appendDiceRoll(actions, diceValue);
+      let decision = decideAfterDiceRoll(
+        withDice,
+        listTokensRef.current,
+        playersRef.current,
+        turnAtRoll
+      );
+
+      if (decision.type === ENextStepGame.MOVE_TOKENS_AGAIN) {
+        const moves = getPossibleMoves(
+          decision.listTokens,
+          turnAtRoll,
+          decision.actionsTurn.diceList
+        );
+        if (moves.length === 0) {
+          decision = passToNextPlayer(
+            turnAtRoll,
+            decision.listTokens,
+            playersRef.current
+          );
+        }
+      }
+
+      applyDecision(decision);
+
+      if (decision.type === ENextStepGame.MOVE_TOKENS_AGAIN) {
+        const seat = currentTurnRef.current;
+        const human = !playersRef.current[seat]?.isBot;
+        const moves = decision.listTokens[seat].tokens
+          .flatMap((token, tokenIndex) =>
+            token.diceAvailable.map((dice) => {
+              const diceIndex = decision.actionsTurn.diceList.findIndex(
+                (d) => d.key === dice.key
+              );
+              return { tokenIndex, diceIndex };
+            })
+          )
+          .filter((m) => m.diceIndex >= 0);
+
+        if (human && moves.length === 1) {
+          void runTokenMove(moves[0].tokenIndex, moves[0].diceIndex);
+        }
+      }
+    },
+    [applyDecision, passToNextPlayer, runTokenMove]
+  );
 
   const handleMuteChat = (playerIndex: number) => {
     if (playerIndex === 0) return;
@@ -327,19 +417,16 @@ const Game = ({
   };
 
   const handleTimer = (ends = false, playerIndex?: number) => {
-    if (busyRef.current || gameOver) return;
+    if (busyRef.current || gameOverRef.current) return;
     const turn = currentTurnRef.current;
     if (playerIndex !== undefined && playerIndex !== turn) return;
 
     const player = playersRef.current[turn];
+    const actions = actionsTurnRef.current;
+
     if (!player?.isBot) {
-      // Human timeout: if still needs to roll, roll; if selecting, auto first move
       if (!ends) return;
-      const actions = actionsTurnRef.current;
-      if (
-        actions.actionsBoardGame === EActionsBoardGame.ROLL_DICE &&
-        !actions.disabledDice
-      ) {
+      if (actions.actionsBoardGame === EActionsBoardGame.ROLL_DICE) {
         handleSelectDice();
         return;
       }
@@ -350,16 +437,17 @@ const Game = ({
           actions.diceList
         );
         if (move) void runTokenMove(move.tokenIndex, move.diceIndex);
+        else {
+          applyDecision(
+            passToNextPlayer(turn, listTokensRef.current, playersRef.current)
+          );
+        }
       }
       return;
     }
 
-    // Bot acts on early nudge or timeout
-    const actions = actionsTurnRef.current;
-    if (
-      actions.actionsBoardGame === EActionsBoardGame.ROLL_DICE &&
-      !actions.disabledDice
-    ) {
+    // Bot: disabledDice is intentionally true — still allow auto-roll
+    if (actions.actionsBoardGame === EActionsBoardGame.ROLL_DICE) {
       handleSelectDice();
       return;
     }
@@ -367,32 +455,41 @@ const Game = ({
     if (actions.actionsBoardGame === EActionsBoardGame.SELECT_TOKEN) {
       const move = pickBotMove(listTokensRef.current, turn, actions.diceList);
       if (move) void runTokenMove(move.tokenIndex, move.diceIndex);
+      else {
+        applyDecision(
+          passToNextPlayer(turn, listTokensRef.current, playersRef.current)
+        );
+      }
     }
   };
 
-  // Bot kickoff when turn changes to a bot waiting to roll
+  // Bot: roll when it is their turn and waiting for a roll
   useEffect(() => {
     if (gameOver || isBusy) return;
     const player = players[currentTurn];
     if (!player?.isBot) return;
     if (actionsTurn.actionsBoardGame !== EActionsBoardGame.ROLL_DICE) return;
-    if (actionsTurn.disabledDice) return;
+    if (actionsTurn.diceValue !== 0) return;
 
     const timer = window.setTimeout(() => {
+      if (currentTurnRef.current !== currentTurn) return;
+      if (gameOverRef.current || busyRef.current) return;
       handleSelectDice();
-    }, 700);
+    }, 650);
 
     return () => window.clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     currentTurn,
     actionsTurn.actionsBoardGame,
-    actionsTurn.disabledDice,
+    actionsTurn.diceValue,
+    actionsTurn.consecutiveSixes,
     gameOver,
     isBusy,
+    players,
+    handleSelectDice,
   ]);
 
-  // Bot selects token when in SELECT_TOKEN phase
+  // Bot: pick a token (or pass) when moves are required
   useEffect(() => {
     if (gameOver || isBusy) return;
     const player = players[currentTurn];
@@ -400,9 +497,14 @@ const Game = ({
     if (actionsTurn.actionsBoardGame !== EActionsBoardGame.SELECT_TOKEN) return;
 
     const move = pickBotMove(listTokens, currentTurn, actionsTurn.diceList);
-    if (!move) return;
+    if (!move) {
+      applyDecision(passToNextPlayer(currentTurn, listTokens, players));
+      return;
+    }
 
     const timer = window.setTimeout(() => {
+      if (currentTurnRef.current !== currentTurn) return;
+      if (gameOverRef.current || busyRef.current) return;
       void runTokenMove(move.tokenIndex, move.diceIndex);
     }, 500);
 
@@ -410,12 +512,41 @@ const Game = ({
   }, [
     actionsTurn.actionsBoardGame,
     actionsTurn.diceList,
+    applyDecision,
     currentTurn,
     gameOver,
     isBusy,
     listTokens,
+    passToNextPlayer,
     players,
     runTokenMove,
+  ]);
+
+  // Human: auto-pass if SELECT_TOKEN with no legal moves
+  useEffect(() => {
+    if (gameOver || isBusy) return;
+    const player = players[currentTurn];
+    if (player?.isBot) return;
+    if (actionsTurn.actionsBoardGame !== EActionsBoardGame.SELECT_TOKEN) return;
+
+    const moves = getPossibleMoves(
+      listTokens,
+      currentTurn,
+      actionsTurn.diceList
+    );
+    if (moves.length > 0) return;
+
+    applyDecision(passToNextPlayer(currentTurn, listTokens, players));
+  }, [
+    actionsTurn.actionsBoardGame,
+    actionsTurn.diceList,
+    applyDecision,
+    currentTurn,
+    gameOver,
+    isBusy,
+    listTokens,
+    passToNextPlayer,
+    players,
   ]);
 
   const profileHandlers = {
@@ -476,7 +607,11 @@ const Game = ({
               ))}
             </ol>
             {onExit && (
-              <button className="lobby-btn primary" type="button" onClick={onExit}>
+              <button
+                className="lobby-btn primary"
+                type="button"
+                onClick={onExit}
+              >
                 Back to Home
               </button>
             )}

@@ -1,0 +1,52 @@
+{
+  "$schemaNote": "Canonical Ludo board geometry — keep frontend + Spring copies identical.",
+  "totalSharedPathCells": 52,
+  "cellsPerArm": 13,
+  "homeColumnLength": 6,
+  "tokensPerColor": 4,
+  "maxStackSameColor": 2,
+  "starOffsetFromStart": 8,
+  "sharedStepsFromStartToTurningCell": 50,
+  "stepsAfterEntryToHome": 56,
+  "totalJourneyStepsIncludingYardExit": 57,
+  "colorOrder": ["RED", "GREEN", "YELLOW", "BLUE"],
+  "colors": {
+    "RED": {
+      "startTile": 0,
+      "turningTile": 50,
+      "corner": "BOTTOM_LEFT",
+      "note": "Locked to this kit's board art (not traditional top-left)."
+    },
+    "GREEN": {
+      "startTile": 13,
+      "turningTile": 11,
+      "corner": "TOP_LEFT"
+    },
+    "YELLOW": {
+      "startTile": 26,
+      "turningTile": 24,
+      "corner": "TOP_RIGHT"
+    },
+    "BLUE": {
+      "startTile": 39,
+      "turningTile": 37,
+      "corner": "BOTTOM_RIGHT"
+    }
+  },
+  "startTiles": [0, 13, 26, 39],
+  "starTiles": [8, 21, 34, 47],
+  "safeTiles": [0, 8, 13, 21, 26, 34, 39, 47],
+  "rules": {
+    "direction": "clockwise",
+    "yardNotOnSharedPath": true,
+    "startCellsAlwaysSafe": true,
+    "safeCellsNoCapture": true,
+    "safeCellsAllowMixedOccupancy": true,
+    "safeCellsExemptFromBlockLimits": true,
+    "homeColumnPrivateNoCapture": true,
+    "homeTriangleFinishedPermanent": true,
+    "nonSafeMaxSameColorStack": 2,
+    "nonSafeOpponentBlockImmuneAndCannotLand": true,
+    "nonSafeOpponentBlockPassThroughAllowed": true
+  }
+}

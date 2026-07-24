@@ -151,24 +151,6 @@ const getTokensOnCell = (
   return result;
 };
 
-const isBlockedByOpponent = (
-  listTokens: IListTokens[],
-  moverPlayerIndex: number,
-  typeTile: TtypeTile,
-  positionTile: number
-) => {
-  const onCell = getTokensOnCell(listTokens, typeTile, positionTile).filter(
-    (t) => t.playerIndex !== moverPlayerIndex
-  );
-
-  const byPlayer: Record<number, number> = {};
-  onCell.forEach(({ playerIndex }) => {
-    byPlayer[playerIndex] = (byPlayer[playerIndex] || 0) + 1;
-  });
-
-  return Object.values(byPlayer).some((count) => count >= 2);
-};
-
 export const canTokenUseDice = (
   token: IToken,
   dice: TDicevalues,
@@ -179,29 +161,84 @@ export const canTokenUseDice = (
   if (token.typeTile === EtypeTile.END) return false;
 
   if (token.typeTile === EtypeTile.JAIL) {
-    return dice === DICE_VALUE_GET_OUT_JAIL;
+    if (dice !== DICE_VALUE_GET_OUT_JAIL) return false;
+    // Start cell is always safe — stacking unrestricted there
+    return true;
   }
 
   const remaining = getRemainingDistance(token, positionGame);
   if (dice > remaining) return false;
 
   const path = buildMovePath(token, positionGame, dice);
+  if (!path.length || path.length !== dice) return false;
+
   const finalCell = path[path.length - 1];
   if (!finalCell) return false;
 
-  if (
-    finalCell.typeTile === EtypeTile.NORMAL &&
-    isBlockedByOpponent(
-      listTokens,
-      playerIndex,
-      finalCell.typeTile,
-      finalCell.positionTile
-    )
-  ) {
-    return false;
+  if (finalCell.typeTile === EtypeTile.NORMAL) {
+    // Safe cells: mixed occupancy OK; exempt from block / max-stack limits
+    if (SAFE_AREAS.includes(finalCell.positionTile)) {
+      return true;
+    }
+    // Spec default: opponent blocks may be passed through; cannot land on them
+    if (
+      hasOpponentBlock(
+        listTokens,
+        playerIndex,
+        finalCell.typeTile,
+        finalCell.positionTile
+      )
+    ) {
+      return false;
+    }
+    if (
+      countOwnOnCell(
+        listTokens,
+        playerIndex,
+        finalCell.positionTile,
+        token.index
+      ) >= 2
+    ) {
+      return false;
+    }
   }
 
   return true;
+};
+
+const countOwnOnCell = (
+  listTokens: IListTokens[],
+  playerIndex: number,
+  positionTile: number,
+  excludeTokenIndex: number
+) => {
+  let count = 0;
+  listTokens[playerIndex].tokens.forEach((token, idx) => {
+    if (idx === excludeTokenIndex) return;
+    if (
+      token.typeTile === EtypeTile.NORMAL &&
+      token.positionTile === positionTile
+    ) {
+      count += 1;
+    }
+  });
+  return count;
+};
+
+const hasOpponentBlock = (
+  listTokens: IListTokens[],
+  moverPlayerIndex: number,
+  typeTile: TtypeTile,
+  positionTile: number
+) => {
+  const onCell = getTokensOnCell(listTokens, typeTile, positionTile).filter(
+    (t) => t.playerIndex !== moverPlayerIndex
+  );
+  const byPlayer: Record<number, number> = {};
+  onCell.forEach(({ playerIndex }) => {
+    byPlayer[playerIndex] = (byPlayer[playerIndex] || 0) + 1;
+  });
+  return Object.values(byPlayer).some((count) => count >= 2);
 };
 
 export const isSafeCell = (
@@ -259,6 +296,7 @@ export const clearDiceAvailable = (listTokens: IListTokens[]): IListTokens[] => 
       token.enableTooltip = false;
       token.animated = false;
       token.isMoving = false;
+      token.canSelectToken = false;
     });
   });
   return copy;
@@ -476,9 +514,19 @@ export const decideAfterDiceRoll = (
   currentTurn: number
 ): TTurnDecision => {
   let tokens = clearDiceAvailable(listTokens);
-  const diceList = actionsTurn.diceList;
+  const last = actionsTurn.diceList[actionsTurn.diceList.length - 1];
+  // Single-die flow: only the latest roll can be spent
+  const diceList: IDiceList[] = last ? [last] : [];
+  let consecutiveSixes = actionsTurn.consecutiveSixes ?? 0;
 
-  if (areThreeSameDice(diceList)) {
+  if (last?.value === DICE_VALUE_GET_OUT_JAIL) {
+    consecutiveSixes += 1;
+  } else {
+    consecutiveSixes = 0;
+  }
+
+  // Three consecutive sixes → turn cancelled
+  if (consecutiveSixes >= MAXIMUM_DICE_PER_TURN) {
     const nextTurn = getNextTurnIndex(currentTurn, players);
     return {
       type: ENextStepGame.NEXT_TURN,
@@ -488,30 +536,16 @@ export const decideAfterDiceRoll = (
     };
   }
 
-  const lastDice = diceList[diceList.length - 1]?.value;
-  const rolledSix = lastDice === DICE_VALUE_GET_OUT_JAIL;
-  const canRollAgain =
-    rolledSix && diceList.length < MAXIMUM_DICE_PER_TURN;
-
   tokens = assignDiceToTokens(tokens, currentTurn, diceList, players);
   const moves = getPossibleMoves(tokens, currentTurn, diceList);
 
-  if (canRollAgain) {
-    // Finish rolling sixes before moving (strict Ludo King-style)
-    const nextActions = cloneDeep(actionsTurn);
-    nextActions.timerActivated = true;
-    nextActions.disabledDice = validateDisabledDice(currentTurn, players);
-    nextActions.showDice = true;
-    nextActions.actionsBoardGame = EActionsBoardGame.ROLL_DICE;
-    nextActions.isDisabledUI = false;
-    return {
-      type: ENextStepGame.ROLL_DICE_AGAIN,
-      actionsTurn: nextActions,
-      listTokens: clearDiceAvailable(tokens),
-    };
-  }
+  const baseActions = cloneDeep(actionsTurn);
+  baseActions.diceList = diceList;
+  baseActions.consecutiveSixes = consecutiveSixes;
+  baseActions.timerActivated = false;
 
   if (moves.length === 0) {
+    // Spec: no legal moves (including on a 6) → pass; 6 does NOT grant extra roll
     const nextTurn = getNextTurnIndex(currentTurn, players);
     return {
       type: ENextStepGame.NEXT_TURN,
@@ -521,8 +555,8 @@ export const decideAfterDiceRoll = (
     };
   }
 
-  const nextActions = cloneDeep(actionsTurn);
-  nextActions.timerActivated = true;
+  // Even on 6: move first, then roll again after the move
+  const nextActions = cloneDeep(baseActions);
   nextActions.disabledDice = true;
   nextActions.showDice = false;
   nextActions.actionsBoardGame = EActionsBoardGame.SELECT_TOKEN;
@@ -540,18 +574,19 @@ export const decideAfterMove = (
   players: IPlayer[],
   currentTurn: number,
   remainingDice: IDiceList[],
-  bonusRoll: boolean
+  bonusRoll: boolean,
+  consecutiveSixes = 0
 ): TTurnDecision => {
   if (bonusRoll) {
     const actions = createTurnActions(currentTurn, players);
-    actions.diceList = remainingDice;
-    const tokens = remainingDice.length
-      ? assignDiceToTokens(listTokens, currentTurn, remainingDice, players)
-      : clearDiceAvailable(listTokens);
+    // Keep streak only when the spent die was a 6 (caller passes current streak)
+    actions.consecutiveSixes = consecutiveSixes;
+    actions.diceList = [];
+    actions.timerActivated = false;
     return {
       type: ENextStepGame.ROLL_DICE_AGAIN,
       actionsTurn: actions,
-      listTokens: tokens,
+      listTokens: clearDiceAvailable(listTokens),
     };
   }
 
@@ -567,9 +602,10 @@ export const decideAfterMove = (
     if (moves.length > 0) {
       const actions = cloneDeep(createTurnActions(currentTurn, players));
       actions.diceList = remainingDice;
+      actions.consecutiveSixes = consecutiveSixes;
       actions.disabledDice = true;
       actions.showDice = false;
-      actions.timerActivated = true;
+      actions.timerActivated = false;
       actions.actionsBoardGame = EActionsBoardGame.SELECT_TOKEN;
       return {
         type: ENextStepGame.MOVE_TOKENS_AGAIN,

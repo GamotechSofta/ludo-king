@@ -154,6 +154,10 @@ export interface IActionsTurn {
   diceRollNumber: number;
   isDisabledUI: boolean;
   actionsBoardGame?: TActionsBoardGame;
+  /** Trailing consecutive sixes this turn (offline single-die flow). */
+  consecutiveSixes?: number;
+  /** Unique roll id so turn changes never treat a new roll as a duplicate. */
+  rollId?: string;
 }
 
 export type TTokenByPositionType = Record<TtypeTile, IToken[]>;

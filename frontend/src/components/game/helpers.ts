@@ -241,7 +241,8 @@ export const getInitialActionsTurnValue = (
   indexTurn: number,
   players: IPlayer[]
 ): IActionsTurn => ({
-  timerActivated: true,
+  // Offline pass-and-play: no turn timer (online uses server 30s timeout).
+  timerActivated: false,
   disabledDice: validateDisabledDice(indexTurn, players),
   showDice: true,
   diceValue: 0,
@@ -249,6 +250,8 @@ export const getInitialActionsTurnValue = (
   diceRollNumber: 0,
   isDisabledUI: false,
   actionsBoardGame: EActionsBoardGame.ROLL_DICE,
+  consecutiveSixes: 0,
+  rollId: undefined,
 });
 
 /**
@@ -298,6 +301,7 @@ export const getRandomValueDice = (
    */
   const newDiceRollNumber = diceRollNumber + 1 >= 10 ? 1 : diceRollNumber + 1;
   copyActionsTurn.diceRollNumber = newDiceRollNumber;
+  copyActionsTurn.rollId = undefined;
 
   return copyActionsTurn;
 };

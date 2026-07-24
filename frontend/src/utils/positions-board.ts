@@ -1,4 +1,9 @@
 import { SIZE_TILE } from "./constants";
+import {
+  SAFE_TILES,
+  HOME_COLUMN_LENGTH,
+  COLOR_BOARD,
+} from "../config/ludoBoard";
 import type {
   IPoint,
   IPositionsItems,
@@ -328,8 +333,9 @@ const getStartPositions = (baseX: number, baseY: number) => {
 
 /**
  * Indices de las celdas que se consideran seguras...
+ * Sourced from shared ludo-board-constants.json (4 starts + 4 stars).
  */
-export const SAFE_AREAS = [0, 8, 13, 21, 26, 34, 39, 47];
+export const SAFE_AREAS = [...SAFE_TILES];
 
 /**
  * Variable que contiene la información de posición de los board en el tablero
@@ -346,41 +352,40 @@ export const POSITION_TILES = POINTS.map((point) =>
 export const TOTAL_TILES = POSITION_TILES.length;
 
 /**
- * La totalidad de las celdas de salida, en este caso se muestran cinco,
- * pero se adiciona la celda extra para salir del board...
+ * Home column length including finish (matches HOME_COLUMN_LENGTH in board JSON).
  */
-export const TOTAL_EXIT_TILES = 6;
+export const TOTAL_EXIT_TILES = HOME_COLUMN_LENGTH;
 
 /**
  * Objeto que contiene las posiciones del board, dependiendo de la ubicación de cada jugador...
  */
 export const POSITION_ELEMENTS_BOARD: TLocationBoardElements = {
   BOTTOM_LEFT: {
-    exitTileIndex: 50,
+    exitTileIndex: COLOR_BOARD.RED.turningTile,
     exitTiles: calculatePosition(EXIT_TILES_VALUES.BOTTOM_LEFT),
     finalPositions: FINAL_POSITIONS_VALUES.BOTTOM_LEFT,
     startPositions: getStartPositions(2, 11),
-    startTileIndex: 0,
+    startTileIndex: COLOR_BOARD.RED.startTile,
   },
   TOP_LEFT: {
-    exitTileIndex: 11,
+    exitTileIndex: COLOR_BOARD.GREEN.turningTile,
     exitTiles: calculatePosition(EXIT_TILES_VALUES.TOP_LEFT),
     finalPositions: FINAL_POSITIONS_VALUES.TOP_LEFT,
     startPositions: getStartPositions(2, 2),
-    startTileIndex: 13,
+    startTileIndex: COLOR_BOARD.GREEN.startTile,
   },
   TOP_RIGHT: {
-    exitTileIndex: 24,
+    exitTileIndex: COLOR_BOARD.YELLOW.turningTile,
     exitTiles: calculatePosition(EXIT_TILES_VALUES.TOP_RIGHT),
     finalPositions: FINAL_POSITIONS_VALUES.TOP_RIGHT,
     startPositions: getStartPositions(11, 2),
-    startTileIndex: 26,
+    startTileIndex: COLOR_BOARD.YELLOW.startTile,
   },
   BOTTOM_RIGHT: {
-    exitTileIndex: 37,
+    exitTileIndex: COLOR_BOARD.BLUE.turningTile,
     exitTiles: calculatePosition(EXIT_TILES_VALUES.BOTTOM_RIGHT),
     finalPositions: FINAL_POSITIONS_VALUES.BOTTOM_RIGHT,
     startPositions: getStartPositions(11, 11),
-    startTileIndex: 39,
+    startTileIndex: COLOR_BOARD.BLUE.startTile,
   },
 };

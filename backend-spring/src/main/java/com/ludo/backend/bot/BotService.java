@@ -28,29 +28,38 @@ public class BotService {
       return snap;
     }
 
-    sleepThinking();
+    // Single-die flow: roll → move → (extra roll on 6/kill/home) → repeat while still this bot
+    int guard = 0;
+    while (guard++ < 12
+        && snap.getIsBot() != null
+        && snap.getIsBot()[seat]
+        && snap.getCurrentSeatIndex() == seat
+        && !GameEngineService.PHASE_FINISHED.equals(snap.getPhase())) {
 
-    if (GameEngineService.PHASE_ROLL.equals(snap.getPhase())) {
-      snap = gameEngineService.rollDiceAsSeat(roomId, seat);
-      // keep rolling sixes
-      while (GameEngineService.PHASE_ROLL.equals(snap.getPhase())
-          && snap.getDiceList() != null
-          && !snap.getDiceList().isEmpty()
-          && snap.getDiceList().get(snap.getDiceList().size() - 1) == 6
-          && snap.getDiceList().size() < 3) {
+      if (GameEngineService.PHASE_ROLL.equals(snap.getPhase())) {
         sleepThinking();
         snap = gameEngineService.rollDiceAsSeat(roomId, seat);
+        continue;
       }
-    }
 
-    while (GameEngineService.PHASE_MOVE.equals(snap.getPhase())) {
-      List<int[]> moves = gameEngineService.legalMoves(roomId);
-      if (moves.isEmpty()) {
-        break;
+      if (GameEngineService.PHASE_MOVE.equals(snap.getPhase())) {
+        List<int[]> moves = gameEngineService.legalMoves(roomId);
+        if (moves.isEmpty()) {
+          break;
+        }
+        int[] chosen =
+            chooseMove(
+                roomId,
+                seat,
+                moves,
+                difficulty == null ? BotDifficulty.MEDIUM : difficulty
+            );
+        sleepThinking();
+        snap = gameEngineService.moveTokenAsSeat(roomId, seat, chosen[0], chosen[1]);
+        continue;
       }
-      int[] chosen = chooseMove(roomId, seat, moves, difficulty == null ? BotDifficulty.MEDIUM : difficulty);
-      sleepThinking();
-      snap = gameEngineService.moveTokenAsSeat(roomId, seat, chosen[0], chosen[1]);
+
+      break;
     }
     return snap;
   }

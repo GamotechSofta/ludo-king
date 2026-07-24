@@ -63,6 +63,10 @@ export interface IGameSnapshot {
   standings?: number[];
   winnerSeat?: number | null;
   turnStartedAt?: string;
+  turnTimeoutSeconds?: number;
+  turnSecondsRemaining?: number;
+  consecutiveSixes?: number;
+  bonusRoll?: boolean;
 }
 
 export interface IResultEntry {

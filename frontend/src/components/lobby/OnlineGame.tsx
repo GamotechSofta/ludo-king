@@ -17,6 +17,7 @@ const OnlineGame = ({ guest, roomId, onExit, onPlayAgain }: OnlineGameProps) => 
     guest.id
   );
   const [showResults, setShowResults] = useState(false);
+  const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
 
   useEffect(() => {
     if (snapshot?.phase === "FINISHED") {
@@ -26,6 +27,28 @@ const OnlineGame = ({ guest, roomId, onExit, onPlayAgain }: OnlineGameProps) => 
     setShowResults(false);
   }, [snapshot?.phase]);
 
+  useEffect(() => {
+    if (
+      snapshot?.turnSecondsRemaining == null ||
+      snapshot.phase === "FINISHED"
+    ) {
+      setSecondsLeft(null);
+      return;
+    }
+    setSecondsLeft(snapshot.turnSecondsRemaining);
+    const id = window.setInterval(() => {
+      setSecondsLeft((prev) =>
+        prev == null ? null : Math.max(0, prev - 1)
+      );
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [
+    snapshot?.turnStartedAt,
+    snapshot?.turnSecondsRemaining,
+    snapshot?.phase,
+    snapshot?.currentSeatIndex,
+  ]);
+
   const mySeat = useMemo(() => {
     if (!snapshot?.userIds) return -1;
     return snapshot.userIds.findIndex((id) => id === guest.id);
@@ -34,8 +57,8 @@ const OnlineGame = ({ guest, roomId, onExit, onPlayAgain }: OnlineGameProps) => 
   const isMyTurn =
     mySeat >= 0 && snapshot?.currentSeatIndex === mySeat && connected;
 
-  const canRoll = isMyTurn && snapshot?.phase === "WAITING_ROLL";
-  const canMove = isMyTurn && snapshot?.phase === "WAITING_MOVE";
+  const canRoll = isMyTurn && snapshot?.phase === "AWAITING_ROLL";
+  const canMove = isMyTurn && snapshot?.phase === "AWAITING_MOVE";
 
   const resultEntries: IResultEntry[] = useMemo(
     () => buildResults(snapshot, guest.id),
@@ -82,15 +105,22 @@ const OnlineGame = ({ guest, roomId, onExit, onPlayAgain }: OnlineGameProps) => 
         {connected ? "Connected" : "Connecting…"}
         {mySeat >= 0 ? ` · Seat ${mySeat + 1}` : ""}
         {snapshot?.currentColor ? ` · Turn ${snapshot.currentColor}` : ""}
+        {secondsLeft != null ? ` · ${secondsLeft}s` : ""}
       </p>
 
       <div className="lobby-panel">
         <p className="lobby-footer-note">
           Phase: {snapshot?.phase || "…"}
           {isMyTurn ? " · Your turn" : " · Wait"}
+          {snapshot?.consecutiveSixes
+            ? ` · Sixes ${snapshot.consecutiveSixes}/3`
+            : ""}
         </p>
         <p className="lobby-footer-note">
-          Dice pool: {(snapshot?.diceList || []).join(", ") || "—"}
+          Dice: {(snapshot?.diceList || []).join(", ") || "—"}
+          {secondsLeft != null
+            ? ` · Timer ${secondsLeft}s (skip at 0)`
+            : ""}
         </p>
 
         <button

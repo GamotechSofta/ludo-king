@@ -1,0 +1,88 @@
+package com.ludo.backend.game;
+
+import com.ludo.backend.bot.BotService;
+import com.ludo.backend.room.BotDifficulty;
+import com.ludo.backend.room.Room;
+import com.ludo.backend.room.RoomPlayer;
+import com.ludo.backend.room.RoomService;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Component;
+
+@Component
+public class TurnTimeoutScheduler {
+
+  private final GameEngineService gameEngineService;
+  private final RoomService roomService;
+  private final BotService botService;
+  private final SimpMessagingTemplate messagingTemplate;
+  private final ExecutorService botExecutor = Executors.newCachedThreadPool();
+
+  public TurnTimeoutScheduler(
+      GameEngineService gameEngineService,
+      RoomService roomService,
+      BotService botService,
+      SimpMessagingTemplate messagingTemplate
+  ) {
+    this.gameEngineService = gameEngineService;
+    this.roomService = roomService;
+    this.botService = botService;
+    this.messagingTemplate = messagingTemplate;
+  }
+
+  @Scheduled(fixedDelay = 1000)
+  public void tick() {
+    for (String roomId : gameEngineService.activeRoomIds()) {
+      try {
+        GameSnapshot before = gameEngineService.getSnapshot(roomId);
+        if (GameEngineService.PHASE_FINISHED.equals(before.getPhase())) {
+          continue;
+        }
+        if (before.getTurnSecondsRemaining() > 0) {
+          continue;
+        }
+        int seatBefore = before.getCurrentSeatIndex();
+        String phaseBefore = before.getPhase();
+        GameSnapshot after = gameEngineService.resolveTimeout(roomId);
+        boolean changed =
+            after.getCurrentSeatIndex() != seatBefore
+                || !phaseBefore.equals(after.getPhase());
+        if (!changed) {
+          continue;
+        }
+        messagingTemplate.convertAndSend("/topic/room/" + roomId, after);
+        maybeScheduleBot(roomId);
+      } catch (Exception ignored) {
+        // room may have ended mid-tick
+      }
+    }
+  }
+
+  private void maybeScheduleBot(String roomId) {
+    botExecutor.submit(() -> {
+      try {
+        GameSnapshot snap = gameEngineService.getSnapshot(roomId);
+        while (snap.getIsBot() != null
+            && snap.getCurrentSeatIndex() < snap.getIsBot().length
+            && snap.getIsBot()[snap.getCurrentSeatIndex()]
+            && !GameEngineService.PHASE_FINISHED.equals(snap.getPhase())) {
+
+          BotDifficulty diff = BotDifficulty.MEDIUM;
+          Room room = roomService.getRoom(roomId).orElse(null);
+          if (room != null) {
+            RoomPlayer p = room.getPlayers().get(snap.getCurrentSeatIndex());
+            if (p.getBotDifficulty() != null) {
+              diff = p.getBotDifficulty();
+            }
+          }
+          snap = botService.takeTurnIfBot(roomId, diff);
+          messagingTemplate.convertAndSend("/topic/room/" + roomId, snap);
+        }
+      } catch (Exception ignored) {
+        // ignore bot errors from timeout path
+      }
+    });
+  }
+}

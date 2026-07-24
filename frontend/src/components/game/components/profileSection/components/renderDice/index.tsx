@@ -22,19 +22,20 @@ const RenderDice = ({
   handleDoneDice,
   handleSelectDice,
 }: RenderDiceProps) => {
-  /**
-   * Referencia del dado en el dom, para así tener acceso a la función rollAll
-   */
   const refDice = useRef<ReactDiceRef>(null);
-  /**
-   * Tiempo que durará girando el dado, si el valor que llega es 0 se establece que no tendrá tiempo y por tanto no girará
-   */
+  const handleDoneDiceRef = useRef(handleDoneDice);
+  const valueRef = useRef(value);
+
+  useEffect(() => {
+    handleDoneDiceRef.current = handleDoneDice;
+  }, [handleDoneDice]);
+
+  useEffect(() => {
+    valueRef.current = value;
+  }, [value]);
+
   const rollTime = value !== 0 ? ROLL_TIME_VALUE : 0;
 
-  /**
-   * Se pasa el número de lanzamientos, en el caso que el valor del dado sea el mismo.
-   * con el fin que se escuche el cambio en el efecto.
-   */
   useEffect(() => {
     if (value !== 0 && diceRollNumber !== 0) {
       refDice.current?.rollAll([value]);
@@ -43,7 +44,6 @@ const RenderDice = ({
 
   return (
     <div className={`game-profile-dice ${!showDice ? "hide" : ""}`}>
-      {/* Muestra un arrow indicando que puede girar el dado, ya que está habilitado */}
       {!disabledDice && <Icon type="arrow" />}
       <button
         className="game-profile-dice-button"
@@ -60,7 +60,12 @@ const RenderDice = ({
           numDice={1}
           outline
           rollTime={rollTime}
-          rollDone={() => value !== 0 && handleDoneDice()}
+          // Use refs — react-dice-complete may keep the initial rollDone closure
+          rollDone={() => {
+            if (valueRef.current !== 0) {
+              handleDoneDiceRef.current();
+            }
+          }}
           outlineColor="white"
         />
       </button>

@@ -4,6 +4,7 @@ import static com.ludo.backend.game.BoardConstants.EXIT_LEN;
 import static com.ludo.backend.game.BoardConstants.HOME;
 import static com.ludo.backend.game.BoardConstants.HOME_STEPS;
 import static com.ludo.backend.game.BoardConstants.JAIL;
+import static com.ludo.backend.game.BoardConstants.MAX_STACK;
 import static com.ludo.backend.game.BoardConstants.SAFE_AREAS;
 import static com.ludo.backend.game.BoardConstants.TOTAL_TILES;
 import static com.ludo.backend.game.BoardConstants.exitIndex;
@@ -11,8 +12,10 @@ import static com.ludo.backend.game.BoardConstants.isExit;
 import static com.ludo.backend.game.BoardConstants.isHome;
 import static com.ludo.backend.game.BoardConstants.isJail;
 import static com.ludo.backend.game.BoardConstants.isMain;
+import static com.ludo.backend.game.BoardConstants.isSafe;
 import static com.ludo.backend.game.BoardConstants.toExit;
 
+import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -20,19 +23,40 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.locks.ReentrantLock;
 import org.springframework.stereotype.Service;
 
+/**
+ * Server-authoritative Ludo engine.
+ *
+ * <p>Defaults locked from product spec:
+ * <ul>
+ *   <li>Extra turn on 6 only if a move was executed with that 6</li>
+ *   <li>No legal moves after any roll (including 6) → pass immediately</li>
+ *   <li>Third consecutive six voided (no move) → pass</li>
+ *   <li>Capture grants bonus roll; does not count toward three-six limit</li>
+ *   <li>Home finish does NOT grant bonus roll</li>
+ *   <li>Own stack max 2 (block); third token cannot join</li>
+ *   <li>Opponent blocks: can pass through; cannot land on / capture</li>
+ *   <li>AFK timeout 20s: auto-roll or auto-select first legal move</li>
+ *   <li>Multi-winner rankings continue until ≤1 unfinished</li>
+ *   <li>Team mode: not implemented</li>
+ * </ul>
+ */
 @Service
 public class GameEngineService {
 
-  public static final String PHASE_ROLL = "WAITING_ROLL";
-  public static final String PHASE_MOVE = "WAITING_MOVE";
+  /** Spec name: AWAITING_ROLL */
+  public static final String PHASE_ROLL = "AWAITING_ROLL";
+  /** Spec name: AWAITING_MOVE */
+  public static final String PHASE_MOVE = "AWAITING_MOVE";
   public static final String PHASE_FINISHED = "FINISHED";
-  private static final int MAX_DICE = 3;
+
+  public static final int TURN_TIMEOUT_SECONDS = 20;
+  private static final int MAX_CONSECUTIVE_SIXES = 3;
 
   private final ConcurrentHashMap<String, MatchRuntime> matches = new ConcurrentHashMap<>();
+  private final SecureRandom secureRandom = new SecureRandom();
 
   public static class SeatInfo {
     public final String userId;
@@ -55,13 +79,15 @@ public class GameEngineService {
     final String[] userIds;
     final String[] usernames;
     final boolean[] isBot;
-    final int[][] tokens; // [seat][token] encoded positions
+    final int[][] tokens;
     final boolean[] finished;
     final int[] ranking;
     final List<Integer> diceList = new ArrayList<>();
     final ReentrantLock lock = new ReentrantLock();
     int currentSeat;
     int lastDice;
+    int consecutiveSixes;
+    boolean lastRollWasSix;
     String phase = PHASE_ROLL;
     Instant turnStartedAt = Instant.now();
     int nextRank = 1;
@@ -107,6 +133,7 @@ public class GameEngineService {
     return matches.containsKey(roomId);
   }
 
+  /** Client sends roll intent only — server generates the die value. */
   public GameSnapshot rollDice(String roomId, String userId) {
     MatchRuntime rt = require(roomId);
     rt.lock.lock();
@@ -165,45 +192,117 @@ public class GameEngineService {
     }
   }
 
+  public GameSnapshot skipTurn(String roomId) {
+    MatchRuntime rt = require(roomId);
+    rt.lock.lock();
+    try {
+      assertActive(rt);
+      clearDice(rt);
+      nextTurn(rt);
+      return snapshot(rt);
+    } finally {
+      rt.lock.unlock();
+    }
+  }
+
+  /**
+   * AFK / disconnect timeout (server authority): auto-roll if awaiting roll,
+   * else auto-select the first legal move if awaiting move.
+   */
+  public GameSnapshot resolveTimeout(String roomId) {
+    MatchRuntime rt = require(roomId);
+    rt.lock.lock();
+    try {
+      if (PHASE_FINISHED.equals(rt.phase)) {
+        return snapshot(rt);
+      }
+      Instant deadline = rt.turnStartedAt.plusSeconds(TURN_TIMEOUT_SECONDS);
+      if (Instant.now().isBefore(deadline)) {
+        return snapshot(rt);
+      }
+
+      int seat = rt.currentSeat;
+      if (rt.finished[seat]) {
+        nextTurn(rt);
+        return snapshot(rt);
+      }
+
+      if (PHASE_ROLL.equals(rt.phase)) {
+        return rollInternal(rt, seat);
+      }
+
+      if (PHASE_MOVE.equals(rt.phase)) {
+        List<int[]> moves = computeLegalMoves(rt, seat);
+        if (moves.isEmpty()) {
+          clearDice(rt);
+          nextTurn(rt);
+          return snapshot(rt);
+        }
+        int[] first = moves.get(0);
+        return moveInternal(rt, seat, first[0], first[1]);
+      }
+
+      nextTurn(rt);
+      return snapshot(rt);
+    } finally {
+      rt.lock.unlock();
+    }
+  }
+
+  /** @deprecated use {@link #resolveTimeout(String)} */
+  public GameSnapshot skipTurnIfTimedOut(String roomId) {
+    return resolveTimeout(roomId);
+  }
+
+  public java.util.Set<String> activeRoomIds() {
+    return matches.keySet();
+  }
+
   private GameSnapshot rollInternal(MatchRuntime rt, int seat) {
     assertActive(rt);
     if (rt.finished[seat]) {
-      throw new IllegalStateException("Player already finished");
+      // All tokens home already — no-op / pass
+      nextTurn(rt);
+      return snapshot(rt);
     }
     if (seat != rt.currentSeat) {
       throw new IllegalStateException("Not your turn");
     }
     if (!PHASE_ROLL.equals(rt.phase)) {
-      throw new IllegalStateException("Cannot roll now");
+      throw new IllegalStateException("Cannot roll now — state is not AWAITING_ROLL");
     }
 
-    int value = ThreadLocalRandom.current().nextInt(1, 7);
+    // Cryptographically sound RNG; client never supplies this value
+    int value = secureRandom.nextInt(6) + 1;
     rt.lastDice = value;
+    rt.diceList.clear();
     rt.diceList.add(value);
 
-    if (rt.diceList.size() == MAX_DICE && allSame(rt.diceList)) {
-      rt.diceList.clear();
-      rt.lastDice = 0;
-      nextTurn(rt);
-      return snapshot(rt);
-    }
-
-    boolean six = value == 6;
-    if (six && rt.diceList.size() < MAX_DICE) {
-      rt.phase = PHASE_ROLL;
-      rt.turnStartedAt = Instant.now();
-      return snapshot(rt);
-    }
-
-    List<int[]> moves = computeLegalMoves(rt, seat);
-    if (moves.isEmpty()) {
-      rt.diceList.clear();
-      rt.lastDice = 0;
-      nextTurn(rt);
+    if (value == 6) {
+      rt.consecutiveSixes += 1;
     } else {
-      rt.phase = PHASE_MOVE;
-      rt.turnStartedAt = Instant.now();
+      rt.consecutiveSixes = 0;
     }
+
+    // Third consecutive six: voided — no move, turn passes
+    if (rt.consecutiveSixes >= MAX_CONSECUTIVE_SIXES) {
+      clearDice(rt);
+      nextTurn(rt);
+      return snapshot(rt);
+    }
+
+    rt.lastRollWasSix = value == 6;
+    List<int[]> moves = computeLegalMoves(rt, seat);
+
+    // No legal moves (including on a 6) → pass immediately; 6 does NOT grant extra roll
+    if (moves.isEmpty()) {
+      clearDice(rt);
+      nextTurn(rt);
+      return snapshot(rt);
+    }
+
+    rt.phase = PHASE_MOVE;
+    rt.turnStartedAt = Instant.now();
     return snapshot(rt);
   }
 
@@ -212,11 +311,8 @@ public class GameEngineService {
     if (seat != rt.currentSeat) {
       throw new IllegalStateException("Not your turn");
     }
-    if (!PHASE_MOVE.equals(rt.phase) && !(PHASE_ROLL.equals(rt.phase) && !rt.diceList.isEmpty())) {
-      // allow move only in MOVE phase (sixes finish rolling first)
-    }
     if (!PHASE_MOVE.equals(rt.phase)) {
-      throw new IllegalStateException("Cannot move now");
+      throw new IllegalStateException("Cannot move now — state is not AWAITING_MOVE");
     }
     if (diceIndex < 0 || diceIndex >= rt.diceList.size()) {
       throw new IllegalArgumentException("Invalid dice index");
@@ -230,6 +326,7 @@ public class GameEngineService {
       throw new IllegalStateException("Illegal move");
     }
 
+    boolean usedSix = dice == 6;
     int from = rt.tokens[seat][tokenIndex];
     int to = applySteps(rt.colors[seat], from, dice);
     rt.tokens[seat][tokenIndex] = to;
@@ -240,34 +337,41 @@ public class GameEngineService {
       checkFinished(rt, seat);
     }
 
-    rt.diceList.remove(diceIndex);
-    rt.lastDice = 0;
+    clearDice(rt);
+    rt.lastRollWasSix = false;
 
-    boolean bonus = captured || reachedHome;
-    if (rt.phase.equals(PHASE_FINISHED)) {
+    if (PHASE_FINISHED.equals(rt.phase)) {
       return snapshot(rt);
     }
 
-    if (bonus) {
+    // Seat finished (all 4 home) → pass; no bonus
+    if (rt.finished[seat]) {
+      nextTurn(rt);
+      return snapshot(rt);
+    }
+
+    // Extra turn: (1) six was used for a move, or (2) capture bonus (separate from six-streak)
+    boolean extraFromSix = usedSix && rt.consecutiveSixes < MAX_CONSECUTIVE_SIXES;
+    boolean extraFromCapture = captured;
+    if (extraFromSix || extraFromCapture) {
+      if (!usedSix) {
+        // Capture after non-six: streak already 0; keep it
+        rt.consecutiveSixes = 0;
+      }
       rt.phase = PHASE_ROLL;
       rt.turnStartedAt = Instant.now();
       return snapshot(rt);
     }
 
-    if (!rt.diceList.isEmpty()) {
-      List<int[]> moves = computeLegalMoves(rt, seat);
-      if (moves.isEmpty()) {
-        rt.diceList.clear();
-        nextTurn(rt);
-      } else {
-        rt.phase = PHASE_MOVE;
-        rt.turnStartedAt = Instant.now();
-      }
-      return snapshot(rt);
-    }
-
+    rt.consecutiveSixes = 0;
     nextTurn(rt);
     return snapshot(rt);
+  }
+
+  private void clearDice(MatchRuntime rt) {
+    rt.diceList.clear();
+    rt.lastDice = 0;
+    rt.lastRollWasSix = false;
   }
 
   private void checkFinished(MatchRuntime rt, int seat) {
@@ -288,6 +392,7 @@ public class GameEngineService {
         last = i;
       }
     }
+    // Continue for rankings until ≤1 unfinished, then seal last place
     if (unfinished <= 1) {
       if (last >= 0 && !rt.finished[last]) {
         rt.finished[last] = true;
@@ -301,7 +406,6 @@ public class GameEngineService {
     if (!isMain(landPos) || SAFE_AREAS.contains(landPos)) {
       return false;
     }
-    // blockade check already prevents landing on 2+; capture singles
     boolean captured = false;
     Map<Integer, List<int[]>> bySeat = new LinkedHashMap<>();
     for (int s = 0; s < rt.maxPlayers; s++) {
@@ -315,6 +419,7 @@ public class GameEngineService {
       }
     }
     for (List<int[]> group : bySeat.values()) {
+      // Block (2+) is immune; only a single opponent token can be cut
       if (group.size() == 1) {
         int[] hit = group.get(0);
         rt.tokens[hit[0]][hit[1]] = JAIL;
@@ -333,8 +438,8 @@ public class GameEngineService {
       if (!rt.finished[seat]) {
         rt.currentSeat = seat;
         rt.phase = PHASE_ROLL;
-        rt.diceList.clear();
-        rt.lastDice = 0;
+        clearDice(rt);
+        rt.consecutiveSixes = 0;
         rt.turnStartedAt = Instant.now();
         return;
       }
@@ -360,20 +465,62 @@ public class GameEngineService {
       return false;
     }
     if (isJail(pos)) {
-      return dice == 6;
+      if (dice != 6) {
+        return false;
+      }
+      int start = rt.colors[seat].startTile();
+      // Start is always safe: mixed/own stacking unrestricted on safe cells
+      if (isSafe(start)) {
+        return true;
+      }
+      return countOwnOnCell(rt, seat, start, -1) < MAX_STACK;
     }
+
     int remaining = remainingDistance(rt.colors[seat], pos);
     if (dice > remaining) {
       return false;
     }
+
     int dest = applySteps(rt.colors[seat], pos, dice);
-    if (isMain(dest) && isBlocked(rt, seat, dest)) {
+
+    if (isHome(dest) && dice != remaining) {
       return false;
     }
+
+    if (isMain(dest)) {
+      // Safe cells: mixed occupancy OK; exempt from block / max-stack limits
+      if (isSafe(dest)) {
+        return true;
+      }
+      // Non-safe: cannot land on opponent block; own stack max MAX_STACK
+      if (hasOpponentBlock(rt, seat, dest)) {
+        return false;
+      }
+      if (countOwnOnCell(rt, seat, dest, tokenIndex) >= MAX_STACK) {
+        return false;
+      }
+    }
+
     return true;
   }
 
-  private boolean isBlocked(MatchRuntime rt, int moverSeat, int landPos) {
+  private int countOwnOnCell(MatchRuntime rt, int seat, int cell, int excludeToken) {
+    if (!isMain(cell)) {
+      return 0;
+    }
+    int count = 0;
+    for (int t = 0; t < 4; t++) {
+      if (t == excludeToken) {
+        continue;
+      }
+      if (rt.tokens[seat][t] == cell) {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  private boolean hasOpponentBlock(MatchRuntime rt, int moverSeat, int landPos) {
     Map<Integer, Integer> counts = new LinkedHashMap<>();
     for (int s = 0; s < rt.maxPlayers; s++) {
       if (s == moverSeat) {
@@ -385,7 +532,7 @@ public class GameEngineService {
         }
       }
     }
-    return counts.values().stream().anyMatch(c -> c >= 2);
+    return counts.values().stream().anyMatch(c -> c >= MAX_STACK);
   }
 
   private int remainingDistance(LudoColor color, int pos) {
@@ -425,11 +572,6 @@ public class GameEngineService {
     return pos;
   }
 
-  private boolean allSame(List<Integer> dice) {
-    int first = dice.get(0);
-    return dice.stream().allMatch(d -> d == first);
-  }
-
   private int seatOfUser(MatchRuntime rt, String userId) {
     if (userId == null) {
       return -1;
@@ -465,6 +607,13 @@ public class GameEngineService {
     snap.setDiceValue(rt.lastDice);
     snap.setDiceList(new ArrayList<>(rt.diceList));
     snap.setTurnStartedAt(rt.turnStartedAt);
+    snap.setTurnTimeoutSeconds(TURN_TIMEOUT_SECONDS);
+    long elapsed = Math.max(0, Instant.now().getEpochSecond() - rt.turnStartedAt.getEpochSecond());
+    snap.setTurnSecondsRemaining(
+        Math.max(0, (int) (TURN_TIMEOUT_SECONDS - elapsed))
+    );
+    snap.setConsecutiveSixes(rt.consecutiveSixes);
+    snap.setBonusRoll(PHASE_ROLL.equals(rt.phase) && rt.consecutiveSixes > 0);
     snap.setFinished(Arrays.copyOf(rt.finished, rt.finished.length));
     snap.setIsBot(Arrays.copyOf(rt.isBot, rt.isBot.length));
     snap.setUserIds(Arrays.asList(rt.userIds.clone()));
