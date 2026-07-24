@@ -17,8 +17,10 @@ import {
   EPositionProfiles,
   ETypeGame,
   DICE_VALUE_GET_OUT_JAIL,
+  EtypeTile,
   TOKEN_MOVEMENT_INTERVAL_VALUE,
 } from "../../utils/constants";
+import { playSound, preloadGameSounds } from "../../utils/sounds";
 import { PageWrapper } from "../wrapper";
 import {
   Board,
@@ -128,6 +130,7 @@ const Game = ({
 
   useEffect(() => {
     resetDiceKeyCounter();
+    preloadGameSounds();
   }, []);
 
   const passToNextPlayer = useCallback(
@@ -240,6 +243,7 @@ const Game = ({
 
       for (let i = 0; i < path.length; i++) {
         const step = path[i];
+        playSound("passingNext");
         working = working.map((group, pIdx) => {
           if (pIdx !== turn) return group;
           return {
@@ -261,6 +265,10 @@ const Game = ({
         setListTokens(working);
         listTokensRef.current = working;
         await delay(TOKEN_MOVEMENT_INTERVAL_VALUE);
+
+        if (step.typeTile === EtypeTile.END) {
+          playSound("inside");
+        }
       }
 
       working = working.map((group, pIdx) => {
@@ -329,6 +337,7 @@ const Game = ({
       }
 
       // Sync ref immediately so rollDone can read diceValue without waiting for React
+      playSound("diceRolling");
       setActionsTurn((current) => {
         const next = getRandomValueDice(current, diceValue);
         rollSeqRef.current += 1;
