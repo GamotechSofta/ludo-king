@@ -368,15 +368,19 @@
   width: 28px;
 }
 
+.player-swatch.RED,
 .player-swatch.red {
   background: var(--game-red);
 }
+.player-swatch.GREEN,
 .player-swatch.green {
   background: var(--game-green);
 }
+.player-swatch.YELLOW,
 .player-swatch.yellow {
   background: var(--game-yellow);
 }
+.player-swatch.BLUE,
 .player-swatch.blue {
   background: var(--game-blue);
 }

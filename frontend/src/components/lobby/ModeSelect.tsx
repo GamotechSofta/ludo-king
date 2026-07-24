@@ -43,12 +43,15 @@ const ModeSelect = ({ onBack, onSelect }: ModeSelectProps) => {
           </span>
         </button>
 
-        <button className="lobby-btn mode disabled" type="button" disabled>
-          <span className="lobby-badge">SOON</span>
+        <button
+          className="lobby-btn mode"
+          type="button"
+          onClick={() => onSelect("online")}
+        >
           <span className="mode-icon online" aria-hidden />
           <span className="mode-copy">
             <span>Online</span>
-            <small>Play worldwide in realtime</small>
+            <small>Realtime multiplayer + bots</small>
           </span>
         </button>
       </div>

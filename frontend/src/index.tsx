@@ -2,7 +2,9 @@ import "./index.css";
 import App from "./App";
 import React from "react";
 import ReactDOM from "react-dom/client";
-// import * as serviceWorkerRegistration from "./serviceWorkerRegistration";
+
+// SockJS / STOMP expect Node-style global in the browser
+(window as unknown as { global: Window }).global = window;
 
 const root = ReactDOM.createRoot(
   document.getElementById("root") as HTMLElement

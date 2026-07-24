@@ -1,0 +1,30 @@
+server:
+  port: ${PORT:3000}
+
+spring:
+  application:
+    name: ludo-backend
+  data:
+    mongodb:
+      uri: ${MONGO_URL}
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.security.oauth2.client.servlet.OAuth2ClientAutoConfiguration
+  session:
+    store-type: mongodb
+
+ludo:
+  client-url: ${CLIENT_URL:http://localhost:3043}
+  session-secret: ${SESSION_SECRET:ludo-dev-session-secret-change-me}
+  oauth-enabled: ${OAUTH_ENABLED:false}
+  google:
+    client-id: ${GOOGLE_KEY:}
+    client-secret: ${GOOGLE_SECRET:}
+  github:
+    client-id: ${GITHUB_KEY:}
+    client-secret: ${GITHUB_SECRET:}
+
+logging:
+  level:
+    com.ludo.backend: INFO
+    org.springframework.data.mongodb: WARN

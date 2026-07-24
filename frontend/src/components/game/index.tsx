@@ -46,6 +46,8 @@ import {
 } from "./rules";
 import "./game-over.css";
 
+import type { IResultEntry } from "../lobby/types";
+
 interface GameProps {
   totalPlayers: TTotalPlayers;
   initialTurn: number;
@@ -54,6 +56,7 @@ interface GameProps {
   boardColor?: TBoardColors;
   debug?: boolean;
   onExit?: () => void;
+  onGameOver?: (entries: IResultEntry[]) => void;
 }
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -66,6 +69,7 @@ const Game = ({
   boardColor = EBoardColors.RGYB,
   debug = false,
   onExit,
+  onGameOver,
 }: GameProps) => {
   const [players, setPlayers] = useState<IPlayer[]>(() =>
     getInitialDataPlayers(users, boardColor, totalPlayers)
@@ -124,6 +128,19 @@ const Game = ({
         if (isGameOver(nextPlayers)) {
           finalPlayers = finalizeRankings(nextPlayers);
           setGameOver(true);
+          if (onGameOver) {
+            const entries = finalPlayers
+              .slice()
+              .sort((a, b) => a.ranking - b.ranking)
+              .map((p) => ({
+                rank: p.ranking,
+                name: p.name,
+                color: p.color,
+                isBot: !!p.isBot,
+                isYou: !p.isBot && p.index === 0,
+              }));
+            window.setTimeout(() => onGameOver(entries), 500);
+          }
         }
         setPlayers(finalPlayers);
         playersRef.current = finalPlayers;
@@ -139,7 +156,7 @@ const Game = ({
         currentTurnRef.current = decision.nextTurn;
       }
     },
-    []
+    [onGameOver]
   );
 
   const runTokenMove = useCallback(
@@ -447,7 +464,7 @@ const Game = ({
         />
       </BoardWrapper>
 
-      {gameOver && (
+      {gameOver && !onGameOver && (
         <div className="game-over-overlay">
           <div className="game-over-card">
             <h2>Game Over</h2>
