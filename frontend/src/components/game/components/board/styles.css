@@ -272,7 +272,8 @@
     los demás colores dependen del giro del tablero...
   */
   --finish-row-base: calc(var(--size-tile) * 7);
-  --finish-row-top: linear-gradient(var(--nest-top-right-bg), var(--nest-top-right-bg)),
+  /* Top home: white arrow cell + 5 yellow */
+  --finish-row-top: linear-gradient(#ffffff, #ffffff),
     linear-gradient(var(--nest-top-right-bg), var(--nest-top-right-bg)),
     linear-gradient(var(--nest-top-right-bg), var(--nest-top-right-bg)),
     linear-gradient(var(--nest-top-right-bg), var(--nest-top-right-bg)),
@@ -286,8 +287,8 @@
     var(--finish-row-base) calc(var(--size-tile) * 4),
     var(--finish-row-base) calc(var(--size-tile) * 5);
 
-  /* Para las celdas de salida de la izquierda... */
-  --finish-row-left: linear-gradient(var(--nest-top-left-bg), var(--nest-top-left-bg)),
+  /* Left home: white arrow cell + 5 green */
+  --finish-row-left: linear-gradient(#ffffff, #ffffff),
     linear-gradient(var(--nest-top-left-bg), var(--nest-top-left-bg)),
     linear-gradient(var(--nest-top-left-bg), var(--nest-top-left-bg)),
     linear-gradient(var(--nest-top-left-bg), var(--nest-top-left-bg)),
@@ -301,7 +302,7 @@
     calc(var(--size-tile) * 4) var(--finish-row-base),
     calc(var(--size-tile) * 5) var(--finish-row-base);
 
-  /* Para las celdas de salida de la derecha... */
+  /* Right home: 5 blue + white arrow cell */
   --finish-row-right: linear-gradient(
       var(--nest-bottom-right-bg),
       var(--nest-bottom-right-bg)
@@ -310,7 +311,7 @@
     linear-gradient(var(--nest-bottom-right-bg), var(--nest-bottom-right-bg)),
     linear-gradient(var(--nest-bottom-right-bg), var(--nest-bottom-right-bg)),
     linear-gradient(var(--nest-bottom-right-bg), var(--nest-bottom-right-bg)),
-    linear-gradient(var(--nest-bottom-right-bg), var(--nest-bottom-right-bg));
+    linear-gradient(#ffffff, #ffffff);
 
   --finish-row-right-position: calc(var(--size-tile) * 9) var(--finish-row-base),
     calc(var(--size-tile) * 10) var(--finish-row-base),
@@ -319,7 +320,7 @@
     calc(var(--size-tile) * 13) var(--finish-row-base),
     calc(var(--size-tile) * 14) var(--finish-row-base);
 
-  /* Para las celdas de salida de abajo... */
+  /* Bottom home: 5 red + white arrow cell */
   --finish-bottom-right: linear-gradient(
       var(--nest-bottom-left-bg),
       var(--nest-bottom-left-bg)
@@ -328,7 +329,7 @@
     linear-gradient(var(--nest-bottom-left-bg), var(--nest-bottom-left-bg)),
     linear-gradient(var(--nest-bottom-left-bg), var(--nest-bottom-left-bg)),
     linear-gradient(var(--nest-bottom-left-bg), var(--nest-bottom-left-bg)),
-    linear-gradient(var(--nest-bottom-left-bg), var(--nest-bottom-left-bg));
+    linear-gradient(#ffffff, #ffffff);
 
   --finish-bottom-right-position: var(--finish-row-base)
       calc(var(--size-tile) * 9),
@@ -338,7 +339,11 @@
     var(--finish-row-base) calc(var(--size-tile) * 13),
     var(--finish-row-base) calc(var(--size-tile) * 14);
 
-  /* Start squares (colored) + star safes stay white */
+  /*
+    Start tiles colored (game path indices):
+    Y(8,1) B(13,8) R(6,13) G(1,6)
+    Star tiles stay white: (6,2)(12,6)(8,12)(2,8)
+  */
   --safe-points: linear-gradient(transparent, transparent),
     linear-gradient(var(--nest-top-right-bg), var(--nest-top-right-bg)),
     linear-gradient(transparent, transparent),
@@ -349,46 +354,56 @@
     linear-gradient(var(--nest-top-left-bg), var(--nest-top-left-bg));
 
   --safe-points-position: calc(var(--size-tile) * 6) calc(var(--size-tile) * 2),
-    calc(var(--size-tile) * 8) var(--size-tile),
+    calc(var(--size-tile) * 8) calc(var(--size-tile) * 1),
     calc(var(--size-tile) * 12) calc(var(--size-tile) * 6),
     calc(var(--size-tile) * 13) calc(var(--size-tile) * 8),
     calc(var(--size-tile) * 8) calc(var(--size-tile) * 12),
     calc(var(--size-tile) * 6) calc(var(--size-tile) * 13),
     calc(var(--size-tile) * 2) calc(var(--size-tile) * 8),
-    var(--size-tile) calc(var(--size-tile) * 6);
+    calc(var(--size-tile) * 1) calc(var(--size-tile) * 6);
 
-  /* White outlined star — only on the 4 white safe tiles (not start squares) */
-  --star-svg: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23ffffff' stroke='%23616161' stroke-width='1.4' stroke-linejoin='round' d='M12 2.8l2.4 5.9 6.4.5-4.9 4.3 1.5 6.2L12 16.7l-5.4 3 1.5-6.2-4.9-4.3 6.4-.5z'/%3E%3C/svg%3E");
+  --board-icon-size: calc(var(--size-tile) * 0.5);
+  --board-icon-pad: calc(var(--size-tile) * 0.25);
+
+  --star-svg: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23ffffff' stroke='%23333333' stroke-width='1.5' stroke-linejoin='round' d='M12 3.5l1.85 4.7 5.05.35-3.85 3.35 1.15 4.9L12 14.7l-4.2 2.1 1.15-4.9-3.85-3.35 5.05-.35z'/%3E%3C/svg%3E");
 
   --safe-starts: var(--star-svg), var(--star-svg), var(--star-svg), var(--star-svg);
-
-  --safe-stars-base-size: calc(var(--size-tile) * 0.72) calc(var(--size-tile) * 0.72);
-
-  --safe-starts-position: calc(var(--size-tile) * 6.14) calc(var(--size-tile) * 2.14),
-    calc(var(--size-tile) * 12.14) calc(var(--size-tile) * 6.14),
-    calc(var(--size-tile) * 8.14) calc(var(--size-tile) * 12.14),
-    calc(var(--size-tile) * 2.14) calc(var(--size-tile) * 8.14);
-
+  --safe-stars-base-size: var(--board-icon-size) var(--board-icon-size);
   --safe-stars-size: var(--safe-stars-base-size), var(--safe-stars-base-size),
     var(--safe-stars-base-size), var(--safe-stars-base-size);
 
-  /* Colored entry arrows on start squares */
-  --arrow-down: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23ffffff' stroke='%23212121' stroke-width='1.2' stroke-linejoin='round' d='M12 19L5 9h14z'/%3E%3C/svg%3E");
-  --arrow-left: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23ffffff' stroke='%23212121' stroke-width='1.2' stroke-linejoin='round' d='M5 12l10-7v14z'/%3E%3C/svg%3E");
-  --arrow-up: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23ffffff' stroke='%23212121' stroke-width='1.2' stroke-linejoin='round' d='M12 5l7 10H5z'/%3E%3C/svg%3E");
-  --arrow-right: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23ffffff' stroke='%23212121' stroke-width='1.2' stroke-linejoin='round' d='M19 12L9 5v14z'/%3E%3C/svg%3E");
+  /* Stars on tiles 21,34,47,8 → (6,2)(12,6)(8,12)(2,8) */
+  --safe-starts-position: calc(var(--size-tile) * 6 + var(--board-icon-pad))
+      calc(var(--size-tile) * 2 + var(--board-icon-pad)),
+    calc(var(--size-tile) * 12 + var(--board-icon-pad))
+      calc(var(--size-tile) * 6 + var(--board-icon-pad)),
+    calc(var(--size-tile) * 8 + var(--board-icon-pad))
+      calc(var(--size-tile) * 12 + var(--board-icon-pad)),
+    calc(var(--size-tile) * 2 + var(--board-icon-pad))
+      calc(var(--size-tile) * 8 + var(--board-icon-pad));
+
+  /* Player-colored thin arrows on white home-entry cells */
+  --arrow-down: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23fbc02d' d='M11.25 4h1.5v9.5h3.25L12 20 7.999 13.5H11.25z'/%3E%3C/svg%3E");
+  --arrow-left: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%231e88e5' d='M20 11.25v1.5H10.5v3.25L4 12l6.5-4.001V11.25z'/%3E%3C/svg%3E");
+  --arrow-up: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23e53935' d='M12.75 20h-1.5v-9.5H8L12 4l4.001 6.5H12.75z'/%3E%3C/svg%3E");
+  --arrow-right: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%2343a047' d='M4 12.75v-1.5h9.5V8L20 12l-6.5 4.001V12.75z'/%3E%3C/svg%3E");
 
   --start-arrows: var(--arrow-down), var(--arrow-left), var(--arrow-up),
     var(--arrow-right);
-  --start-arrows-size: calc(var(--size-tile) * 0.65) calc(var(--size-tile) * 0.65),
-    calc(var(--size-tile) * 0.65) calc(var(--size-tile) * 0.65),
-    calc(var(--size-tile) * 0.65) calc(var(--size-tile) * 0.65),
-    calc(var(--size-tile) * 0.65) calc(var(--size-tile) * 0.65);
-  /* Yellow (8,1) down · Blue (13,8) left · Red (6,13) up · Green (1,6) right */
-  --start-arrows-position: calc(var(--size-tile) * 8.175) calc(var(--size-tile) * 1.175),
-    calc(var(--size-tile) * 13.175) calc(var(--size-tile) * 8.175),
-    calc(var(--size-tile) * 6.175) calc(var(--size-tile) * 13.175),
-    calc(var(--size-tile) * 1.175) calc(var(--size-tile) * 6.175);
+  --start-arrows-size: var(--board-icon-size) var(--board-icon-size),
+    var(--board-icon-size) var(--board-icon-size),
+    var(--board-icon-size) var(--board-icon-size),
+    var(--board-icon-size) var(--board-icon-size);
+
+  /* Photo: Y(7,0)↓ B(14,7)← R(7,14)↑ G(0,7)→ */
+  --start-arrows-position: calc(var(--size-tile) * 7 + var(--board-icon-pad))
+      var(--board-icon-pad),
+    calc(var(--size-tile) * 14 + var(--board-icon-pad))
+      calc(var(--size-tile) * 7 + var(--board-icon-pad)),
+    calc(var(--size-tile) * 7 + var(--board-icon-pad))
+      calc(var(--size-tile) * 14 + var(--board-icon-pad)),
+    var(--board-icon-pad)
+      calc(var(--size-tile) * 7 + var(--board-icon-pad));
 }
 
 .game-board {
