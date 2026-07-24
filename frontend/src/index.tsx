@@ -1,5 +1,5 @@
 import "./index.css";
-import bgLudoPattern from "./assets/bg-ludo-pattern.png";
+import bgLudoPattern from "./assets/bg-ludo-pattern.webp";
 import App from "./App";
 import React from "react";
 import ReactDOM from "react-dom/client";
