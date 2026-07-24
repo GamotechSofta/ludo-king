@@ -34,18 +34,6 @@ const ModeSelect = ({ onBack, onSelect }: ModeSelectProps) => {
         <button
           className="lobby-btn mode"
           type="button"
-          onClick={() => onSelect("local")}
-        >
-          <span className="mode-icon local" aria-hidden />
-          <span className="mode-copy">
-            <span>Pass &amp; Play</span>
-            <small>Same device · 2–4 friends</small>
-          </span>
-        </button>
-
-        <button
-          className="lobby-btn mode"
-          type="button"
           onClick={() => onSelect("online")}
         >
           <span className="mode-icon online" aria-hidden />

@@ -22,8 +22,8 @@
 
 .lobby-back {
   align-self: flex-start;
-  background: rgba(0, 24, 64, 0.35);
-  border: 2px solid rgba(255, 255, 255, 0.35);
+  background: #0d47a1;
+  border: 2px solid #90caf9;
   border-radius: 999px;
   color: #fff;
   cursor: pointer;
@@ -270,10 +270,10 @@
 }
 
 .lobby-panel {
-  background: rgba(0, 28, 72, 0.42);
-  border: 2px solid rgba(255, 255, 255, 0.28);
+  background: #0b4a9e;
+  border: 2px solid rgba(255, 255, 255, 0.45);
   border-radius: 22px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
   padding: 18px;
   width: 100%;
 }
@@ -302,8 +302,8 @@
 }
 
 .player-count button {
-  background: rgba(255, 255, 255, 0.12);
-  border: 2px solid rgba(255, 255, 255, 0.28);
+  background: #1565c0;
+  border: 2px solid #90caf9;
   border-radius: 14px;
   color: #fff;
   cursor: pointer;
@@ -329,8 +329,8 @@
 
 .player-row {
   align-items: center;
-  background: rgba(255, 255, 255, 0.12);
-  border: 2px solid rgba(255, 255, 255, 0.2);
+  background: #0d47a1;
+  border: 2px solid #64b5f6;
   border-radius: 14px;
   display: flex;
   gap: 10px;
