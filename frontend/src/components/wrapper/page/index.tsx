@@ -1,4 +1,5 @@
 import "./styles.css";
+import "../../lobby/styles.css";
 import React, { ReactNode } from "react";
 
 interface PageWrapperProps {

@@ -169,7 +169,7 @@ const getTokensInJail = (
  * @param players
  * @returns
  */
-const validateDisabledDice = (indexTurn: number, players: IPlayer[]) => {
+export const validateDisabledDice = (indexTurn: number, players: IPlayer[]) => {
   /**
    * Se obtiene la información del jugador que tiene el turno...
    */

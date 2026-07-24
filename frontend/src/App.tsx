@@ -1,39 +1,78 @@
+import React, { useState } from "react";
 import { AppWrapper } from "./components/wrapper";
 import Game from "./components/game";
-import React from "react";
+import {
+  Home,
+  ModeSelect,
+  Setup,
+  type IGameConfig,
+  type TLobbyScreen,
+  type TPlayMode,
+} from "./components/lobby";
 import type { IUser, TTotalPlayers } from "./interfaces";
-
-const TEMP_USERS: IUser[] = [
-  {
-    id: "1",
-    name: "Player 01",
-    isBot: false,
-  },
-  {
-    id: "2",
-    name: "Player 02",
-    isBot: true,
-  },
-  {
-    id: "3",
-    name: "Player 03",
-    isBot: false,
-  },
-  {
-    id: "4",
-    name: "Player 04",
-    isBot: false,
-  },
-];
+import { ETypeGame } from "./utils/constants";
 
 const App = () => {
+  const [screen, setScreen] = useState<TLobbyScreen>("home");
+  const [mode, setMode] = useState<TPlayMode>("computer");
+  const [gameConfig, setGameConfig] = useState<IGameConfig | null>(null);
+
+  const handleSelectMode = (nextMode: TPlayMode) => {
+    if (nextMode === "online") return;
+    setMode(nextMode);
+    setScreen("setup");
+  };
+
+  const handleStart = (config: IGameConfig) => {
+    setGameConfig(config);
+    setScreen("game");
+  };
+
+  const handleExitGame = () => {
+    setGameConfig(null);
+    setScreen("home");
+  };
+
+  if (screen === "game" && gameConfig) {
+    const users: IUser[] = gameConfig.players.map((player) => ({
+      id: player.id,
+      name: player.name.trim() || "Player",
+      isBot: player.isBot,
+    }));
+
+    return (
+      <AppWrapper>
+        <Game
+          key={`${gameConfig.mode}-${gameConfig.totalPlayers}-${users
+            .map((u) => u.name)
+            .join("-")}`}
+          initialTurn={0}
+          users={users}
+          totalPlayers={gameConfig.totalPlayers as TTotalPlayers}
+          typeGame={ETypeGame.OFFLINE}
+          debug={false}
+          onExit={handleExitGame}
+        />
+      </AppWrapper>
+    );
+  }
+
   return (
     <AppWrapper>
-      <Game
-        initialTurn={0}
-        users={TEMP_USERS}
-        totalPlayers={TEMP_USERS.length as TTotalPlayers}
-      />
+      {screen === "home" && <Home onPlay={() => setScreen("modes")} />}
+      {screen === "modes" && (
+        <ModeSelect
+          onBack={() => setScreen("home")}
+          onSelect={handleSelectMode}
+        />
+      )}
+      {screen === "setup" && (
+        <Setup
+          mode={mode}
+          onBack={() => setScreen("modes")}
+          onStart={handleStart}
+        />
+      )}
     </AppWrapper>
   );
 };

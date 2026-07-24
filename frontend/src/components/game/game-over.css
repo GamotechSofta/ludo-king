@@ -1,0 +1,48 @@
+.game-over-overlay {
+  align-items: center;
+  background: rgba(0, 20, 50, 0.55);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  position: absolute;
+  z-index: 40;
+}
+
+.game-over-card {
+  background: linear-gradient(180deg, #1aa7e8 0%, #0b6ec4 100%);
+  border: 3px solid rgba(255, 255, 255, 0.45);
+  border-radius: 22px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+  color: #fff;
+  font-family: "Fredoka", sans-serif;
+  padding: 24px 22px;
+  text-align: center;
+  width: min(320px, 86%);
+}
+
+.game-over-card h2 {
+  font-family: "Lilita One", cursive;
+  font-size: 2rem;
+  margin-bottom: 12px;
+  text-shadow: 0 3px 0 rgba(0, 0, 0, 0.25);
+}
+
+.game-over-card ol {
+  list-style: none;
+  margin: 0 0 18px;
+  padding: 0;
+}
+
+.game-over-card li {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  text-align: left;
+}
+
+.game-over-card li span {
+  color: #ffe56a;
+  margin-right: 6px;
+}

@@ -28,8 +28,8 @@ html {
 
 html,
 body {
-  background-color: black;
-  font-family: Arial, Helvetica, sans-serif;
+  background: #041833;
+  font-family: "Fredoka", Arial, Helvetica, sans-serif;
   height: 100%;
   position: fixed;
   width: 100%;
