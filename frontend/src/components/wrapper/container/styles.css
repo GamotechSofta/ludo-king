@@ -1,9 +1,12 @@
 .container {
   align-items: center;
   display: flex;
-  height: 100%;
+  flex-shrink: 0;
+  height: var(--base-height);
   justify-content: center;
-  width: 100%;
+  overflow: hidden;
+  position: relative;
+  width: var(--base-width);
 }
 
 .screen {
@@ -14,17 +17,21 @@
   background-position: center center;
   background-repeat: no-repeat;
   display: flex;
+  flex-shrink: 0;
   height: var(--base-height);
   justify-content: center;
+  left: 0;
   overflow: hidden;
-  position: relative;
+  position: absolute;
+  top: 0;
   width: var(--base-width);
+  transform-origin: top left;
 }
 
 @media only screen and (max-width: 420px) {
   .screen {
-    background: unset;
-    background-image: unset;
+    background-color: transparent;
+    background-image: none;
   }
 
   body {

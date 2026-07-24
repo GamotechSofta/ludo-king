@@ -3,6 +3,7 @@ import bgLudoPattern from "./assets/bg-ludo-pattern.webp";
 import App from "./App";
 import React from "react";
 import ReactDOM from "react-dom/client";
+import { applyScreenResize } from "./utils/resize-screen";
 
 // SockJS / STOMP expect Node-style global in the browser
 (window as unknown as { global: Window }).global = window;
@@ -58,6 +59,13 @@ root.render(
     <App />
   </React.StrictMode>
 );
+
+// Fit layout after first paint (refresh / mobile)
+requestAnimationFrame(() => {
+  applyScreenResize();
+  requestAnimationFrame(applyScreenResize);
+});
+window.addEventListener("load", applyScreenResize);
 
 // If you want your app to work offline and load faster, you can change
 // unregister() to register() below. Note this comes with some pitfalls.

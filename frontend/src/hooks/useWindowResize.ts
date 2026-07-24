@@ -1,13 +1,22 @@
 import { useEffect } from "react";
-import onWindowResize from "../utils/resize-screen";
+import resizeScreen, { applyScreenResize } from "../utils/resize-screen";
 
 const useWindowResize = () => {
   useEffect(() => {
-    window.addEventListener("resize", onWindowResize);
-    onWindowResize();
+    // Immediate fit on mount / refresh (no debounce delay)
+    applyScreenResize();
+    requestAnimationFrame(applyScreenResize);
+
+    window.addEventListener("resize", resizeScreen);
+    window.addEventListener("orientationchange", resizeScreen);
+    window.visualViewport?.addEventListener("resize", resizeScreen);
+    window.visualViewport?.addEventListener("scroll", resizeScreen);
 
     return () => {
-      window.removeEventListener("resize", onWindowResize);
+      window.removeEventListener("resize", resizeScreen);
+      window.removeEventListener("orientationchange", resizeScreen);
+      window.visualViewport?.removeEventListener("resize", resizeScreen);
+      window.visualViewport?.removeEventListener("scroll", resizeScreen);
     };
   }, []);
 };
