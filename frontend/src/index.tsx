@@ -1,10 +1,16 @@
 import "./index.css";
+import bgLudoPattern from "./assets/bg-ludo-pattern.png";
 import App from "./App";
 import React from "react";
 import ReactDOM from "react-dom/client";
 
 // SockJS / STOMP expect Node-style global in the browser
 (window as unknown as { global: Window }).global = window;
+
+document.documentElement.style.setProperty(
+  "--bg-image",
+  `url(${bgLudoPattern})`
+);
 
 const root = ReactDOM.createRoot(
   document.getElementById("root") as HTMLElement

@@ -10,8 +10,8 @@
   --header-blue: #2196f3;
   --bg-navy: #0a2a5c;
 
-  /* Exact Ludo King blue board-silhouette wallpaper */
-  --bg-image: url("./assets/bg-ludo-pattern.png");
+  /* Set from index.tsx so webpack resolves the PNG reliably */
+  --bg-image: none;
 }
 
 * {
