@@ -1,0 +1,10 @@
+target/
+tools/
+.env
+.git
+.idea
+*.iml
+*.log
+.DS_Store
+README.md
+maven.zip

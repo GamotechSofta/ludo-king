@@ -1,0 +1,19 @@
+# Example Render Blueprint — optional.
+# Or create a Web Service manually with Docker (see README).
+
+services:
+  - type: web
+    name: ludo-backend
+    runtime: docker
+    rootDir: backend-spring
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: MONGO_URL
+        sync: false
+      - key: CLIENT_URL
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: OAUTH_ENABLED
+        value: "false"

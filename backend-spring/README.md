@@ -40,6 +40,33 @@ mvn -DskipTests package
 java -jar target\ludo-backend-0.0.1-SNAPSHOT.jar
 ```
 
+## Deploy on Render (Docker)
+
+Render does **not** natively support Java — use **Docker**.
+
+1. Push this repo to GitHub (include `backend-spring/Dockerfile`).
+2. Render Dashboard → **New** → **Web Service** → connect the repo.
+3. Settings:
+   - **Language / Runtime:** `Docker`
+   - **Root Directory:** `backend-spring`
+   - Dockerfile path: `Dockerfile` (default)
+4. Environment variables:
+
+| Key | Example |
+|-----|---------|
+| `MONGO_URL` | Atlas connection string |
+| `CLIENT_URL` | `https://your-frontend.onrender.com` (or Vercel/Netlify URL) |
+| `SESSION_SECRET` | long random string |
+| `OAUTH_ENABLED` | `false` |
+
+`PORT` is set by Render automatically.
+
+5. Atlas Network Access → allow `0.0.0.0/0`.
+6. After deploy, open `https://YOUR-SERVICE.onrender.com/health`.
+7. Frontend: set `REACT_APP_API_URL=https://YOUR-SERVICE.onrender.com`.
+
+Free tier sleeps after idle; first request can take ~30–60s.
+
 ## Endpoints (compatible with Node backend)
 
 | Method | Path | Description |
