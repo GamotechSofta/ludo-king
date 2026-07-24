@@ -14,6 +14,7 @@ spring:
     store-type: mongodb
 
 ludo:
+  # Comma-separated origins allowed for CORS / WebSocket (from CLIENT_URL)
   client-url: ${CLIENT_URL:http://localhost:3043}
   session-secret: ${SESSION_SECRET:ludo-dev-session-secret-change-me}
   oauth-enabled: ${OAUTH_ENABLED:false}

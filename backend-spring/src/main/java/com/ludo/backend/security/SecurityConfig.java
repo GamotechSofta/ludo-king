@@ -76,8 +76,8 @@ public class SecurityConfig {
     if (clients.getIfAvailable() != null) {
       http.oauth2Login(oauth -> oauth
           .userInfoEndpoint(userInfo -> userInfo.userService(oAuth2UserService()))
-          .defaultSuccessUrl(properties.clientUrl(), true)
-          .failureUrl(properties.clientUrl())
+          .defaultSuccessUrl(properties.primaryClientUrl(), true)
+          .failureUrl(properties.primaryClientUrl())
       );
     }
 
@@ -127,7 +127,7 @@ public class SecurityConfig {
   @Bean
   CorsConfigurationSource corsConfigurationSource() {
     CorsConfiguration config = new CorsConfiguration();
-    config.setAllowedOrigins(List.of(properties.clientUrl()));
+    config.setAllowedOrigins(properties.allowedClientOrigins());
     config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
     config.setAllowedHeaders(List.of("*"));
     config.setAllowCredentials(true);
