@@ -1,6 +1,6 @@
 .game-profile-section {
   display: flex;
-  margin: 6px 8px 2px;
+  margin: 0 8px;
   width: calc(100% - 16px);
   max-width: 440px;
   z-index: 3;
