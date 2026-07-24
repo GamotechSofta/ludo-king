@@ -62,16 +62,20 @@ const Profile = ({
             ))}
           </div>
         </div>
-        {hasTurn && (
-          <RenderDice
-            disabledDice={actionsTurn.disabledDice || !actionsTurn.showDice}
-            showDice
-            diceRollNumber={actionsTurn.diceRollNumber}
-            value={actionsTurn.diceValue}
-            handleDoneDice={handleDoneDice}
-            handleSelectDice={() => handleSelectDice()}
-          />
-        )}
+        <RenderDice
+          hasTurn={hasTurn}
+          disabledDice={
+            !hasTurn || actionsTurn.disabledDice || !actionsTurn.showDice
+          }
+          showDice
+          showArrow={hasTurn && !actionsTurn.disabledDice && actionsTurn.showDice}
+          diceRollNumber={hasTurn ? actionsTurn.diceRollNumber : 0}
+          value={hasTurn ? actionsTurn.diceValue : 0}
+          handleDoneDice={handleDoneDice}
+          handleSelectDice={() => {
+            if (hasTurn) handleSelectDice();
+          }}
+        />
       </div>
       {player.finished && <Ranking value={player.ranking} />}
     </div>

@@ -5,8 +5,10 @@ import ReactDice, { ReactDiceRef } from "react-dice-complete";
 import type { TDicevalues } from "../../../../../../interfaces";
 
 interface RenderDiceProps {
+  hasTurn?: boolean;
   disabledDice: boolean;
   showDice: boolean;
+  showArrow?: boolean;
   value: 0 | TDicevalues;
   diceRollNumber: number;
   handleDoneDice: () => void;
@@ -14,8 +16,10 @@ interface RenderDiceProps {
 }
 
 const RenderDice = ({
+  hasTurn = false,
   disabledDice = false,
   showDice = true,
+  showArrow = false,
   value = 0,
   diceRollNumber = 0,
   handleDoneDice,
@@ -36,42 +40,49 @@ const RenderDice = ({
   const rollTime = value !== 0 ? ROLL_TIME_VALUE : 0;
 
   useEffect(() => {
+    if (!hasTurn) return;
     if (value !== 0 && diceRollNumber !== 0) {
       refDice.current?.rollAll([value]);
     }
-  }, [value, diceRollNumber]);
+  }, [hasTurn, value, diceRollNumber]);
 
   if (!showDice) return null;
 
   return (
-    <div className={`game-profile-dice ${disabledDice ? "rolled" : "ready"}`}>
-      {!disabledDice && <span className="game-profile-dice-arrow" aria-hidden />}
+    <div
+      className={`game-profile-dice ${
+        hasTurn && !disabledDice ? "ready" : "rolled"
+      }${showArrow ? " has-arrow" : ""}${hasTurn ? " has-die" : " empty"}`}
+    >
+      {showArrow && <span className="game-profile-dice-arrow" aria-hidden />}
       <button
         className="game-profile-dice-button"
         type="button"
-        disabled={disabledDice}
+        disabled={disabledDice || !hasTurn}
         onClick={handleSelectDice}
-        aria-label="Roll dice"
+        aria-label={hasTurn ? "Roll dice" : "Waiting for turn"}
       />
-      <div className="game-profile-dice-face">
-        <ReactDice
-          ref={refDice}
-          disableIndividual
-          defaultRoll={1}
-          dieSize={36}
-          dotColor="#111111"
-          faceColor="#ffffff"
-          numDice={1}
-          outline
-          rollTime={rollTime}
-          rollDone={() => {
-            if (valueRef.current !== 0) {
-              handleDoneDiceRef.current();
-            }
-          }}
-          outlineColor="#d0d0d0"
-        />
-      </div>
+      {hasTurn && (
+        <div className="game-profile-dice-face">
+          <ReactDice
+            ref={refDice}
+            disableIndividual
+            defaultRoll={1}
+            dieSize={36}
+            dotColor="#111111"
+            faceColor="#ffffff"
+            numDice={1}
+            outline
+            rollTime={rollTime}
+            rollDone={() => {
+              if (valueRef.current !== 0) {
+                handleDoneDiceRef.current();
+              }
+            }}
+            outlineColor="#c8c8c8"
+          />
+        </div>
+      )}
     </div>
   );
 };

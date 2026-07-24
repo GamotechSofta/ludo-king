@@ -1,16 +1,16 @@
-/* Blue pad + die hang off the navy card like the photo */
+/* Flat pad — no 3D blue bevel */
 .game-profile-dice {
   position: relative;
-  width: 54px;
-  height: 54px;
+  width: 52px;
+  height: 52px;
   flex-shrink: 0;
   margin-left: 2px;
-  margin-right: -6px;
+  margin-right: -4px;
   overflow: visible;
 }
 
 .game-profile.right .game-profile-dice {
-  margin-left: -6px;
+  margin-left: -4px;
   margin-right: 2px;
 }
 
@@ -19,13 +19,10 @@
   position: absolute;
   inset: 0;
   border: none;
-  border-radius: 14px;
+  border-radius: 8px;
   cursor: pointer;
-  background: linear-gradient(180deg, #42a5f5 0%, #2196f3 45%, #1565c0 100%);
-  box-shadow:
-    0 4px 0 #0d47a1,
-    0 7px 12px rgba(0, 0, 0, 0.4),
-    inset 0 2px 0 rgba(255, 255, 255, 0.4);
+  background: #f8bbd0;
+  box-shadow: none;
 }
 
 .game-profile-dice-button:disabled {
@@ -33,24 +30,22 @@
 }
 
 .game-profile-dice-button:not(:disabled):active {
-  transform: translateY(2px);
-  box-shadow:
-    0 2px 0 #0d47a1,
-    0 3px 6px rgba(0, 0, 0, 0.3);
+  transform: none;
+  box-shadow: none;
+  opacity: 0.92;
 }
 
-/* Solid white down arrow above the pad */
 .game-profile-dice-arrow {
   position: absolute;
-  top: -18px;
+  top: -14px;
   left: 50%;
   width: 0;
   height: 0;
-  margin-left: -9px;
-  border-left: 9px solid transparent;
-  border-right: 9px solid transparent;
-  border-top: 13px solid #ffffff;
-  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.4));
+  margin-left: -7px;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-top: 10px solid #ffeb3b;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.3));
   animation: dice-arrow-bounce 0.55s ease-in-out infinite alternate;
   z-index: 4;
   pointer-events: none;
@@ -61,19 +56,17 @@
     transform: translateY(0);
   }
   to {
-    transform: translateY(5px);
+    transform: translateY(3px);
   }
 }
 
-/* Die overlaps the blue pad (slightly low / center) */
 .game-profile-dice-face {
   position: absolute;
   left: 50%;
-  top: 52%;
+  top: 50%;
   transform: translate(-50%, -50%);
   z-index: 3;
   pointer-events: none;
-  filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.4));
 }
 
 .game-profile-dice-face .dice {
@@ -94,6 +87,6 @@
     transform: translate(-50%, -50%);
   }
   50% {
-    transform: translate(-50%, calc(-50% - 3px));
+    transform: translate(-50%, calc(-50% - 2px));
   }
 }
