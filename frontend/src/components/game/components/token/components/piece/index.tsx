@@ -60,21 +60,36 @@ const PAWN_COLORS: Record<
   },
 };
 
-/** Ludo King–style map-pin pawn (colored base + silver pin + glossy inset). */
+/** Larger pin; aspect matches SVG so tip centers correctly. */
+export const PAWN_WIDTH = SIZE_TILE * 1.28;
+export const PAWN_HEIGHT = PAWN_WIDTH * (76 / 64);
+/**
+ * Anchor on the colored base disc (cy=66), not the sharp tip (y=70),
+ * so the pawn sits centered on nest soft-pads / path cells.
+ */
+export const PAWN_TIP_RATIO = 66 / 76;
+
 const Piece = ({ color, style = {}, index = 0, debug = false }: PieceProps) => {
   const colorKey = (color || "RED").toLowerCase();
   const palette = PAWN_COLORS[colorKey] || PAWN_COLORS.red;
   const uid = `${colorKey}-${index}`;
 
+  const baseStyle: React.CSSProperties = {
+    width: PAWN_WIDTH,
+    height: PAWN_HEIGHT,
+    left: (SIZE_TILE - PAWN_WIDTH) / 2,
+    top: SIZE_TILE / 2 - PAWN_HEIGHT * PAWN_TIP_RATIO,
+  };
+
   return (
     <div
       className={`game-token-piece ${colorKey}`}
-      style={{ width: SIZE_TILE, height: SIZE_TILE, ...style }}
+      style={{ ...baseStyle, ...style }}
     >
       <svg
         className="game-token-piece-svg"
-        viewBox="0 0 64 80"
-        preserveAspectRatio="xMidYMax meet"
+        viewBox="0 0 64 76"
+        preserveAspectRatio="xMidYMid meet"
         xmlns="http://www.w3.org/2000/svg"
         aria-hidden
       >
@@ -84,10 +99,16 @@ const Piece = ({ color, style = {}, index = 0, debug = false }: PieceProps) => {
             <stop offset="65%" stopColor={palette.baseMid} />
             <stop offset="100%" stopColor={palette.baseDark} />
           </radialGradient>
-          <linearGradient id={`pawn-pin-${uid}`} x1="0%" y1="0%" x2="100%" y2="100%">
+          <linearGradient
+            id={`pawn-pin-${uid}`}
+            x1="20%"
+            y1="0%"
+            x2="80%"
+            y2="100%"
+          >
             <stop offset="0%" stopColor="#ffffff" />
-            <stop offset="40%" stopColor="#f0f0f0" />
-            <stop offset="100%" stopColor="#bdbdbd" />
+            <stop offset="45%" stopColor="#f0f0f0" />
+            <stop offset="100%" stopColor="#b0b0b0" />
           </linearGradient>
           <radialGradient id={`pawn-inset-${uid}`} cx="32%" cy="28%" r="68%">
             <stop offset="0%" stopColor={palette.insetLight} />
@@ -96,70 +117,69 @@ const Piece = ({ color, style = {}, index = 0, debug = false }: PieceProps) => {
           </radialGradient>
           <filter
             id={`pawn-shadow-${uid}`}
-            x="-35%"
+            x="-40%"
             y="-15%"
-            width="170%"
+            width="180%"
             height="150%"
           >
             <feDropShadow
-              dx="1.2"
-              dy="2.2"
-              stdDeviation="1.6"
+              dx="1"
+              dy="2"
+              stdDeviation="1.4"
               floodColor="#000000"
-              floodOpacity="0.42"
+              floodOpacity="0.4"
             />
           </filter>
         </defs>
 
+        {/* Colored base disc under tip */}
         <circle
           cx="32"
           cy="66"
-          r="13.5"
+          r="11"
           fill={`url(#pawn-base-${uid})`}
-          stroke="rgba(0,0,0,0.4)"
-          strokeWidth="1.3"
+          stroke="rgba(0,0,0,0.35)"
+          strokeWidth="1.1"
         />
         <circle
           cx="32"
           cy="66"
-          r="8.2"
+          r="6.5"
           fill={palette.baseWell}
-          opacity="0.5"
+          opacity="0.45"
         />
 
         <g filter={`url(#pawn-shadow-${uid})`}>
           <path
-            d="M32 6
-               C19.5 6 10 16.2 10 28.5
-               C10 42 32 66 32 66
-               C32 66 54 42 54 28.5
-               C54 16.2 44.5 6 32 6 Z"
+            d="M32 4
+               C20.5 4 12 14 12 25.5
+               C12 38 32 70 32 70
+               C32 70 52 38 52 25.5
+               C52 14 43.5 4 32 4 Z"
             fill={`url(#pawn-pin-${uid})`}
-            stroke="#222222"
-            strokeWidth="1.5"
+            stroke="#2a2a2a"
+            strokeWidth="1.35"
             strokeLinejoin="round"
           />
           <circle
             cx="32"
-            cy="27"
-            r="12.5"
+            cy="24"
+            r="11.5"
             fill={`url(#pawn-inset-${uid})`}
-            stroke="rgba(0,0,0,0.3)"
-            strokeWidth="1.1"
+            stroke="rgba(0,0,0,0.28)"
+            strokeWidth="1"
           />
           <ellipse
-            cx="27"
-            cy="21"
-            rx="4.2"
-            ry="3.2"
+            cx="27.5"
+            cy="18.5"
+            rx="3.8"
+            ry="2.8"
             fill="#ffffff"
-            opacity="0.38"
+            opacity="0.4"
           />
         </g>
       </svg>
-      {debug && (
-        <span style={{ width: SIZE_TILE, height: SIZE_TILE }}>{index}</span>
-      )}
+      {debug && <span>{index}</span>}
     </div>
   );
 };

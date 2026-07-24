@@ -306,29 +306,38 @@ const calculatePosition = (point: IPoint) => {
 };
 
 /**
- * Calcula la posición del punto de inicio (fichas en la carcel)
- * @param baseX
- * @param baseY
- * @returns
+ * Home-nest soft-pad centers — must match board/styles.css:
+ * circle size 1.55 tile, positions at 1.35 / 3.1 → centers 2.125 / 3.875
+ * Order: TL, BL, TR, BR (same as previous getStartPositions index order)
  */
-const getStartPositions = (baseX: number, baseY: number) => {
-  const position: IPositionsItems[] = [];
-  const center = SIZE_TILE / 2;
+const NEST_PAD_CENTERS = [
+  { x: 2.125, y: 2.125 },
+  { x: 2.125, y: 3.875 },
+  { x: 3.875, y: 2.125 },
+  { x: 3.875, y: 3.875 },
+] as const;
 
-  for (let i = 0; i < 4; i++) {
-    const increaseX = i >= 2 ? 2 : 0;
-    const increaseY = i % 2 !== 0 ? 2 : 0;
+/**
+ * Start (jail) positions: token wrapper top-left so the pin tip
+ * (at wrapper center) lands on each nest soft-pad center.
+ * @param nestOriginX nest top-left tile X (0 or 9)
+ * @param nestOriginY nest top-left tile Y (0 or 9)
+ */
+const getStartPositions = (nestOriginX: number, nestOriginY: number) => {
+  const half = SIZE_TILE / 2;
 
-    const x = SIZE_TILE * (baseX + increaseX) - center;
-    const y = SIZE_TILE * (baseY + increaseY) - center;
+  return NEST_PAD_CENTERS.map((pad, index) => {
+    const tipX = SIZE_TILE * (nestOriginX + pad.x);
+    const tipY = SIZE_TILE * (nestOriginY + pad.y);
 
-    position.push({
-      index: i,
-      coordinate: { x, y },
-    });
-  }
-
-  return position;
+    return {
+      index,
+      coordinate: {
+        x: tipX - half,
+        y: tipY - half,
+      },
+    };
+  });
 };
 
 /**
@@ -364,28 +373,28 @@ export const POSITION_ELEMENTS_BOARD: TLocationBoardElements = {
     exitTileIndex: COLOR_BOARD.RED.turningTile,
     exitTiles: calculatePosition(EXIT_TILES_VALUES.BOTTOM_LEFT),
     finalPositions: FINAL_POSITIONS_VALUES.BOTTOM_LEFT,
-    startPositions: getStartPositions(2, 11),
+    startPositions: getStartPositions(0, 9),
     startTileIndex: COLOR_BOARD.RED.startTile,
   },
   TOP_LEFT: {
     exitTileIndex: COLOR_BOARD.GREEN.turningTile,
     exitTiles: calculatePosition(EXIT_TILES_VALUES.TOP_LEFT),
     finalPositions: FINAL_POSITIONS_VALUES.TOP_LEFT,
-    startPositions: getStartPositions(2, 2),
+    startPositions: getStartPositions(0, 0),
     startTileIndex: COLOR_BOARD.GREEN.startTile,
   },
   TOP_RIGHT: {
     exitTileIndex: COLOR_BOARD.YELLOW.turningTile,
     exitTiles: calculatePosition(EXIT_TILES_VALUES.TOP_RIGHT),
     finalPositions: FINAL_POSITIONS_VALUES.TOP_RIGHT,
-    startPositions: getStartPositions(11, 2),
+    startPositions: getStartPositions(9, 0),
     startTileIndex: COLOR_BOARD.YELLOW.startTile,
   },
   BOTTOM_RIGHT: {
     exitTileIndex: COLOR_BOARD.BLUE.turningTile,
     exitTiles: calculatePosition(EXIT_TILES_VALUES.BOTTOM_RIGHT),
     finalPositions: FINAL_POSITIONS_VALUES.BOTTOM_RIGHT,
-    startPositions: getStartPositions(11, 11),
+    startPositions: getStartPositions(9, 9),
     startTileIndex: COLOR_BOARD.BLUE.startTile,
   },
 };

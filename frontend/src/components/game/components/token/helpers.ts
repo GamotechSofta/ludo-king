@@ -2,7 +2,6 @@ import {
   BASE_ZINDEX_TOKEN,
   EtypeTile,
   MAXIMUM_VISIBLE_TOKENS_PER_CELL,
-  SIZE_TILE,
   ZINDEX_TOKEN_SELECT,
 } from "../../../../utils/constants";
 import type { IDiceList, TtypeTile } from "../../../../interfaces";
@@ -80,36 +79,15 @@ export const getTokenSyle = ({
   isMoving,
   canSelectToken,
 }: IGetTokenSyle): React.CSSProperties => {
-  /**
-   * Los diferentes scales dependiendo de la cantidad de fichas que existan en una misma celda
-   */
-  const scales = ["0.85", "0.7", "0.6", "0.5"];
+  const scales = ["1", "0.8", "0.68", "0.58"];
 
-  /**
-   * La posición del token en la celda dependiendo de la cantidad de tokens que existan
-   */
-  const positions = [[0], [-4, 4], [-8, 0, 8], [-12, -5, 5, 12]];
+  const positions = [[0], [-6, 6], [-10, 0, 10], [-13, -4, 4, 13]];
 
-  /**
-   * Si el total de tokens (inicia en 1) es menor e igual que la totalidad de posiciones
-   * se crea el indice, pero si el valor de totalTokens es mayor se indica por defecto que
-   * el valor de la posición a tomar es la última, ya que se mostrarán como si fuera 4 tokens
-   * Si existen más de 4, esos tokens no se mostraranm, pero para para los demás aplica la posición para 4
-   */
   let indexPosition = totalTokens <= positions.length ? totalTokens - 1 : 3;
 
-  /**
-   * Si la posición del token es menor e igual que cuatro se establece el scale,
-   * si no el scale será 0, oculatanto al token.
-   * Por ejemplo si se tienen 6 tokens en la misma celda, sólo se mostraran 4 tokens,
-   * el quinto y el sexto tendrán un scale de 0
-   */
   let scale =
     position <= MAXIMUM_VISIBLE_TOKENS_PER_CELL ? scales[indexPosition] : 0;
 
-  /**
-   * Determina la posición de la misma en la celda...
-   */
   let translateX =
     position <= MAXIMUM_VISIBLE_TOKENS_PER_CELL
       ? positions[indexPosition][position - 1]
@@ -120,16 +98,13 @@ export const getTokenSyle = ({
     translateX = positions[0][0];
   }
 
-  /**
-   * Si la ficha ya está en el punto final, se establece una scale menor...
-   */
   if (typeTile === EtypeTile.END) {
-    scale = "0.45";
+    scale = "0.55";
   }
 
+  // Scale around the colored base disc so stacked tokens stay centered
   return {
-    width: SIZE_TILE,
-    height: SIZE_TILE,
-    transform: `scale(${scale}) translate(${translateX}px, -1px)`,
+    transform: `translateX(${translateX}px) scale(${scale})`,
+    transformOrigin: "50% 86.8%",
   };
 };
