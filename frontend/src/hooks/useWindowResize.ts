@@ -6,8 +6,6 @@ const useWindowResize = () => {
     window.addEventListener("resize", onWindowResize);
     onWindowResize();
 
-    document.addEventListener("contextmenu", (e) => e.preventDefault(), false);
-
     return () => {
       window.removeEventListener("resize", onWindowResize);
     };

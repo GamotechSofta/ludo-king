@@ -1,0 +1,12 @@
+# Example Render Static Site for the CRA frontend.
+# Or set in Dashboard: Root Directory = frontend, Build = npm install && npm run build, Publish = build
+services:
+  - type: web
+    name: ludo-frontend
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: build
+    envVars:
+      - key: REACT_APP_API_URL
+        sync: false
