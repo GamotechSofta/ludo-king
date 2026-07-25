@@ -287,6 +287,20 @@ const OnlineGame = ({
         }
       }
 
+      working = working.map((group, pIdx) => {
+        if (pIdx !== seat) return group;
+        return {
+          ...group,
+          tokens: group.tokens.map((t, tIdx) =>
+            tIdx === tokenIndex
+              ? { ...t, isMoving: false, animated: false }
+              : t
+          ),
+        };
+      });
+      setListTokens(working);
+      listTokensRef.current = working;
+
       const landing = resolveLanding(
         working,
         playersFromSnapshot(snapForLanding),

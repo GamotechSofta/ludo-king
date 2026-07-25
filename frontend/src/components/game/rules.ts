@@ -384,7 +384,7 @@ export const applyTokenCell = (
   );
   next.isMoving = isMoving;
   next.diceAvailable = [];
-  next.animated = false;
+  next.animated = isMoving;
   next.enableTooltip = false;
   return next;
 };
