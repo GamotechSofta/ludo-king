@@ -15,6 +15,7 @@ import {
 } from "./components/lobby";
 import OnlineSetup from "./components/lobby/OnlineSetup";
 import OnlineLobby from "./components/lobby/OnlineLobby";
+import OnlineGame from "./components/lobby/OnlineGame";
 import PlatformLaunch, {
   type PlatformQuery,
 } from "./components/lobby/PlatformLaunch";
@@ -75,6 +76,9 @@ const App = () => {
   const [guest, setGuest] = useState<IGuestUser | null>(null);
   const [onlineRoomId, setOnlineRoomId] = useState<string | null>(null);
   const [onlineRoomCode, setOnlineRoomCode] = useState("");
+  const [onlineSnapshot, setOnlineSnapshot] = useState<IGameSnapshot | null>(
+    null
+  );
 
   const initialPlatform = parsePlatformQuery();
   const [platformQuery, setPlatformQuery] = useState<PlatformQuery | null>(
@@ -112,10 +116,12 @@ const App = () => {
     if (next === "home") {
       setGameConfig(null);
       setOnlineRoomId(null);
+      setOnlineSnapshot(null);
       setResultEntries([]);
     }
     if (next === "modes" || next === "setup" || next === "onlineSetup") {
       setGameConfig(null);
+      setOnlineSnapshot(null);
       setResultEntries([]);
     }
     if (next === "onlineSetup") {
@@ -197,6 +203,7 @@ const App = () => {
 
   const handlePlayAgain = () => {
     setResultEntries([]);
+    setOnlineSnapshot(null);
     if (platformReturnUrl || platformQuery) {
       exitToPlatform();
       return;
@@ -217,40 +224,14 @@ const App = () => {
     [goTo]
   );
 
-  /** Match found → smooth Computer Game engine (not laggy OnlineGame WS). */
+  /** Match found → server-authoritative OnlineGame (shared room state via WS/HTTP). */
   const handleOnlineStart = useCallback(
-    (room: IOnlineRoom, _game?: IGameSnapshot | null) => {
-      const maxRaw = room.maxPlayers;
-      const totalPlayers: 2 | 3 | 4 =
-        maxRaw === 2 || maxRaw === 3 || maxRaw === 4 ? maxRaw : 4;
-
-      const bySeat = [...(room.players || [])].sort(
-        (a, b) => a.seatIndex - b.seatIndex
-      );
-
-      const players: IGameConfig["players"] = [];
-      for (let i = 0; i < totalPlayers; i++) {
-        const p = bySeat.find((x) => x.seatIndex === i);
-        players.push({
-          id: p?.userId || `bot-seat-${i}`,
-          name: (p?.username || `Bot ${i + 1}`).trim() || `Player ${i + 1}`,
-          isBot: p ? !!p.bot : true,
-        });
-      }
-
-      const mySeat = guest
-        ? players.findIndex((p) => p.id === guest.id)
-        : 0;
-
-      setInitialTurn(mySeat >= 0 ? mySeat : 0);
-      setGameConfig({
-        mode: "computer",
-        totalPlayers,
-        players,
-      });
-      goTo("game", true);
+    (_room: IOnlineRoom, game?: IGameSnapshot | null) => {
+      setOnlineSnapshot(game ?? null);
+      setMode("online");
+      goTo("onlineGame", true);
     },
-    [goTo, guest]
+    [goTo]
   );
 
   const handlePlatformReady = useCallback(
@@ -315,6 +296,22 @@ const App = () => {
         onReady={handlePlatformReady}
         onError={setPlatformError}
       />
+    );
+  }
+
+  if (screen === "onlineGame" && guest && onlineRoomId) {
+    return (
+      <AppWrapper>
+        <OnlineGame
+          key={onlineRoomId}
+          guest={guest}
+          roomId={onlineRoomId}
+          initialSnapshot={onlineSnapshot}
+          walletBalance={walletBalance}
+          onExit={goBack}
+          onPlayAgain={handlePlayAgain}
+        />
+      </AppWrapper>
     );
   }
 

@@ -48,13 +48,19 @@ public class GameSocketController {
       // ignore
     }
     if (!gameEngineService.hasMatch(roomId)) {
-      roomService.getRoom(roomId).ifPresent(room -> {
-        if (room.getStatus() == com.ludo.backend.room.RoomStatus.IN_PROGRESS) {
-          roomService.rehydrateMatch(room);
-        }
-      });
-    }
-    if (!gameEngineService.hasMatch(roomId)) {
+      gameEventBus.loadCachedSnapshot(roomId).ifPresentOrElse(
+          snap -> broadcast(roomId, snap),
+          () -> roomService.getRoom(roomId).ifPresent(room -> {
+            if (room.getStatus() == com.ludo.backend.room.RoomStatus.IN_PROGRESS
+                || room.getStatus() == com.ludo.backend.room.RoomStatus.WAITING_RECONNECT) {
+              roomService.rehydrateMatch(room);
+              if (gameEngineService.hasMatch(roomId)) {
+                broadcast(roomId, gameEngineService.getSnapshot(roomId));
+              }
+            }
+          })
+      );
+      maybeScheduleBot(roomId);
       return;
     }
     broadcast(roomId, gameEngineService.getSnapshot(roomId));
@@ -64,13 +70,18 @@ public class GameSocketController {
   @MessageMapping("/room/{roomId}/state")
   public void state(@DestinationVariable String roomId, @Payload ActionMessage msg) {
     if (!gameEngineService.hasMatch(roomId)) {
-      roomService.getRoom(roomId).ifPresent(room -> {
-        if (room.getStatus() == com.ludo.backend.room.RoomStatus.IN_PROGRESS) {
-          roomService.rehydrateMatch(room);
-        }
-      });
-    }
-    if (!gameEngineService.hasMatch(roomId)) {
+      gameEventBus.loadCachedSnapshot(roomId).ifPresentOrElse(
+          snap -> broadcast(roomId, snap),
+          () -> roomService.getRoom(roomId).ifPresent(room -> {
+            if (room.getStatus() == com.ludo.backend.room.RoomStatus.IN_PROGRESS
+                || room.getStatus() == com.ludo.backend.room.RoomStatus.WAITING_RECONNECT) {
+              roomService.rehydrateMatch(room);
+              if (gameEngineService.hasMatch(roomId)) {
+                broadcast(roomId, gameEngineService.getSnapshot(roomId));
+              }
+            }
+          })
+      );
       return;
     }
     broadcast(roomId, gameEngineService.getSnapshot(roomId));

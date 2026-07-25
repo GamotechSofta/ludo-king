@@ -49,8 +49,15 @@ public class GameHttpController {
 
   @GetMapping
   public GameSnapshot get(@PathVariable String roomId) {
-    ensureMatch(roomId);
-    return gameEngineService.getSnapshot(roomId);
+    if (gameEngineService.hasMatch(roomId)) {
+      return gameEngineService.getSnapshot(roomId);
+    }
+    // Reconnect / other instance: return cached authoritative snapshot if present
+    return gameEventBus.loadCachedSnapshot(roomId)
+        .orElseGet(() -> {
+          ensureMatch(roomId);
+          return gameEngineService.getSnapshot(roomId);
+        });
   }
 
   @PostMapping("/roll")
