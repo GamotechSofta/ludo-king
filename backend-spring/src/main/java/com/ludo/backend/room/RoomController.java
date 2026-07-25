@@ -69,4 +69,10 @@ public class RoomController {
     roomService.cancelQueue(req.userId());
     return Map.of("ok", true);
   }
+
+  @PostMapping("/{id}/leave")
+  public Map<String, Object> leave(@PathVariable String id, @RequestBody CancelRequest req) {
+    roomService.leaveRoom(id, req.userId());
+    return Map.of("ok", true);
+  }
 }

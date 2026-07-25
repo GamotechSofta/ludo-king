@@ -6,6 +6,7 @@ import {
   ModeSelect,
   Setup,
   type IGameConfig,
+  type IGameSnapshot,
   type IGuestUser,
   type IOnlineRoom,
   type IResultEntry,
@@ -30,11 +31,15 @@ const App = () => {
   const [guest, setGuest] = useState<IGuestUser | null>(null);
   const [onlineRoomId, setOnlineRoomId] = useState<string | null>(null);
   const [onlineRoomCode, setOnlineRoomCode] = useState("");
+  const [onlineGameSnap, setOnlineGameSnap] = useState<IGameSnapshot | null>(
+    null
+  );
 
   const applyScreen = useCallback((next: TLobbyScreen) => {
     if (next === "home") {
       setGameConfig(null);
       setOnlineRoomId(null);
+      setOnlineGameSnap(null);
       setResultEntries([]);
     }
     if (next === "modes" || next === "setup" || next === "onlineSetup") {
@@ -43,6 +48,7 @@ const App = () => {
     }
     if (next === "onlineSetup") {
       setOnlineRoomId(null);
+      setOnlineGameSnap(null);
     }
     setScreen(next);
   }, []);
@@ -133,7 +139,10 @@ const App = () => {
   };
 
   const handleOnlineStart = useCallback(
-    (_room: IOnlineRoom) => {
+    (_room: IOnlineRoom, game?: IGameSnapshot | null) => {
+      if (game) {
+        setOnlineGameSnap(game);
+      }
       goTo("onlineGame");
     },
     [goTo]
@@ -189,6 +198,7 @@ const App = () => {
         <OnlineGame
           guest={guest}
           roomId={onlineRoomId}
+          initialSnapshot={onlineGameSnap}
           onExit={goBack}
           onPlayAgain={handlePlayAgain}
         />
