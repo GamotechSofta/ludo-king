@@ -28,6 +28,10 @@ ludo:
   github:
     client-id: ${GITHUB_KEY:}
     client-secret: ${GITHUB_SECRET:}
+  platform:
+    # If set, /api/platform/balance|debit|credit require header X-Platform-Key
+    shared-secret: ${PLATFORM_SHARED_SECRET:}
+    cors-allowed-origins: ${CORS_ALLOWED_ORIGINS:https://www.aakda.in,https://aakda.in,http://localhost:5173}
 
 logging:
   level:

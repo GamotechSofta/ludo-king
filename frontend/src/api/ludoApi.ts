@@ -4,6 +4,7 @@ const API_BASE = process.env.REACT_APP_API_URL || "http://localhost:3000";
 
 async function json<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
+    credentials: "include",
     ...init,
     headers: {
       "Content-Type": "application/json",
@@ -95,3 +96,28 @@ export const httpMoveToken = (
   });
 
 export const getApiBase = () => API_BASE;
+
+export interface IPlatformLaunchResult {
+  success: boolean;
+  userId: string;
+  gameId: string;
+  sessionId?: string | null;
+  displayName: string;
+  returnUrl?: string | null;
+}
+
+/** Bind Aakda launch params into Spring HTTP session (cookies). */
+export const platformLaunch = (body: {
+  userId: string;
+  gameId?: string;
+  sessionId?: string;
+  token?: string;
+  returnUrl?: string;
+  displayName?: string;
+}) =>
+  json<IPlatformLaunchResult>("/api/platform/launch", {
+    method: "POST",
+    body: JSON.stringify(body),
+    credentials: "include",
+  });
+

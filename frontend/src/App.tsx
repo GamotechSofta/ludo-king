@@ -16,11 +16,45 @@ import {
 import OnlineSetup from "./components/lobby/OnlineSetup";
 import OnlineLobby from "./components/lobby/OnlineLobby";
 import OnlineGame from "./components/lobby/OnlineGame";
+import PlatformLaunch, {
+  type PlatformQuery,
+} from "./components/lobby/PlatformLaunch";
 import Results from "./components/lobby/Results";
 import type { IUser, TTotalPlayers } from "./interfaces";
 import { ETypeGame } from "./utils/constants";
 
 type HistoryState = { screen: TLobbyScreen };
+
+/** Detect Aakda WebView launch params. userId required for platform flow. */
+function parsePlatformQuery(): PlatformQuery | "missing-userid" | null {
+  const params = new URLSearchParams(window.location.search);
+  const userId = params.get("userId");
+  const gameId = params.get("gameId");
+  const sessionId = params.get("sessionId");
+  const token = params.get("token");
+  const returnUrl = params.get("returnUrl");
+
+  const hasAnyPlatformHint =
+    userId != null ||
+    sessionId != null ||
+    token != null ||
+    (gameId != null && gameId.length > 0) ||
+    returnUrl != null;
+
+  if (!hasAnyPlatformHint) {
+    return null;
+  }
+  if (!userId || !userId.trim()) {
+    return "missing-userid";
+  }
+  return {
+    userId: userId.trim(),
+    gameId: (gameId && gameId.trim()) || "LUDO",
+    sessionId: sessionId || undefined,
+    token: token || undefined,
+    returnUrl: returnUrl || undefined,
+  };
+}
 
 const App = () => {
   const [screen, setScreen] = useState<TLobbyScreen>("home");
@@ -34,6 +68,35 @@ const App = () => {
   const [onlineGameSnap, setOnlineGameSnap] = useState<IGameSnapshot | null>(
     null
   );
+
+  const initialPlatform = parsePlatformQuery();
+  const [platformQuery, setPlatformQuery] = useState<PlatformQuery | null>(
+    initialPlatform !== null && initialPlatform !== "missing-userid"
+      ? initialPlatform
+      : null
+  );
+  const [platformError, setPlatformError] = useState<string | null>(
+    initialPlatform === "missing-userid"
+      ? "Open this game from Aakda app"
+      : null
+  );
+  const [platformReturnUrl, setPlatformReturnUrl] = useState<string | null>(
+    initialPlatform !== null && initialPlatform !== "missing-userid"
+      ? initialPlatform.returnUrl || null
+      : null
+  );
+
+  const exitToPlatform = useCallback(() => {
+    if (platformReturnUrl) {
+      window.location.href = platformReturnUrl;
+      return;
+    }
+    // Fallback page for WebView without returnUrl
+    document.body.innerHTML =
+      '<div style="font-family:sans-serif;padding:24px;text-align:center">' +
+      "<h2>Return to Aakda</h2>" +
+      "<p>You can close this screen and go back to the Aakda app.</p></div>";
+  }, [platformReturnUrl]);
 
   const applyScreen = useCallback((next: TLobbyScreen) => {
     if (next === "home") {
@@ -67,29 +130,42 @@ const App = () => {
   );
 
   const goHome = useCallback(() => {
+    if (platformReturnUrl || platformQuery) {
+      exitToPlatform();
+      return;
+    }
     goTo("home", true);
-  }, [goTo]);
+  }, [goTo, platformReturnUrl, platformQuery, exitToPlatform]);
 
   const goBack = useCallback(() => {
+    if (platformReturnUrl || platformQuery) {
+      exitToPlatform();
+      return;
+    }
     if (window.history.state?.screen) {
       window.history.back();
       return;
     }
     goHome();
-  }, [goHome]);
+  }, [goHome, platformReturnUrl, platformQuery, exitToPlatform]);
 
   useEffect(() => {
+    if (platformQuery || platformError) return;
     window.history.replaceState({ screen: "home" } satisfies HistoryState, "");
-  }, []);
+  }, [platformQuery, platformError]);
 
   useEffect(() => {
     const onPopState = (event: PopStateEvent) => {
+      if (platformReturnUrl || platformQuery) {
+        exitToPlatform();
+        return;
+      }
       const next = (event.state as HistoryState | null)?.screen ?? "home";
       applyScreen(next);
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, [applyScreen]);
+  }, [applyScreen, platformReturnUrl, platformQuery, exitToPlatform]);
 
   const handleSelectMode = (nextMode: TPlayMode) => {
     setMode(nextMode);
@@ -115,6 +191,10 @@ const App = () => {
 
   const handlePlayAgain = () => {
     setResultEntries([]);
+    if (platformReturnUrl || platformQuery) {
+      exitToPlatform();
+      return;
+    }
     if (mode === "online") {
       setOnlineRoomId(null);
       goTo("onlineSetup", true);
@@ -147,6 +227,58 @@ const App = () => {
     },
     [goTo]
   );
+
+  const handlePlatformReady = useCallback(
+    (
+      g: IGuestUser,
+      roomId: string,
+      roomCode: string,
+      returnUrl?: string | null
+    ) => {
+      setGuest(g);
+      setOnlineRoomId(roomId);
+      setOnlineRoomCode(roomCode);
+      setMode("online");
+      if (returnUrl) setPlatformReturnUrl(returnUrl);
+      setPlatformQuery(null);
+      window.history.replaceState({ screen: "onlineLobby" }, "", "/");
+      goTo("onlineLobby", true);
+    },
+    [goTo]
+  );
+
+  if (platformError) {
+    return (
+      <AppWrapper>
+        <div
+          style={{
+            minHeight: "100dvh",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 24,
+            color: "#fff",
+            textAlign: "center",
+            fontFamily: "Fredoka, sans-serif",
+          }}
+        >
+          <h2 style={{ marginBottom: 8 }}>Open this game from Aakda app</h2>
+          <p style={{ opacity: 0.85 }}>{platformError}</p>
+        </div>
+      </AppWrapper>
+    );
+  }
+
+  if (platformQuery) {
+    return (
+      <PlatformLaunch
+        query={platformQuery}
+        onReady={handlePlatformReady}
+        onError={setPlatformError}
+      />
+    );
+  }
 
   if (screen === "game" && gameConfig) {
     const users: IUser[] = gameConfig.players.map((player) => ({

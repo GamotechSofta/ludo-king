@@ -129,3 +129,61 @@ POST /api/game/test/{roomId}/roll?seat=0
 POST /api/game/test/{roomId}/move?seat=0&token=0&diceIndex=0
 GET  /api/game/test/{roomId}
 ```
+
+## Platform integration (Aakda WebView)
+
+### Entry URL (put this in platform `launchBaseUrl`)
+
+Prefer the **frontend** Render URL (playable UI):
+
+```
+https://YOUR-FRONTEND-ON-RENDER/?userId=USER_MONGO_ID&gameId=LUDO&sessionId=SESSION_ID&token=JWT_OR_SIGNED_TOKEN&returnUrl=https://www.aakda.in/games
+```
+
+If `launchBaseUrl` points at the **Spring** Render service instead, use the same query string on `/` or `/play` — Spring redirects to `CLIENT_URL` with params preserved.
+
+`userId` is required. Without it the UI shows: **Open this game from Aakda app**.
+
+Local play (no query params) is unchanged (home → modes → play).
+
+### Health
+
+- `GET /health` — mongo + engine
+- `GET /api/health` — simple `{ ok: true, status: "UP" }`
+
+### Wallet stubs (mock only)
+
+- `GET /api/platform/balance?userId=...`
+- `POST /api/platform/debit` `{ userId, sessionId, amount, reason }`
+- `POST /api/platform/credit` `{ userId, sessionId, amount, reason }`
+
+If `PLATFORM_SHARED_SECRET` is set, send header `X-Platform-Key: <secret>`. If unset, stubs are open (dev). Responses include `"mock": true`.  
+TODO in code: wire to Aakda Node wallet APIs.
+
+### Render env vars
+
+| Var | Notes |
+|-----|--------|
+| `PORT` | Set by Render |
+| `MONGO_URL` | Required |
+| `CLIENT_URL` | Frontend origin(s), comma-separated (CORS + redirect target) |
+| `CORS_ALLOWED_ORIGINS` | `https://www.aakda.in,https://aakda.in,http://localhost:5173` |
+| `PLATFORM_SHARED_SECRET` | Optional; enables `X-Platform-Key` on wallet stubs |
+| `SESSION_SECRET` | Session cookie |
+| `REDIS_URL` | Optional |
+
+Frontend also needs `REACT_APP_API_URL=https://YOUR-SPRING-ON-RENDER`.
+
+### CORS / iframe
+
+- Allowed patterns include Aakda origins + `http://localhost:*`
+- `X-Frame-Options` disabled; CSP `frame-ancestors` allows Aakda + local parents
+- API fetch uses `credentials: "include"` so launch binds to HTTP session
+
+### Quick test
+
+1. Open: `https://YOUR-FRONTEND/?userId=507f1f77bcf86cd799439011&gameId=LUDO&returnUrl=https://www.aakda.in/games`
+2. Should skip home/login, queue online match, show lobby
+3. Back/exit → `returnUrl`
+4. Open frontend with no params → normal local home screen
+

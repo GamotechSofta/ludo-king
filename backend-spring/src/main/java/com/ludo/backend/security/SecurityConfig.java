@@ -3,9 +3,12 @@ package com.ludo.backend.security;
 import com.ludo.backend.config.LudoProperties;
 import com.ludo.backend.user.User;
 import com.ludo.backend.user.UserService;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
@@ -33,6 +36,9 @@ public class SecurityConfig {
   private final LudoProperties properties;
   private final UserService userService;
 
+  @Value("${ludo.platform.cors-allowed-origins:https://www.aakda.in,https://aakda.in,http://localhost:5173}")
+  private String platformCorsOrigins;
+
   public SecurityConfig(LudoProperties properties, UserService userService) {
     this.properties = properties;
     this.userService = userService;
@@ -46,14 +52,25 @@ public class SecurityConfig {
     http
         .csrf(csrf -> csrf.disable())
         .cors(Customizer.withDefaults())
+        // WebView / iframe: do not send X-Frame-Options: DENY
+        .headers(headers -> headers
+            .frameOptions(frame -> frame.disable())
+            .contentSecurityPolicy(csp -> csp.policyDirectives(
+                "frame-ancestors 'self' https://www.aakda.in https://aakda.in http://localhost:5173 http://localhost:3000 http://localhost:3043"
+            ))
+        )
         .sessionManagement(session ->
             session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
         .authorizeHttpRequests(auth -> auth
             .requestMatchers(
+                "/",
+                "/play",
                 "/health",
+                "/api/health",
                 "/auth/options",
                 "/api/me",
                 "/api/logout",
+                "/api/platform/**",
                 "/ws/**",
                 "/oauth2/**",
                 "/login/oauth2/**"
@@ -127,10 +144,24 @@ public class SecurityConfig {
   @Bean
   CorsConfigurationSource corsConfigurationSource() {
     CorsConfiguration config = new CorsConfiguration();
-    config.setAllowedOrigins(properties.allowedClientOrigins());
+    LinkedHashSet<String> patterns = new LinkedHashSet<>();
+    for (String o : properties.allowedClientOrigins()) {
+      patterns.add(o);
+    }
+    for (String o : platformCorsOrigins.split(",")) {
+      String t = o.trim();
+      if (!t.isEmpty()) {
+        patterns.add(t.endsWith("/") ? t.substring(0, t.length() - 1) : t);
+      }
+    }
+    patterns.add("http://localhost:*");
+    patterns.add("http://127.0.0.1:*");
+
+    config.setAllowedOriginPatterns(new ArrayList<>(patterns));
     config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
     config.setAllowedHeaders(List.of("*"));
     config.setAllowCredentials(true);
+    config.setExposedHeaders(List.of("Location", "Set-Cookie"));
 
     UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
     source.registerCorsConfiguration("/**", config);
