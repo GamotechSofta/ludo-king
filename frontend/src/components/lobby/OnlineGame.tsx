@@ -29,6 +29,7 @@ import Results from "./Results";
 import {
   actionsTurnFromSnapshot,
   boardColorForSeatColor,
+  boardRotationDegForColor,
   displayPlayerName,
   listTokensFromSnapshot,
   playersForView,
@@ -492,7 +493,10 @@ const OnlineGame = ({
     snapshot && mySeat >= 0
       ? seatColorsFromSnapshot(snapshot)[mySeat]
       : undefined;
-  const boardColor = boardColorForSeatColor(myColor);
+  const boardColor = boardColorForSeatColor(myColor, totalPlayers);
+  // 3p keeps RGYB art and rotates the board so your house is at the bottom.
+  const boardRotationDeg =
+    totalPlayers === 3 ? boardRotationDegForColor(myColor) : 0;
 
   const profileHandlers = {
     handleTimer: () => undefined,
@@ -609,6 +613,10 @@ const OnlineGame = ({
             width: "100%",
             display: "flex",
             justifyContent: "center",
+            transform: boardRotationDeg
+              ? `rotate(${boardRotationDeg}deg)`
+              : undefined,
+            transformOrigin: "center center",
           }}
         >
           <Board boardColor={boardColor}>

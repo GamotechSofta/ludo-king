@@ -15,21 +15,30 @@ import {
   EActionsBoardGame,
   EBoardColors,
   EPositionGame,
+  ESufixColors,
   EtypeTile,
 } from "../../utils/constants";
 import { getOneBotName } from "../../data/botNames";
 import type { IGameSnapshot } from "./types";
 import { applyTokenCell, recomputeStacking } from "../game/rules";
 
-/** Absolute house corners on the default RGYB art (server color → art corner). */
-const COLOR_CORNER: Record<string, TPositionGame> = {
+/** Default RGYB art: which house each server color owns. */
+const DEFAULT_COLOR_CORNER: Record<string, TPositionGame> = {
   RED: EPositionGame.BOTTOM_LEFT,
   GREEN: EPositionGame.TOP_LEFT,
   YELLOW: EPositionGame.TOP_RIGHT,
   BLUE: EPositionGame.BOTTOM_RIGHT,
 };
 
-const COLOR_ORDER = ["RED", "GREEN", "YELLOW", "BLUE"] as const;
+/** Seat order used by the Spring backend (`LudoColor.forPlayerCount`). */
+const SEAT_COLOR_ORDER = ["RED", "GREEN", "YELLOW", "BLUE"] as const;
+
+const CORNERS_CW: TPositionGame[] = [
+  EPositionGame.BOTTOM_LEFT,
+  EPositionGame.TOP_LEFT,
+  EPositionGame.TOP_RIGHT,
+  EPositionGame.BOTTOM_RIGHT,
+];
 
 const JAIL = -1;
 const EXIT_BASE = 100;
@@ -59,10 +68,35 @@ export function displayPlayerName(
 }
 
 /**
- * Board CSS scheme so `color` sits at bottom-left (same as offline).
- * Avoids CSS rotate() which flips the board ("ulata").
+ * Map boardColor scheme (e.g. YBRG) → each paint color's house corner.
+ * Must stay in sync with `.game-board.YBRG` CSS variables.
  */
-export function boardColorForSeatColor(color?: string): TBoardColors {
+export function cornerMapForBoardColor(
+  boardColor: TBoardColors
+): Record<string, TPositionGame> {
+  const letters = String(boardColor).split("");
+  const map: Record<string, TPositionGame> = {};
+  letters.forEach((letter, i) => {
+    const color = ESufixColors[letter as keyof typeof ESufixColors];
+    if (color && CORNERS_CW[i]) {
+      map[color] = CORNERS_CW[i];
+    }
+  });
+  return map;
+}
+
+/**
+ * Board CSS class so `myColor` is painted at bottom-left.
+ * 3-player online (R,G,Y) can't remapping cleanly onto BL/TL/TR profiles —
+ * those matches use CSS rotate instead (see OnlineGame).
+ */
+export function boardColorForSeatColor(
+  color?: string,
+  totalPlayers?: number
+): TBoardColors {
+  if (totalPlayers === 3) {
+    return EBoardColors.RGYB;
+  }
   switch ((color || "RED").toUpperCase()) {
     case "GREEN":
       return EBoardColors.GYBR;
@@ -75,32 +109,15 @@ export function boardColorForSeatColor(color?: string): TBoardColors {
   }
 }
 
-/** @deprecated No longer rotates — use boardColorForSeatColor. */
-export function boardRotationDegForColor(_color: string): number {
-  return 0;
+/** Degrees to rotate the whole board so `color`'s house sits at bottom-left. */
+export function boardRotationDegForColor(color?: string): number {
+  const corner =
+    DEFAULT_COLOR_CORNER[(color || "RED").toUpperCase()] ||
+    EPositionGame.BOTTOM_LEFT;
+  const idx = CORNERS_CW.indexOf(corner);
+  return idx <= 0 ? 0 : -idx * 90;
 }
 
-/** View corners for player index 0..n-1 (0 = you at bottom-left). */
-function viewCornersForPlayerCount(totalPlayers: number): TPositionGame[] {
-  if (totalPlayers === 2) {
-    return [EPositionGame.BOTTOM_LEFT, EPositionGame.TOP_RIGHT];
-  }
-  if (totalPlayers === 3) {
-    return [
-      EPositionGame.BOTTOM_LEFT,
-      EPositionGame.TOP_LEFT,
-      EPositionGame.TOP_RIGHT,
-    ];
-  }
-  return [
-    EPositionGame.BOTTOM_LEFT,
-    EPositionGame.TOP_LEFT,
-    EPositionGame.TOP_RIGHT,
-    EPositionGame.BOTTOM_RIGHT,
-  ];
-}
-
-/** Map a server seat index into view order where `mySeat` is always 0. */
 export function visualSeatIndex(
   serverSeat: number,
   mySeat: number,
@@ -129,16 +146,18 @@ function decodeServerPos(
   return { typeTile: EtypeTile.NORMAL, positionTile: serverPos };
 }
 
+/**
+ * Colors in backend seat order (never Object.keys — that can desync seats).
+ */
 export function seatColorsFromSnapshot(snapshot: IGameSnapshot): TColors[] {
   const positions = snapshot.tokenPositions || {};
-  const present = COLOR_ORDER.filter((c) =>
+  const ordered = SEAT_COLOR_ORDER.filter((c) =>
     Object.prototype.hasOwnProperty.call(positions, c)
   ) as TColors[];
-  if (present.length > 0) return present;
+  if (ordered.length > 0) return ordered;
   return Object.keys(positions) as TColors[];
 }
 
-/** Players in server seat order. */
 export function playersFromSnapshot(snapshot: IGameSnapshot): IPlayer[] {
   const colors = seatColorsFromSnapshot(snapshot);
   const used: string[] = [];
@@ -164,7 +183,7 @@ export function playersFromSnapshot(snapshot: IGameSnapshot): IPlayer[] {
   });
 }
 
-/** Players rotated so local seat is index 0 (bottom-left profile). */
+/** Local seat becomes profile index 0 (bottom-left). */
 export function playersForView(
   snapshot: IGameSnapshot,
   mySeat: number
@@ -185,7 +204,10 @@ export function listTokensFromSnapshot(
 ): IListTokens[] {
   const colors = seatColorsFromSnapshot(snapshot);
   const n = colors.length;
-  const corners = viewCornersForPlayerCount(n);
+  const myColor = mySeat >= 0 && mySeat < n ? colors[mySeat] : colors[0];
+  const boardColor = boardColorForSeatColor(myColor, n);
+  const cornerMap = cornerMapForBoardColor(boardColor);
+
   const legal =
     snapshot.legalMoves?.length
       ? snapshot.legalMoves
@@ -200,10 +222,12 @@ export function listTokensFromSnapshot(
   }));
 
   const groups: IListTokens[] = colors.map((color, seat) => {
-    // View corner for this seat (you = bottom-left); boardColor remaps house colors.
-    const visual = visualSeatIndex(seat, mySeat, n);
+    // Always place tokens in the house that matches this color on the
+    // current board scheme (never a different seat's corner).
     const positionGame =
-      corners[visual] || COLOR_CORNER[color] || EPositionGame.BOTTOM_LEFT;
+      cornerMap[color] ||
+      DEFAULT_COLOR_CORNER[color] ||
+      EPositionGame.BOTTOM_LEFT;
     const positions = snapshot.tokenPositions[color] || [-1, -1, -1, -1];
     const tokens: IToken[] = positions.map((serverPos, tokenIndex) => {
       const { typeTile, positionTile } = decodeServerPos(serverPos, tokenIndex);
