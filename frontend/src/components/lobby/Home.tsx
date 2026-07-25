@@ -29,7 +29,7 @@ const Home = ({ onPlay }: HomeProps) => {
         <button className="lobby-btn primary" type="button" onClick={onPlay}>
           PLAY NOW
         </button>
-        <p className="lobby-footer-note">Classic Ludo · Offline & vs Computer</p>
+        <p className="lobby-footer-note">Online matchmaking · smooth Ludo</p>
       </div>
     </div>
   );

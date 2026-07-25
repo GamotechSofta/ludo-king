@@ -15,7 +15,6 @@ import {
 } from "./components/lobby";
 import OnlineSetup from "./components/lobby/OnlineSetup";
 import OnlineLobby from "./components/lobby/OnlineLobby";
-import OnlineGame from "./components/lobby/OnlineGame";
 import PlatformLaunch, {
   type PlatformQuery,
 } from "./components/lobby/PlatformLaunch";
@@ -76,9 +75,6 @@ const App = () => {
   const [guest, setGuest] = useState<IGuestUser | null>(null);
   const [onlineRoomId, setOnlineRoomId] = useState<string | null>(null);
   const [onlineRoomCode, setOnlineRoomCode] = useState("");
-  const [onlineGameSnap, setOnlineGameSnap] = useState<IGameSnapshot | null>(
-    null
-  );
 
   const initialPlatform = parsePlatformQuery();
   const [platformQuery, setPlatformQuery] = useState<PlatformQuery | null>(
@@ -98,6 +94,7 @@ const App = () => {
   );
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
   const [entryFee, setEntryFee] = useState(0);
+  const [initialTurn, setInitialTurn] = useState(0);
 
   const exitToPlatform = useCallback(() => {
     if (platformReturnUrl) {
@@ -115,7 +112,6 @@ const App = () => {
     if (next === "home") {
       setGameConfig(null);
       setOnlineRoomId(null);
-      setOnlineGameSnap(null);
       setResultEntries([]);
     }
     if (next === "modes" || next === "setup" || next === "onlineSetup") {
@@ -124,7 +120,6 @@ const App = () => {
     }
     if (next === "onlineSetup") {
       setOnlineRoomId(null);
-      setOnlineGameSnap(null);
     }
     setScreen(next);
   }, []);
@@ -180,17 +175,15 @@ const App = () => {
     return () => window.removeEventListener("popstate", onPopState);
   }, [applyScreen, platformReturnUrl, platformQuery, exitToPlatform]);
 
-  const handleSelectMode = (nextMode: TPlayMode) => {
-    setMode(nextMode);
-    if (nextMode === "online") {
-      goTo("onlineSetup");
-      return;
-    }
-    goTo("setup");
+  const handleSelectMode = (_nextMode: TPlayMode) => {
+    // Online button → server matchmaking, then smooth Computer Game play
+    setMode("online");
+    goTo("onlineSetup");
   };
 
   const handleStart = (config: IGameConfig) => {
     setGameConfig(config);
+    setInitialTurn(0);
     goTo("game");
   };
 
@@ -208,37 +201,56 @@ const App = () => {
       exitToPlatform();
       return;
     }
-    if (mode === "online") {
-      setOnlineRoomId(null);
-      goTo("onlineSetup", true);
-      return;
-    }
-    if (gameConfig) {
-      goTo("setup", true);
-      return;
-    }
-    goTo("modes", true);
+    setOnlineRoomId(null);
+    setGameConfig(null);
+    goTo("onlineSetup", true);
   };
 
-  const handleOnlineQueued = (
-    g: IGuestUser,
-    roomId: string,
-    roomCode: string
-  ) => {
-    setGuest(g);
-    setOnlineRoomId(roomId);
-    setOnlineRoomCode(roomCode);
-    goTo("onlineLobby");
-  };
-
-  const handleOnlineStart = useCallback(
-    (_room: IOnlineRoom, game?: IGameSnapshot | null) => {
-      if (game) {
-        setOnlineGameSnap(game);
-      }
-      goTo("onlineGame");
+  const handleOnlineQueued = useCallback(
+    (g: IGuestUser, roomId: string, roomCode: string) => {
+      setGuest(g);
+      setOnlineRoomId(roomId);
+      setOnlineRoomCode(roomCode);
+      setMode("online");
+      goTo("onlineLobby");
     },
     [goTo]
+  );
+
+  /** Match found → smooth Computer Game engine (not laggy OnlineGame WS). */
+  const handleOnlineStart = useCallback(
+    (room: IOnlineRoom, _game?: IGameSnapshot | null) => {
+      const maxRaw = room.maxPlayers;
+      const totalPlayers: 2 | 3 | 4 =
+        maxRaw === 2 || maxRaw === 3 || maxRaw === 4 ? maxRaw : 4;
+
+      const bySeat = [...(room.players || [])].sort(
+        (a, b) => a.seatIndex - b.seatIndex
+      );
+
+      const players: IGameConfig["players"] = [];
+      for (let i = 0; i < totalPlayers; i++) {
+        const p = bySeat.find((x) => x.seatIndex === i);
+        players.push({
+          id: p?.userId || `bot-seat-${i}`,
+          name: (p?.username || `Bot ${i + 1}`).trim() || `Player ${i + 1}`,
+          isBot: p ? !!p.bot : true,
+        });
+      }
+
+      const mySeat = guest
+        ? players.findIndex((p) => p.id === guest.id)
+        : 0;
+
+      setInitialTurn(mySeat >= 0 ? mySeat : 0);
+      setGameConfig({
+        mode: "computer",
+        totalPlayers,
+        players,
+      });
+      goTo("game", true);
+    },
+    [goTo, guest]
   );
 
   const handlePlatformReady = useCallback(
@@ -319,7 +331,7 @@ const App = () => {
           key={`${gameConfig.mode}-${gameConfig.totalPlayers}-${users
             .map((u) => u.name)
             .join("-")}`}
-          initialTurn={0}
+          initialTurn={initialTurn}
           users={users}
           totalPlayers={gameConfig.totalPlayers as TTotalPlayers}
           typeGame={ETypeGame.OFFLINE}
@@ -333,12 +345,12 @@ const App = () => {
 
   return (
     <AppWrapper>
-      {screen === "home" && <Home onPlay={() => goTo("modes")} />}
+      {screen === "home" && <Home onPlay={() => goTo("onlineSetup")} />}
       {screen === "modes" && (
         <ModeSelect onBack={goBack} onSelect={handleSelectMode} />
       )}
       {screen === "setup" && (
-        <Setup mode={mode} onBack={goBack} onStart={handleStart} />
+        <Setup mode="computer" onBack={goBack} onStart={handleStart} />
       )}
       {screen === "onlineSetup" && (
         <OnlineSetup onBack={goBack} onQueued={handleOnlineQueued} />
@@ -352,16 +364,6 @@ const App = () => {
           entryFee={entryFee}
           onBack={goBack}
           onStart={handleOnlineStart}
-        />
-      )}
-      {screen === "onlineGame" && guest && onlineRoomId && (
-        <OnlineGame
-          guest={guest}
-          roomId={onlineRoomId}
-          initialSnapshot={onlineGameSnap}
-          walletBalance={walletBalance}
-          onExit={goBack}
-          onPlayAgain={handlePlayAgain}
         />
       )}
       {screen === "results" && (

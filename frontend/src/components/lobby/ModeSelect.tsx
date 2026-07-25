@@ -14,23 +14,11 @@ const ModeSelect = ({ onBack, onSelect }: ModeSelectProps) => {
         <button className="lobby-back" type="button" onClick={onBack}>
           ← Back
         </button>
-        <h2 className="lobby-heading">Choose Mode</h2>
-        <p className="lobby-sub">Pick how you want to play</p>
+        <h2 className="lobby-heading">Online</h2>
+        <p className="lobby-sub">Find players · then smooth Ludo</p>
       </div>
 
       <div className="lobby-actions">
-        <button
-          className="lobby-btn mode"
-          type="button"
-          onClick={() => onSelect("computer")}
-        >
-          <span className="mode-icon computer" aria-hidden />
-          <span className="mode-copy">
-            <span>Computer</span>
-            <small>Challenge smart bots</small>
-          </span>
-        </button>
-
         <button
           className="lobby-btn mode"
           type="button"
@@ -39,7 +27,7 @@ const ModeSelect = ({ onBack, onSelect }: ModeSelectProps) => {
           <span className="mode-icon online" aria-hidden />
           <span className="mode-copy">
             <span>Online</span>
-            <small>Realtime multiplayer + bots</small>
+            <small>Matchmaking + bots fill</small>
           </span>
         </button>
       </div>

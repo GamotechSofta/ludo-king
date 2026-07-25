@@ -115,7 +115,12 @@ const Setup = ({ mode, onBack, onStart }: SetupProps) => {
           ← Back
         </button>
         <h2 className="lobby-heading">
-          {mode === "computer" ? "Vs Computer" : "Pass & Play"}
+          {mode === "computer" ? "Online" : "Pass & Play"}
+          <span className="lobby-sub" style={{ display: "block", marginTop: 4 }}>
+            {mode === "computer"
+              ? "You vs bots · smooth classic Ludo"
+              : "Share one device"}
+          </span>
         </h2>
         <p className="lobby-sub">Select players and start the race</p>
 

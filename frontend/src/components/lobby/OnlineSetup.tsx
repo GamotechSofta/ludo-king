@@ -81,8 +81,8 @@ const OnlineSetup = ({ onBack, onQueued }: OnlineSetupProps) => {
         <button className="lobby-back" type="button" onClick={onBack}>
           ← Back
         </button>
-        <h2 className="lobby-heading">Online Play</h2>
-        <p className="lobby-sub">Classic Ludo on the real board</p>
+        <h2 className="lobby-heading">Find Match</h2>
+        <p className="lobby-sub">Quick match, private room, or join with code</p>
 
         <div className="lobby-panel">
           <div className="player-row" style={{ marginBottom: 12 }}>
