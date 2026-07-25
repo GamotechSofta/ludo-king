@@ -150,8 +150,8 @@ export const TIME_INTERVAL_CHRONOMETER = 50; // org (50), debug: 10,5,0.5
  */
 export const TOKEN_MOVEMENT_INTERVAL_VALUE = 200; // org (200), debug 100,50,0.5
 
-/** Delay between online path steps — slightly longer than token CSS transition. */
-export const ONLINE_TOKEN_MOVEMENT_INTERVAL_VALUE = 260;
+/** Delay between online path steps — matched to .game-token.moving CSS (~180ms). */
+export const ONLINE_TOKEN_MOVEMENT_INTERVAL_VALUE = 180;
 
 /**
  * Tiempo de giro del dado...

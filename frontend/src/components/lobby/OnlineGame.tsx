@@ -33,6 +33,8 @@ import {
 import type { IGameSnapshot, IGuestUser, IResultEntry } from "./types";
 import Results from "./Results";
 import { fetchWalletBalance } from "../../api/ludoApi";
+import { runRafSteps, type AnimCancel } from "./onlineAnimate";
+import { onlinePerf } from "../../utils/onlinePerf";
 import {
   actionsTurnFromSnapshot,
   boardColorForSnapshot,
@@ -53,8 +55,6 @@ interface OnlineGameProps {
   onExit: () => void;
   onPlayAgain: () => void;
 }
-
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const OnlineGame = ({
   guest,
@@ -111,8 +111,6 @@ const OnlineGame = ({
 
   useEffect(() => {
     void refreshBalance();
-    const id = window.setInterval(() => void refreshBalance(), 15000);
-    return () => window.clearInterval(id);
   }, [refreshBalance]);
 
   useEffect(() => {
@@ -263,6 +261,8 @@ const OnlineGame = ({
     [mySeat]
   );
 
+  const animCancelRef = useRef<AnimCancel>({ cancelled: false });
+
   const runMoveAnimation = useCallback(
     async (
       snapForLanding: IGameSnapshot,
@@ -279,6 +279,7 @@ const OnlineGame = ({
       const path = buildMovePath(token, positionGame, diceValue);
       if (!path.length) return false;
 
+      animCancelRef.current = { cancelled: false };
       animatingRef.current = true;
       setIsBusy(true);
       setActionsTurn((prev) => ({
@@ -288,34 +289,44 @@ const OnlineGame = ({
         actionsBoardGame: EActionsBoardGame.SELECT_TOKEN,
       }));
 
+      const t0 = performance.now();
       let working = tokens;
-      for (const step of path) {
-        playSound("passingNext");
-        working = working.map((group, pIdx) => {
-          if (pIdx !== seat) return group;
-          return {
-            ...group,
-            tokens: group.tokens.map((t, tIdx) => {
-              if (tIdx !== tokenIndex) {
-                return { ...t, diceAvailable: [], animated: false };
-              }
-              return applyTokenCell(
-                t,
-                positionGame,
-                step.typeTile,
-                step.positionTile,
-                true
-              );
-            }),
-          };
-        });
-        setListTokens(working);
-        listTokensRef.current = working;
-        await delay(ONLINE_TOKEN_MOVEMENT_INTERVAL_VALUE);
-        if (step.typeTile === EtypeTile.END) {
-          playSound("inside");
-        }
-      }
+
+      await runRafSteps(
+        path.length,
+        ONLINE_TOKEN_MOVEMENT_INTERVAL_VALUE,
+        (stepIndex) => {
+          const step = path[stepIndex];
+          playSound("passingNext");
+          // Structural share: only clone the moving seat / pawn
+          working = working.map((group, pIdx) => {
+            if (pIdx !== seat) return group;
+            return {
+              ...group,
+              tokens: group.tokens.map((t, tIdx) => {
+                if (tIdx !== tokenIndex) {
+                  return t.diceAvailable?.length || t.animated
+                    ? { ...t, diceAvailable: [], animated: false }
+                    : t;
+                }
+                return applyTokenCell(
+                  t,
+                  positionGame,
+                  step.typeTile,
+                  step.positionTile,
+                  true
+                );
+              }),
+            };
+          });
+          listTokensRef.current = working;
+          setListTokens(working);
+          if (step.typeTile === EtypeTile.END) {
+            playSound("inside");
+          }
+        },
+        animCancelRef.current
+      );
 
       working = working.map((group, pIdx) => {
         if (pIdx !== seat) return group;
@@ -343,6 +354,7 @@ const OnlineGame = ({
         listTokensRef.current = landing.listTokens;
       }
 
+      onlinePerf.markRender(performance.now() - t0);
       animatingRef.current = false;
       setIsBusy(false);
       return true;
@@ -507,13 +519,15 @@ const OnlineGame = ({
       const diceValue = (snapshot.diceList || [])[diceIndex] as TDicevalues;
       if (!diceValue) return;
 
+      // Broadcast validated move ASAP so opponents start animating in parallel.
+      // Local path is computed client-side from the same dice — no per-cell WS.
       suppressMoveAnimRef.current = true;
       pendingDiceRef.current = {
         seat: mySeat,
         diceList: [...(snapshot.diceList || [])],
       };
-      await runMoveAnimation(snapshot, mySeat, tokenIndex, diceValue);
       moveToken(tokenIndex, diceIndex);
+      await runMoveAnimation(snapshot, mySeat, tokenIndex, diceValue);
     },
     [snapshot, isBusy, mySeat, runMoveAnimation, moveToken]
   );

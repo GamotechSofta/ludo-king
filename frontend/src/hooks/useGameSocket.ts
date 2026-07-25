@@ -8,15 +8,13 @@ import {
   httpMoveToken,
   httpRollDice,
 } from "../api/ludoApi";
+import { onlinePerf } from "../utils/onlinePerf";
 
 const STOMP_JSON = { "content-type": "application/json" };
 /** Fast poll when WebSocket is down so opponent moves still feel live. */
-const POLL_DISCONNECTED_MS = 400;
-/**
- * Safety poll while WS is connected — catches missed STOMP frames so all
- * clients stay on the same authoritative room state.
- */
-const POLL_CONNECTED_MS = 1200;
+const POLL_DISCONNECTED_MS = 500;
+/** Rare safety poll while WS is healthy — avoid constant re-renders. */
+const POLL_CONNECTED_MS = 4500;
 
 function normalizeSnapshot(raw: unknown): IGameSnapshot | null {
   if (!raw || typeof raw !== "object") return null;
@@ -31,17 +29,18 @@ function normalizeSnapshot(raw: unknown): IGameSnapshot | null {
 }
 
 function snapshotSig(snap: IGameSnapshot): string {
-  const positions = Object.entries(snap.tokenPositions || {})
-    .map(([c, p]) => `${c}:${(p || []).join(".")}`)
-    .join("|");
   return [
     snap.actionSeq ?? 0,
     snap.phase,
     snap.currentSeatIndex,
     snap.lastActionType || "",
+    snap.lastActionSeat ?? "",
+    snap.lastActionTokenIndex ?? "",
+    snap.lastActionDice ?? "",
     (snap.diceList || []).join(","),
-    snap.turnStartedAt || "",
-    positions,
+    Object.entries(snap.tokenPositions || {})
+      .map(([c, p]) => `${c}:${(p || []).join(".")}`)
+      .join("|"),
   ].join("#");
 }
 
@@ -60,30 +59,42 @@ export function useGameSocket(
   const lastSigRef = useRef(
     initialSnapshot ? snapshotSig(initialSnapshot) : ""
   );
+  const lastSeqRef = useRef(initialSnapshot?.actionSeq ?? 0);
   const lastWsAtRef = useRef(0);
+  /** Ignore HTTP echo of an action we already applied from WS (or vice versa). */
+  const inFlightActionRef = useRef(false);
 
   const applySnapshot = useCallback((snap: unknown, fromWs = false) => {
     const normalized = normalizeSnapshot(snap);
     if (!normalized) return false;
     const sig = snapshotSig(normalized);
-    // Ignore duplicate payloads
+    const nextSeq = normalized.actionSeq ?? 0;
+
+    // Duplicate / unchanged state
     if (sig === lastSigRef.current) {
       if (fromWs) lastWsAtRef.current = Date.now();
       return true;
     }
-    // Ignore stale poll right after a newer WS push (same or older actionSeq)
-    const prevSeq = Number(String(lastSigRef.current).split("#")[0] || 0);
-    const nextSeq = normalized.actionSeq ?? 0;
-    if (!fromWs && nextSeq < prevSeq) {
+    // Stale packet (older version)
+    if (nextSeq < lastSeqRef.current) {
       return true;
     }
-    if (!fromWs && nextSeq === prevSeq && Date.now() - lastWsAtRef.current < 500) {
+    // Stale poll while a live WS frame just arrived with same seq
+    if (
+      !fromWs &&
+      nextSeq === lastSeqRef.current &&
+      Date.now() - lastWsAtRef.current < 400
+    ) {
       return true;
     }
+
     lastSigRef.current = sig;
+    lastSeqRef.current = nextSeq;
     if (fromWs) lastWsAtRef.current = Date.now();
+    onlinePerf.markSnapshotApplied(fromWs, nextSeq);
     setSnapshot(normalized);
     setLoadError("");
+    inFlightActionRef.current = false;
     return true;
   }, []);
 
@@ -123,6 +134,8 @@ export function useGameSocket(
 
   useEffect(() => {
     if (!roomId || !userId) return;
+
+    onlinePerf.startFpsProbe();
 
     const client = new Client({
       webSocketFactory: () => new SockJS(`${getApiBase()}/ws`) as WebSocket,
@@ -169,6 +182,7 @@ export function useGameSocket(
     client.activate();
 
     return () => {
+      onlinePerf.stopFpsProbe();
       void client.deactivate();
       clientRef.current = null;
       connectedRef.current = false;
@@ -177,39 +191,64 @@ export function useGameSocket(
   }, [roomId, userId, applySnapshot]);
 
   /**
-   * Actions go over HTTP so the actor gets the validated snapshot immediately.
-   * Server still broadcasts the same snapshot to `/topic/room/{id}` for everyone.
-   * WS remains the live receive path; STOMP publish is fallback if HTTP fails.
+   * Single action path: WS when connected (room fan-out), else HTTP.
+   * Never dual-submit — that would double-roll / double-move on the server.
    */
   const rollDice = useCallback(() => {
     if (!roomId || !userId) return;
+    if (inFlightActionRef.current) return;
+    inFlightActionRef.current = true;
+    onlinePerf.markActionSent("roll");
+    const seqAtSend = lastSeqRef.current;
+
+    if (clientRef.current?.connected) {
+      clientRef.current.publish({
+        destination: `/app/room/${roomId}/roll`,
+        headers: STOMP_JSON,
+        body: JSON.stringify({ userId }),
+      });
+      window.setTimeout(() => {
+        if (lastSeqRef.current > seqAtSend) return;
+        void httpRollDice(roomId, userId)
+          .then((g) => applySnapshot(g, false))
+          .catch(() => {
+            inFlightActionRef.current = false;
+          });
+      }, 2000);
+      return;
+    }
+
     void httpRollDice(roomId, userId)
       .then((g) => applySnapshot(g, false))
       .catch(() => {
-        if (clientRef.current?.connected) {
-          clientRef.current.publish({
-            destination: `/app/room/${roomId}/roll`,
-            headers: STOMP_JSON,
-            body: JSON.stringify({ userId }),
-          });
-        }
+        inFlightActionRef.current = false;
       });
   }, [roomId, userId, applySnapshot]);
 
   const moveToken = useCallback(
     (tokenIndex: number, diceIndex: number) => {
       if (!roomId || !userId) return;
+      onlinePerf.markActionSent("move");
+      const seqAtSend = lastSeqRef.current;
+
+      if (clientRef.current?.connected) {
+        clientRef.current.publish({
+          destination: `/app/room/${roomId}/move`,
+          headers: STOMP_JSON,
+          body: JSON.stringify({ userId, tokenIndex, diceIndex }),
+        });
+        window.setTimeout(() => {
+          if (lastSeqRef.current > seqAtSend) return;
+          void httpMoveToken(roomId, userId, tokenIndex, diceIndex)
+            .then((g) => applySnapshot(g, false))
+            .catch(() => undefined);
+        }, 2000);
+        return;
+      }
+
       void httpMoveToken(roomId, userId, tokenIndex, diceIndex)
         .then((g) => applySnapshot(g, false))
-        .catch(() => {
-          if (clientRef.current?.connected) {
-            clientRef.current.publish({
-              destination: `/app/room/${roomId}/move`,
-              headers: STOMP_JSON,
-              body: JSON.stringify({ userId, tokenIndex, diceIndex }),
-            });
-          }
-        });
+        .catch(() => undefined);
     },
     [roomId, userId, applySnapshot]
   );

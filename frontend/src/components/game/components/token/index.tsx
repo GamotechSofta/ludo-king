@@ -170,4 +170,23 @@ const Token = ({
   );
 };
 
-export default React.memo(Token);
+export default React.memo(Token, (prev, next) => {
+  return (
+    prev.coordinate?.x === next.coordinate?.x &&
+    prev.coordinate?.y === next.coordinate?.y &&
+    prev.isMoving === next.isMoving &&
+    prev.animated === next.animated &&
+    prev.canSelectToken === next.canSelectToken &&
+    prev.totalTokens === next.totalTokens &&
+    prev.position === next.position &&
+    prev.enableTooltip === next.enableTooltip &&
+    prev.color === next.color &&
+    prev.index === next.index &&
+    prev.isDisabledUI === next.isDisabledUI &&
+    prev.debug === next.debug &&
+    prev.handleSelectedToken === next.handleSelectedToken &&
+    prev.diceList === next.diceList &&
+    prev.diceAvailable === next.diceAvailable &&
+    prev.typeTile === next.typeTile
+  );
+});

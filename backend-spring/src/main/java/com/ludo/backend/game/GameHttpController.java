@@ -115,9 +115,12 @@ public class GameHttpController {
   }
 
   private void broadcast(String roomId, GameSnapshot snap) {
+    // Broadcast validated state first; persist settlement off the hot path
     gameEventBus.publishSnapshot(roomId, snap);
     if (GameEngineService.PHASE_FINISHED.equals(snap.getPhase())) {
-      roomService.getRoom(roomId).ifPresent(room -> roomService.settleIfFinished(room, snap));
+      botExecutor.execute(() ->
+          roomService.getRoom(roomId).ifPresent(room -> roomService.settleIfFinished(room, snap))
+      );
     }
   }
 

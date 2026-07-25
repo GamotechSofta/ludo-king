@@ -49,13 +49,13 @@ public class GameSocketController {
     }
     if (!gameEngineService.hasMatch(roomId)) {
       gameEventBus.loadCachedSnapshot(roomId).ifPresentOrElse(
-          snap -> broadcast(roomId, snap),
+          snap -> syncState(roomId, snap),
           () -> roomService.getRoom(roomId).ifPresent(room -> {
             if (room.getStatus() == com.ludo.backend.room.RoomStatus.IN_PROGRESS
                 || room.getStatus() == com.ludo.backend.room.RoomStatus.WAITING_RECONNECT) {
               roomService.rehydrateMatch(room);
               if (gameEngineService.hasMatch(roomId)) {
-                broadcast(roomId, gameEngineService.getSnapshot(roomId));
+                syncState(roomId, gameEngineService.getSnapshot(roomId));
               }
             }
           })
@@ -63,7 +63,7 @@ public class GameSocketController {
       maybeScheduleBot(roomId);
       return;
     }
-    broadcast(roomId, gameEngineService.getSnapshot(roomId));
+    syncState(roomId, gameEngineService.getSnapshot(roomId));
     maybeScheduleBot(roomId);
   }
 
@@ -71,20 +71,20 @@ public class GameSocketController {
   public void state(@DestinationVariable String roomId, @Payload ActionMessage msg) {
     if (!gameEngineService.hasMatch(roomId)) {
       gameEventBus.loadCachedSnapshot(roomId).ifPresentOrElse(
-          snap -> broadcast(roomId, snap),
+          snap -> syncState(roomId, snap),
           () -> roomService.getRoom(roomId).ifPresent(room -> {
             if (room.getStatus() == com.ludo.backend.room.RoomStatus.IN_PROGRESS
                 || room.getStatus() == com.ludo.backend.room.RoomStatus.WAITING_RECONNECT) {
               roomService.rehydrateMatch(room);
               if (gameEngineService.hasMatch(roomId)) {
-                broadcast(roomId, gameEngineService.getSnapshot(roomId));
+                syncState(roomId, gameEngineService.getSnapshot(roomId));
               }
             }
           })
       );
       return;
     }
-    broadcast(roomId, gameEngineService.getSnapshot(roomId));
+    syncState(roomId, gameEngineService.getSnapshot(roomId));
   }
 
   @MessageMapping("/room/{roomId}/roll")
@@ -106,10 +106,18 @@ public class GameSocketController {
     maybeScheduleBot(roomId);
   }
 
+  /** Forced state sync for join/reconnect — never skipped by actionSeq dedupe. */
+  private void syncState(String roomId, GameSnapshot snap) {
+    gameEventBus.publishSnapshotForced(roomId, snap);
+  }
+
   private void broadcast(String roomId, GameSnapshot snap) {
+    // Broadcast first; Mongo settlement is async so move latency stays low
     gameEventBus.publishSnapshotAndMeta(roomId, snap);
     if (GameEngineService.PHASE_FINISHED.equals(snap.getPhase())) {
-      roomService.getRoom(roomId).ifPresent(room -> roomService.settleIfFinished(room, snap));
+      botExecutor.execute(() ->
+          roomService.getRoom(roomId).ifPresent(room -> roomService.settleIfFinished(room, snap))
+      );
     }
   }
 
