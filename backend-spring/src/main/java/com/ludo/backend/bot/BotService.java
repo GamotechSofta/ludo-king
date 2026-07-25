@@ -49,7 +49,7 @@ public class BotService {
         && !GameEngineService.PHASE_FINISHED.equals(snap.getPhase())) {
 
       if (GameEngineService.PHASE_ROLL.equals(snap.getPhase())) {
-        sleepThinking();
+        sleepBeforeDiceRoll();
         snap = gameEngineService.rollDiceAsSeat(roomId, seat);
         publish(onStep, snap);
         continue;
@@ -119,6 +119,15 @@ public class BotService {
       }
     }
     return best;
+  }
+
+  /** Online bot dice — feels like a real player thinking (2–5 s). */
+  private void sleepBeforeDiceRoll() {
+    try {
+      Thread.sleep(ThreadLocalRandom.current().nextInt(2000, 5001));
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+    }
   }
 
   private void sleepThinking() {
