@@ -88,7 +88,7 @@ export const renderProfileComponent = (
   const indexProfile =
     DISTRIBUTION_PROFILES[totalPlayers]?.[basePosition]?.[position] || 0;
 
-  if (indexProfile !== 0) {
+  if (indexProfile !== 0 && players[indexProfile - 1]) {
     /**
      * Valida si el usuario tiene el turno, dependiendo del valor de currentTurn...
      */

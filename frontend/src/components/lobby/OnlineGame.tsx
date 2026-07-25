@@ -27,8 +27,8 @@ import { applyTokenCell, buildMovePath, resolveLanding, shouldAutoExitJailOnFirs
 import type { IGameSnapshot, IGuestUser, IResultEntry } from "./types";
 import Results from "./Results";
 import {
-  ONLINE_BOARD_COLOR,
   actionsTurnFromSnapshot,
+  boardColorForSnapshot,
   displayPlayerName,
   listTokensFromSnapshot,
   playersForView,
@@ -172,7 +172,7 @@ const OnlineGame = ({
       setPlayers(nextPlayers);
       setListTokens(nextTokens);
       listTokensRef.current = nextTokens;
-      setCurrentTurn(profileTurnIndex(snap, snap.currentSeatIndex));
+      setCurrentTurn(profileTurnIndex(snap, snap.currentSeatIndex, mySeat));
       setActionsTurn((prev) => {
         const next = actionsTurnFromSnapshot(snap, mySeat, prev);
         if (keepDiceVisual) {
@@ -291,7 +291,9 @@ const OnlineGame = ({
           playSound("diceRolling");
         }
         setPlayers(playersForView(snap, mySeat));
-        setCurrentTurn(profileTurnIndex(snap, snap.currentSeatIndex));
+        setCurrentTurn(
+          profileTurnIndex(snap, snap.currentSeatIndex, mySeat)
+        );
         setActionsTurn((prevActions) => {
           const base = actionsTurnFromSnapshot(snap, mySeat, prevActions);
           const rolled = getRandomValueDice(base, value);
@@ -464,22 +466,18 @@ const OnlineGame = ({
     [snapshot, guest.id]
   );
 
-  // Profiles sit by house color on the fixed RGYB board (no rotate / remap).
+  // 4-slot sparse view (BL/TL/TR/BR) with my house rotated to bottom-left.
+  // ProfileSection skips empty slots; always render with the 4-player layout.
   const renderPlayers =
     players.length > 0
       ? players
-      : snapshot && mySeat >= 0
-      ? playersForView(snapshot, mySeat)
       : snapshot
-      ? playersFromSnapshot(snapshot)
+      ? playersForView(snapshot, mySeat)
       : [];
 
-  const totalPlayers: TTotalPlayers =
-    renderPlayers.length === 2 || renderPlayers.length === 3
-      ? renderPlayers.length
-      : 4;
+  const totalPlayers: TTotalPlayers = 4;
 
-  const boardColor = ONLINE_BOARD_COLOR;
+  const boardColor = boardColorForSnapshot(snapshot, mySeat);
 
   const profileHandlers = {
     handleTimer: () => undefined,
