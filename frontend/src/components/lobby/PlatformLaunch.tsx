@@ -1,7 +1,20 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { createGuest, platformLaunch, queueMatch } from "../../api/ludoApi";
+import { useWindowResize } from "../../hooks";
 import type { IGuestUser } from "./types";
 import "./styles.css";
+
+const fillStyle: React.CSSProperties = {
+  minHeight: "var(--vv-height, 100dvh)",
+  height: "var(--vv-height, 100dvh)",
+  width: "100%",
+  boxSizing: "border-box",
+  backgroundColor: "#0a2a5c",
+  backgroundImage: "var(--bg-image)",
+  backgroundSize: "cover",
+  backgroundPosition: "center center",
+  backgroundRepeat: "no-repeat",
+};
 
 export type TPlayers = 2 | 3 | 4;
 
@@ -40,6 +53,7 @@ const DEFAULT_BETS = [10, 20, 50, 100];
 
 /** Boots from Aakda WebView — pick players + bet, then queue. */
 const PlatformLaunch = ({ query, onReady, onError }: Props) => {
+  useWindowResize();
   const [phase, setPhase] = useState<"boot" | "pick" | "joining">("boot");
   const [message, setMessage] = useState("Starting Ludo…");
   const [balanceLabel, setBalanceLabel] = useState<string | null>(null);
@@ -165,8 +179,14 @@ const PlatformLaunch = ({ query, onReady, onError }: Props) => {
 
   if (phase === "pick" && ctx) {
     return (
-      <div className="lobby">
-        <div className="lobby-top" style={{ width: "100%" }}>
+      <div
+        className="lobby platform-fill"
+        style={{
+          ...fillStyle,
+          justifyContent: "center",
+        }}
+      >
+        <div className="lobby-top" style={{ width: "100%", maxWidth: 420 }}>
           <h2 className="lobby-heading">Ludo King</h2>
           <p className="lobby-sub">
             {ctx.guest.username}
@@ -229,8 +249,9 @@ const PlatformLaunch = ({ query, onReady, onError }: Props) => {
 
   return (
     <div
+      className="platform-fill"
       style={{
-        minHeight: "100dvh",
+        ...fillStyle,
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
@@ -238,8 +259,6 @@ const PlatformLaunch = ({ query, onReady, onError }: Props) => {
         padding: 24,
         fontFamily: "Fredoka, sans-serif",
         textAlign: "center",
-        background:
-          "linear-gradient(160deg, #0b3d2e 0%, #145c43 45%, #0a2a20 100%)",
         color: "#f5fff8",
         gap: 12,
       }}

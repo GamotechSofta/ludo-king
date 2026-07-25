@@ -270,24 +270,29 @@ const App = () => {
 
   if (platformError) {
     return (
-      <AppWrapper>
-        <div
-          style={{
-            minHeight: "100dvh",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 24,
-            color: "#fff",
-            textAlign: "center",
-            fontFamily: "Fredoka, sans-serif",
-          }}
-        >
-          <h2 style={{ marginBottom: 8 }}>Open this game from Aakda app</h2>
-          <p style={{ opacity: 0.85 }}>{platformError}</p>
-        </div>
-      </AppWrapper>
+      <div
+        style={{
+          minHeight: "var(--vv-height, 100dvh)",
+          height: "var(--vv-height, 100dvh)",
+          width: "100%",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 24,
+          color: "#fff",
+          textAlign: "center",
+          fontFamily: "Fredoka, sans-serif",
+          backgroundColor: "#0a2a5c",
+          backgroundImage: "var(--bg-image)",
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          boxSizing: "border-box",
+        }}
+      >
+        <h2 style={{ marginBottom: 8 }}>Open this game from Aakda app</h2>
+        <p style={{ opacity: 0.85 }}>{platformError}</p>
+      </div>
     );
   }
 
