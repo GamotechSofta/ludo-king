@@ -11,8 +11,9 @@ export interface PlatformQuery {
   sessionId?: string;
   token?: string;
   returnUrl?: string;
-  /** Optional preselect from URL ?players=2|3|4 */
   players?: TPlayers;
+  /** Optional preselect ?bet=20 */
+  bet?: number;
 }
 
 interface Props {
@@ -31,16 +32,19 @@ type ReadyCtx = {
   guest: IGuestUser;
   returnUrl?: string | null;
   walletEnabled: boolean;
-  entryFee: number;
+  betOptions: number[];
   balance: number;
 };
 
-/** Boots from Aakda WebView — pick 2P/3P/4P then queue. */
+const DEFAULT_BETS = [10, 20, 50, 100];
+
+/** Boots from Aakda WebView — pick players + bet, then queue. */
 const PlatformLaunch = ({ query, onReady, onError }: Props) => {
   const [phase, setPhase] = useState<"boot" | "pick" | "joining">("boot");
   const [message, setMessage] = useState("Starting Ludo…");
   const [balanceLabel, setBalanceLabel] = useState<string | null>(null);
   const [maxPlayers, setMaxPlayers] = useState<TPlayers>(query.players || 2);
+  const [bet, setBet] = useState<number>(query.bet || 10);
   const [ctx, setCtx] = useState<ReadyCtx | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -65,22 +69,23 @@ const PlatformLaunch = ({ query, onReady, onError }: Props) => {
         if (cancelled) return;
 
         const walletEnabled = !!launched.walletEnabled;
-        const entryFee = launched.entryFee ?? 0;
+        const betOptions =
+          launched.betOptions && launched.betOptions.length > 0
+            ? launched.betOptions
+            : DEFAULT_BETS;
         const balance =
           typeof launched.balance === "number" ? launched.balance : null;
 
+        const initialBet =
+          query.bet && betOptions.includes(query.bet)
+            ? query.bet
+            : betOptions[0];
+        setBet(initialBet);
+
         if (walletEnabled && balance != null) {
-          setBalanceLabel(`₹${balance.toFixed(2)} · Entry ₹${entryFee}`);
+          setBalanceLabel(`Balance ₹${balance.toFixed(2)}`);
         }
 
-        if (walletEnabled && balance != null && balance < entryFee) {
-          onError(
-            `Insufficient balance (₹${balance.toFixed(
-              2
-            )}). Need ₹${entryFee} to play.`
-          );
-          return;
-        }
         if (walletEnabled && balance == null && launched.balanceError) {
           onError(launched.balanceError || "Wallet busy, retry");
           return;
@@ -102,11 +107,10 @@ const PlatformLaunch = ({ query, onReady, onError }: Props) => {
           guest,
           returnUrl: launched.returnUrl,
           walletEnabled,
-          entryFee,
+          betOptions,
           balance: balance ?? 0,
         });
         setPhase("pick");
-        setMessage("Choose players");
       } catch (e) {
         if (!cancelled) {
           const msg = e instanceof Error ? e.message : "Failed to launch game";
@@ -123,23 +127,30 @@ const PlatformLaunch = ({ query, onReady, onError }: Props) => {
 
   const handlePlay = useCallback(async () => {
     if (!ctx || busy) return;
+    if (ctx.walletEnabled && ctx.balance < bet) {
+      onError(
+        `Insufficient balance (₹${ctx.balance.toFixed(2)}). Need ₹${bet}.`
+      );
+      return;
+    }
     setBusy(true);
     setPhase("joining");
     setMessage(
       ctx.walletEnabled
-        ? `Joining ${maxPlayers}P (entry ₹${ctx.entryFee})…`
+        ? `Joining ${maxPlayers}P · Bet ₹${bet}…`
         : `Finding ${maxPlayers}P match…`
     );
     try {
+      const stakeTier = ctx.walletEnabled ? `BET_${bet}` : "FREE";
       const queued = await queueMatch(
         ctx.guest.id,
         ctx.guest.username,
         maxPlayers,
-        "FREE"
+        stakeTier
       );
       onReady(ctx.guest, queued.roomId, queued.roomCode, ctx.returnUrl, {
         balance: ctx.balance,
-        entryFee: ctx.entryFee,
+        entryFee: bet,
         walletEnabled: ctx.walletEnabled,
       });
     } catch (e) {
@@ -150,7 +161,7 @@ const PlatformLaunch = ({ query, onReady, onError }: Props) => {
       setPhase("pick");
       setBusy(false);
     }
-  }, [ctx, busy, maxPlayers, onReady, onError]);
+  }, [ctx, busy, maxPlayers, bet, onReady, onError]);
 
   if (phase === "pick" && ctx) {
     return (
@@ -178,17 +189,37 @@ const PlatformLaunch = ({ query, onReady, onError }: Props) => {
               ))}
             </div>
 
+            <p className="lobby-footer-note" style={{ marginTop: 14 }}>
+              Bet
+            </p>
+            <div className="player-count">
+              {ctx.betOptions.map((amount) => {
+                const tooPoor = ctx.walletEnabled && ctx.balance < amount;
+                return (
+                  <button
+                    key={amount}
+                    type="button"
+                    className={bet === amount ? "active" : ""}
+                    onClick={() => setBet(amount)}
+                    disabled={busy || tooPoor}
+                    title={tooPoor ? "Insufficient balance" : undefined}
+                  >
+                    ₹{amount}
+                  </button>
+                );
+              })}
+            </div>
+
             <button
               className="lobby-btn primary"
               type="button"
-              disabled={busy}
+              disabled={
+                busy || (ctx.walletEnabled && ctx.balance < bet)
+              }
               onClick={() => void handlePlay()}
               style={{ marginTop: 12 }}
             >
-              PLAY · {maxPlayers}P
-              {ctx.walletEnabled && ctx.entryFee > 0
-                ? ` · ₹${ctx.entryFee}`
-                : ""}
+              PLAY · {maxPlayers}P · ₹{bet}
             </button>
           </div>
         </div>

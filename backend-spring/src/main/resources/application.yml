@@ -38,7 +38,9 @@ ludo:
     base-url: ${AAKDA_WALLET_BASE_URL:}
     game-id: ${GAME_ID:LUDO}
     entry-fee: ${ENTRY_FEE:10}
-    # 0 = winner-takes-pot (sum of human entry fees). Or set WIN_PAYOUT / WIN_MULTIPLIER.
+    # Selectable bets shown in UI (comma-separated)
+    bet-options: ${BET_OPTIONS:10,20,50,100}
+    # 0 = winner-takes-pot. Or set WIN_PAYOUT / WIN_MULTIPLIER.
     win-multiplier: ${WIN_MULTIPLIER:0}
     win-payout: ${WIN_PAYOUT:0}
 

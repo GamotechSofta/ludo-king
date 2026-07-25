@@ -92,6 +92,7 @@ public class PlatformController {
     res.put("returnUrl", ctx.returnUrl());
     res.put("walletEnabled", matchEconomy.isLive());
     res.put("entryFee", matchEconomy.entryFee());
+    res.put("betOptions", matchEconomy.betOptions());
     res.put("balance", balance);
     res.put("balanceError", balanceError);
     return res;
@@ -121,6 +122,7 @@ public class PlatformController {
     res.put("success", true);
     res.put("walletEnabled", matchEconomy.isLive());
     res.put("entryFee", matchEconomy.entryFee());
+    res.put("betOptions", matchEconomy.betOptions());
     res.put("gameId", matchEconomy.gameId());
     return res;
   }

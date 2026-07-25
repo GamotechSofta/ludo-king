@@ -39,6 +39,9 @@ function parsePlatformQuery(): PlatformQuery | "missing-userid" | null {
     playersNum === 2 || playersNum === 3 || playersNum === 4
       ? (playersNum as 2 | 3 | 4)
       : undefined;
+  const betRaw = params.get("bet");
+  const betNum = betRaw ? Number(betRaw) : NaN;
+  const bet = Number.isFinite(betNum) && betNum > 0 ? betNum : undefined;
 
   const hasAnyPlatformHint =
     userId != null ||
@@ -60,6 +63,7 @@ function parsePlatformQuery(): PlatformQuery | "missing-userid" | null {
     token: token || undefined,
     returnUrl: returnUrl || undefined,
     players,
+    bet,
   };
 }
 

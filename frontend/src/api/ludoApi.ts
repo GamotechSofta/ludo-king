@@ -106,6 +106,7 @@ export interface IPlatformLaunchResult {
   returnUrl?: string | null;
   walletEnabled?: boolean;
   entryFee?: number;
+  betOptions?: number[];
   balance?: number | null;
   balanceError?: string | null;
 }

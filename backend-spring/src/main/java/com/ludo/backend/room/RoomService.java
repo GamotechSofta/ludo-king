@@ -5,6 +5,7 @@ import com.ludo.backend.game.GameEngineService.SeatInfo;
 import com.ludo.backend.game.GameSnapshot;
 import com.ludo.backend.game.LudoColor;
 import com.ludo.backend.platform.wallet.MatchEconomyService;
+import com.ludo.backend.platform.wallet.WalletProperties;
 import com.ludo.backend.realtime.RedisMatchQueue;
 import java.security.SecureRandom;
 import java.time.Instant;
@@ -55,7 +56,16 @@ public class RoomService {
     if (maxPlayers < 2 || maxPlayers > 4) {
       throw new IllegalArgumentException("maxPlayers must be 2-4");
     }
-    String tier = stakeTier == null || stakeTier.isBlank() ? "FREE" : stakeTier;
+    String tier = stakeTier == null || stakeTier.isBlank() ? "FREE" : stakeTier.trim().toUpperCase();
+    double bet = WalletProperties.parseStakeAmount(tier, matchEconomy.entryFee());
+    if (matchEconomy.isLive() && bet <= 0 && !"FREE".equals(tier) && !"PRIVATE".equals(tier)) {
+      bet = matchEconomy.entryFee();
+      tier = WalletProperties.stakeTierForBet(bet);
+    }
+    // Paid platform play must pick a bet
+    if (matchEconomy.isLive() && bet <= 0 && tier.startsWith("BET_")) {
+      throw new IllegalArgumentException("Invalid bet amount");
+    }
     String key = maxPlayers + "|" + tier;
 
     removeFromAllQueues(userId);
@@ -75,7 +85,8 @@ public class RoomService {
       room.getPlayers().add(new RoomPlayer(userId, username, colors.get(seat).name(), false, seat));
       room = roomRepository.save(room);
       try {
-        matchEconomy.reserveEntry(room.getId(), userId);
+        double fee = room.getEntryFee() > 0 ? room.getEntryFee() : bet;
+        matchEconomy.reserveEntry(room.getId(), userId, fee);
       } catch (RuntimeException e) {
         room.getPlayers().removeIf(p -> userId.equals(p.getUserId()));
         roomRepository.save(room);
@@ -89,12 +100,15 @@ public class RoomService {
 
     // Create new waiting room for this player (bot-fill timer starts)
     Room room = newEmptyRoom(maxPlayers, tier);
+    if (bet > 0) {
+      room.setEntryFee(Math.round(bet));
+    }
     List<LudoColor> colors = LudoColor.forPlayerCount(maxPlayers);
     room.getPlayers().add(new RoomPlayer(userId, username, colors.get(0).name(), false, 0));
     room.setFillDeadlineAt(Instant.now().plus(FILL_SECONDS, ChronoUnit.SECONDS));
     room = roomRepository.save(room);
     try {
-      matchEconomy.reserveEntry(room.getId(), userId);
+      matchEconomy.reserveEntry(room.getId(), userId, bet);
     } catch (RuntimeException e) {
       roomRepository.delete(room);
       throw e;
@@ -255,9 +269,6 @@ public class RoomService {
       return room;
     }
     try {
-      if (matchEconomy.isLive()) {
-        room.setEntryFee(Math.round(matchEconomy.entryFee()));
-      }
       List<SeatInfo> seats = new ArrayList<>();
       for (RoomPlayer p : room.getPlayers()) {
         seats.add(new SeatInfo(

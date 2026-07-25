@@ -32,6 +32,7 @@ import {
 } from "../game/rules";
 import type { IGameSnapshot, IGuestUser, IResultEntry } from "./types";
 import Results from "./Results";
+import { fetchWalletBalance } from "../../api/ludoApi";
 import {
   actionsTurnFromSnapshot,
   boardColorForSnapshot,
@@ -89,6 +90,36 @@ const OnlineGame = ({
   const [currentTurn, setCurrentTurn] = useState(0);
   const [isBusy, setIsBusy] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
+  const [liveBalance, setLiveBalance] = useState<number | null>(
+    walletBalance ?? null
+  );
+
+  useEffect(() => {
+    setLiveBalance(walletBalance ?? null);
+  }, [walletBalance]);
+
+  const refreshBalance = useCallback(async () => {
+    try {
+      const res = await fetchWalletBalance(guest.id);
+      if (res.walletEnabled !== false && typeof res.balance === "number") {
+        setLiveBalance(res.balance);
+      }
+    } catch {
+      // keep last known balance
+    }
+  }, [guest.id]);
+
+  useEffect(() => {
+    void refreshBalance();
+    const id = window.setInterval(() => void refreshBalance(), 15000);
+    return () => window.clearInterval(id);
+  }, [refreshBalance]);
+
+  useEffect(() => {
+    if (snapshot?.phase === "FINISHED") {
+      void refreshBalance();
+    }
+  }, [snapshot?.phase, refreshBalance]);
 
   const mySeat = useMemo(() => {
     if (!snapshot) return -1;
@@ -602,6 +633,25 @@ const OnlineGame = ({
             />
           </svg>
         </button>
+        {liveBalance != null && (
+          <div
+            style={{
+              position: "absolute",
+              top: 10,
+              left: "50%",
+              transform: "translateX(-50%)",
+              zIndex: 30,
+              padding: "6px 12px",
+              borderRadius: 999,
+              background: "rgba(0,0,0,0.55)",
+              color: "#ffe566",
+              fontSize: "0.85rem",
+              fontWeight: 700,
+            }}
+          >
+            Wallet ₹{liveBalance.toFixed(2)}
+          </div>
+        )}
         <p className="lobby-sub" style={{ marginTop: 80, textAlign: "center" }}>
           {connected ? "Loading board…" : "Connecting…"}
         </p>
@@ -639,21 +689,31 @@ const OnlineGame = ({
           />
         </svg>
       </button>
-      {walletBalance != null && (
+      {liveBalance != null && (
         <div
           style={{
             position: "absolute",
-            top: 12,
+            top: 10,
             left: "50%",
             transform: "translateX(-50%)",
-            zIndex: 20,
-            fontSize: "0.8rem",
+            zIndex: 30,
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "6px 12px",
+            borderRadius: 999,
+            background: "rgba(0,0,0,0.55)",
+            color: "#ffe566",
+            fontSize: "0.85rem",
             fontWeight: 700,
-            opacity: 0.9,
             whiteSpace: "nowrap",
+            pointerEvents: "none",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.25)",
           }}
+          aria-label="Wallet balance"
         >
-          ₹{walletBalance.toFixed(2)}
+          <span style={{ opacity: 0.85, fontWeight: 600 }}>Wallet</span>
+          <span>₹{liveBalance.toFixed(2)}</span>
         </div>
       )}
       {secondsLeft != null && (
