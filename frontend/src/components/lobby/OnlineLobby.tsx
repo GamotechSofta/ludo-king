@@ -7,6 +7,8 @@ interface OnlineLobbyProps {
   guest: IGuestUser;
   roomId: string;
   roomCode: string;
+  walletBalance?: number | null;
+  entryFee?: number;
   onBack: () => void;
   onStart: (room: IOnlineRoom, game?: IGameSnapshot | null) => void;
 }
@@ -15,6 +17,8 @@ const OnlineLobby = ({
   guest,
   roomId,
   roomCode,
+  walletBalance,
+  entryFee,
   onBack,
   onStart,
 }: OnlineLobbyProps) => {
@@ -77,6 +81,11 @@ const OnlineLobby = ({
         <h2 className="lobby-heading">Finding Players</h2>
         <p className="lobby-sub">
           Room <strong>{roomCode}</strong> · {guest.username}
+          {walletBalance != null
+            ? ` · ₹${walletBalance.toFixed(2)}${
+                entryFee ? ` (entry ₹${entryFee})` : ""
+              }`
+            : ""}
         </p>
 
         <div className="lobby-tokens" aria-hidden>

@@ -104,6 +104,10 @@ export interface IPlatformLaunchResult {
   sessionId?: string | null;
   displayName: string;
   returnUrl?: string | null;
+  walletEnabled?: boolean;
+  entryFee?: number;
+  balance?: number | null;
+  balanceError?: string | null;
 }
 
 /** Bind Aakda launch params into Spring HTTP session (cookies). */
@@ -120,4 +124,20 @@ export const platformLaunch = (body: {
     body: JSON.stringify(body),
     credentials: "include",
   });
+
+export const fetchWalletBalance = (userId: string) =>
+  json<{
+    success: boolean;
+    balance: number;
+    walletEnabled?: boolean;
+    currency?: string;
+  }>(`/api/platform/balance?userId=${encodeURIComponent(userId)}`);
+
+export const fetchEconomy = () =>
+  json<{
+    success: boolean;
+    walletEnabled: boolean;
+    entryFee: number;
+    gameId: string;
+  }>("/api/platform/economy");
 

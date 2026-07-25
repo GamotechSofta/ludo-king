@@ -1,5 +1,6 @@
 package com.ludo.backend.platform;
 
+import com.ludo.backend.platform.wallet.MatchEconomyService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import java.util.LinkedHashMap;
@@ -20,9 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * Aakda platform integration: launch binding + wallet stubs.
- *
- * <p>TODO: Wire debit/credit/balance to Aakda Node wallet APIs when ready.
+ * Aakda platform integration: launch binding + live wallet proxy.
  */
 @RestController
 @RequestMapping("/api/platform")
@@ -35,6 +34,12 @@ public class PlatformController {
   @Value("${ludo.platform.shared-secret:}")
   private String sharedSecret;
 
+  private final MatchEconomyService matchEconomy;
+
+  public PlatformController(MatchEconomyService matchEconomy) {
+    this.matchEconomy = matchEconomy;
+  }
+
   public record LaunchRequest(
       String userId,
       String gameId,
@@ -43,9 +48,6 @@ public class PlatformController {
       String returnUrl,
       String displayName
   ) {
-  }
-
-  public record MoneyRequest(String userId, String sessionId, Double amount, String reason) {
   }
 
   /** Bind platform query params into the HTTP session (called by WebView frontend). */
@@ -70,6 +72,17 @@ public class PlatformController {
     session.setAttribute(PlatformLaunchContext.SESSION_KEY, ctx);
     log.info("platform launch userId={} gameId={} sessionId={}", userId, gameId, ctx.sessionId());
 
+    Double balance = null;
+    String balanceError = null;
+    if (matchEconomy.isLive()) {
+      try {
+        balance = matchEconomy.getBalance(userId);
+      } catch (Exception e) {
+        balanceError = e.getMessage();
+        log.warn("launch balance fetch failed userId={}: {}", userId, e.getMessage());
+      }
+    }
+
     Map<String, Object> res = new LinkedHashMap<>();
     res.put("success", true);
     res.put("userId", ctx.userId());
@@ -77,6 +90,10 @@ public class PlatformController {
     res.put("sessionId", ctx.sessionId());
     res.put("displayName", ctx.displayName());
     res.put("returnUrl", ctx.returnUrl());
+    res.put("walletEnabled", matchEconomy.isLive());
+    res.put("entryFee", matchEconomy.entryFee());
+    res.put("balance", balance);
+    res.put("balanceError", balanceError);
     return res;
   }
 
@@ -93,13 +110,22 @@ public class PlatformController {
     res.put("sessionId", ctx.sessionId());
     res.put("displayName", ctx.displayName());
     res.put("returnUrl", ctx.returnUrl());
+    res.put("walletEnabled", matchEconomy.isLive());
+    res.put("entryFee", matchEconomy.entryFee());
     return res;
   }
 
-  /**
-   * Stub wallet balance.
-   * TODO: Wire to Aakda Node wallet APIs
-   */
+  @GetMapping("/economy")
+  public Map<String, Object> economy() {
+    Map<String, Object> res = new LinkedHashMap<>();
+    res.put("success", true);
+    res.put("walletEnabled", matchEconomy.isLive());
+    res.put("entryFee", matchEconomy.entryFee());
+    res.put("gameId", matchEconomy.gameId());
+    return res;
+  }
+
+  /** Live Aakda wallet balance (never trust client). */
   @GetMapping("/balance")
   public Map<String, Object> balance(
       @RequestParam String userId,
@@ -107,68 +133,29 @@ public class PlatformController {
   ) {
     assertPlatformKey(platformKey);
     requireValidUserId(userId);
-    log.info("platform balance STUB userId={} (mock — not real money)", userId);
+    if (!matchEconomy.isLive()) {
+      Map<String, Object> res = new LinkedHashMap<>();
+      res.put("success", true);
+      res.put("userId", userId);
+      res.put("balance", 0);
+      res.put("currency", "INR");
+      res.put("walletEnabled", false);
+      return res;
+    }
+    double bal = matchEconomy.getBalance(userId);
     Map<String, Object> res = new LinkedHashMap<>();
     res.put("success", true);
+    res.put("status", "SUCCESS");
     res.put("userId", userId);
-    res.put("balance", 1000.0);
+    res.put("balance", bal);
     res.put("currency", "INR");
-    res.put("mock", true);
-    return res;
-  }
-
-  /**
-   * Stub debit.
-   * TODO: Wire to Aakda Node wallet APIs
-   */
-  @PostMapping("/debit")
-  public Map<String, Object> debit(
-      @RequestBody MoneyRequest body,
-      @RequestHeader(value = "X-Platform-Key", required = false) String platformKey
-  ) {
-    assertPlatformKey(platformKey);
-    requireValidUserId(body.userId());
-    log.info(
-        "platform debit STUB userId={} sessionId={} amount={} reason={} (mock — not real money)",
-        body.userId(), body.sessionId(), body.amount(), body.reason()
-    );
-    return moneyStub("debit", body);
-  }
-
-  /**
-   * Stub credit.
-   * TODO: Wire to Aakda Node wallet APIs
-   */
-  @PostMapping("/credit")
-  public Map<String, Object> credit(
-      @RequestBody MoneyRequest body,
-      @RequestHeader(value = "X-Platform-Key", required = false) String platformKey
-  ) {
-    assertPlatformKey(platformKey);
-    requireValidUserId(body.userId());
-    log.info(
-        "platform credit STUB userId={} sessionId={} amount={} reason={} (mock — not real money)",
-        body.userId(), body.sessionId(), body.amount(), body.reason()
-    );
-    return moneyStub("credit", body);
-  }
-
-  private Map<String, Object> moneyStub(String op, MoneyRequest body) {
-    Map<String, Object> res = new LinkedHashMap<>();
-    res.put("success", true);
-    res.put("operation", op);
-    res.put("userId", body.userId());
-    res.put("sessionId", body.sessionId());
-    res.put("amount", body.amount() == null ? 0 : body.amount());
-    res.put("reason", body.reason());
-    res.put("balance", 1000.0);
-    res.put("mock", true);
+    res.put("walletEnabled", true);
+    res.put("mock", false);
     return res;
   }
 
   private void assertPlatformKey(String platformKey) {
     if (sharedSecret == null || sharedSecret.isBlank()) {
-      // Dev: secret not set → allow
       return;
     }
     if (platformKey == null || !sharedSecret.equals(platformKey)) {

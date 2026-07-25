@@ -1,13 +1,16 @@
 package com.ludo.backend.room;
 
 import java.util.Map;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 @RestController
 @RequestMapping("/api/rooms")
@@ -74,5 +77,17 @@ public class RoomController {
   public Map<String, Object> leave(@PathVariable String id, @RequestBody CancelRequest req) {
     roomService.leaveRoom(id, req.userId());
     return Map.of("ok", true);
+  }
+
+  @ExceptionHandler(ResponseStatusException.class)
+  public ResponseEntity<Map<String, String>> handlePayment(ResponseStatusException e) {
+    return ResponseEntity.status(e.getStatusCode())
+        .body(Map.of("error", e.getReason() == null ? "error" : e.getReason()));
+  }
+
+  @ExceptionHandler({IllegalArgumentException.class, IllegalStateException.class})
+  public ResponseEntity<Map<String, String>> handleBad(RuntimeException e) {
+    return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+        .body(Map.of("error", e.getMessage() == null ? "error" : e.getMessage()));
   }
 }

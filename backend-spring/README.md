@@ -151,14 +151,24 @@ Local play (no query params) is unchanged (home → modes → play).
 - `GET /health` — mongo + engine
 - `GET /api/health` — simple `{ ok: true, status: "UP" }`
 
-### Wallet stubs (mock only)
+### Wallet — Model A (entry fee per match)
 
-- `GET /api/platform/balance?userId=...`
-- `POST /api/platform/debit` `{ userId, sessionId, amount, reason }`
-- `POST /api/platform/credit` `{ userId, sessionId, amount, reason }`
+Aakda `/api/wallet/*` is the **source of truth**. Spring only keeps a local ledger (`match_economy`) for idempotency / refunds.
 
-If `PLATFORM_SHARED_SECRET` is set, send header `X-Platform-Key: <secret>`. If unset, stubs are open (dev). Responses include `"mock": true`.  
-TODO in code: wire to Aakda Node wallet APIs.
+Flow:
+1. Platform launch → fetch live balance
+2. Join/queue → `debit(ENTRY_FEE)` with `LUDO_ENTRY_{matchId}_{userId}`
+3. Match end → winner `credit` with `LUDO_WIN_{matchId}_{userId}` (winner-takes-pot by default)
+4. Leave lobby / cancel → `rollback` / `LUDO_REFUND_{matchId}_{userId}`
+
+Txn id formats (idempotent):
+- Entry: `LUDO_ENTRY_{matchId}_{userId}`
+- Win: `LUDO_WIN_{matchId}_{userId}`
+- Refund: `LUDO_REFUND_{matchId}_{userId}` (or `ROLLBACK_{entryTxn}`)
+
+APIs on Spring:
+- `GET /api/platform/balance?userId=...` → proxies Aakda balance
+- `GET /api/platform/economy` → `{ entryFee, walletEnabled, gameId }`
 
 ### Render env vars
 
@@ -166,13 +176,18 @@ TODO in code: wire to Aakda Node wallet APIs.
 |-----|--------|
 | `PORT` | Set by Render |
 | `MONGO_URL` | Required |
-| `CLIENT_URL` | Frontend origin(s), comma-separated (CORS + redirect target) |
-| `CORS_ALLOWED_ORIGINS` | `https://www.aakda.in,https://aakda.in,http://localhost:5173` |
-| `PLATFORM_SHARED_SECRET` | Optional; enables `X-Platform-Key` on wallet stubs |
+| `CLIENT_URL` | Frontend origin(s) |
+| `CORS_ALLOWED_ORIGINS` | Aakda + local |
+| `PLATFORM_SHARED_SECRET` | Optional `X-Platform-Key` on balance |
+| `AAKDA_WALLET_BASE_URL` | e.g. `https://api.aakda.in` |
+| `LUDO_WALLET_ENABLED` | `true` to charge entry fees |
+| `GAME_ID` | `LUDO` |
+| `ENTRY_FEE` | e.g. `10` |
+| `WIN_PAYOUT` / `WIN_MULTIPLIER` | `0` = winner-takes-pot |
 | `SESSION_SECRET` | Session cookie |
 | `REDIS_URL` | Optional |
 
-Frontend also needs `REACT_APP_API_URL=https://YOUR-SPRING-ON-RENDER`.
+Frontend: `REACT_APP_API_URL=https://YOUR-SPRING-ON-RENDER`
 
 ### CORS / iframe
 
@@ -180,10 +195,12 @@ Frontend also needs `REACT_APP_API_URL=https://YOUR-SPRING-ON-RENDER`.
 - `X-Frame-Options` disabled; CSP `frame-ancestors` allows Aakda + local parents
 - API fetch uses `credentials: "include"` so launch binds to HTTP session
 
-### Quick test
+### Quick test (wallet)
 
-1. Open: `https://YOUR-FRONTEND/?userId=507f1f77bcf86cd799439011&gameId=LUDO&returnUrl=https://www.aakda.in/games`
-2. Should skip home/login, queue online match, show lobby
-3. Back/exit → `returnUrl`
-4. Open frontend with no params → normal local home screen
+1. Set `AAKDA_WALLET_BASE_URL` + `ENTRY_FEE=10` on Spring Render
+2. Open from Aakda Play (iframe) or:  
+   `https://ludo-king-frontend.onrender.com/?userId=REAL_MONGO_ID&gameId=LUDO&returnUrl=https://www.aakda.in/games`
+3. Balance shows → join debits entry → win credits pot → leave lobby refunds
+4. Insufficient balance → cannot join
+5. Local play (no query params) unchanged when wallet off / no platform launch
 

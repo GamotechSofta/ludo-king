@@ -33,6 +33,12 @@ function parsePlatformQuery(): PlatformQuery | "missing-userid" | null {
   const sessionId = params.get("sessionId");
   const token = params.get("token");
   const returnUrl = params.get("returnUrl");
+  const playersRaw = params.get("players") || params.get("maxPlayers");
+  const playersNum = playersRaw ? Number(playersRaw) : NaN;
+  const players =
+    playersNum === 2 || playersNum === 3 || playersNum === 4
+      ? (playersNum as 2 | 3 | 4)
+      : undefined;
 
   const hasAnyPlatformHint =
     userId != null ||
@@ -53,6 +59,7 @@ function parsePlatformQuery(): PlatformQuery | "missing-userid" | null {
     sessionId: sessionId || undefined,
     token: token || undefined,
     returnUrl: returnUrl || undefined,
+    players,
   };
 }
 
@@ -85,6 +92,8 @@ const App = () => {
       ? initialPlatform.returnUrl || null
       : null
   );
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  const [entryFee, setEntryFee] = useState(0);
 
   const exitToPlatform = useCallback(() => {
     if (platformReturnUrl) {
@@ -233,13 +242,21 @@ const App = () => {
       g: IGuestUser,
       roomId: string,
       roomCode: string,
-      returnUrl?: string | null
+      returnUrl?: string | null,
+      wallet?: { balance: number; entryFee: number; walletEnabled: boolean }
     ) => {
       setGuest(g);
       setOnlineRoomId(roomId);
       setOnlineRoomCode(roomCode);
       setMode("online");
       if (returnUrl) setPlatformReturnUrl(returnUrl);
+      if (wallet?.walletEnabled) {
+        // Balance after debit happens server-side on queue — refresh approx
+        setWalletBalance(
+          Math.max(0, wallet.balance - (wallet.entryFee || 0))
+        );
+        setEntryFee(wallet.entryFee || 0);
+      }
       setPlatformQuery(null);
       window.history.replaceState({ screen: "onlineLobby" }, "", "/");
       goTo("onlineLobby", true);
@@ -322,6 +339,8 @@ const App = () => {
           guest={guest}
           roomId={onlineRoomId}
           roomCode={onlineRoomCode}
+          walletBalance={walletBalance}
+          entryFee={entryFee}
           onBack={goBack}
           onStart={handleOnlineStart}
         />
@@ -331,6 +350,7 @@ const App = () => {
           guest={guest}
           roomId={onlineRoomId}
           initialSnapshot={onlineGameSnap}
+          walletBalance={walletBalance}
           onExit={goBack}
           onPlayAgain={handlePlayAgain}
         />

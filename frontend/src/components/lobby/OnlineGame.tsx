@@ -48,6 +48,7 @@ interface OnlineGameProps {
   guest: IGuestUser;
   roomId: string;
   initialSnapshot?: IGameSnapshot | null;
+  walletBalance?: number | null;
   onExit: () => void;
   onPlayAgain: () => void;
 }
@@ -58,6 +59,7 @@ const OnlineGame = ({
   guest,
   roomId,
   initialSnapshot = null,
+  walletBalance = null,
   onExit,
   onPlayAgain,
 }: OnlineGameProps) => {
@@ -623,6 +625,23 @@ const OnlineGame = ({
           />
         </svg>
       </button>
+      {walletBalance != null && (
+        <div
+          style={{
+            position: "absolute",
+            top: 12,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 20,
+            fontSize: "0.8rem",
+            fontWeight: 700,
+            opacity: 0.9,
+            whiteSpace: "nowrap",
+          }}
+        >
+          ₹{walletBalance.toFixed(2)}
+        </div>
+      )}
       {secondsLeft != null && (
         <div
           style={{

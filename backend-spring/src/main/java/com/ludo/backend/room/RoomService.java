@@ -4,6 +4,7 @@ import com.ludo.backend.game.GameEngineService;
 import com.ludo.backend.game.GameEngineService.SeatInfo;
 import com.ludo.backend.game.GameSnapshot;
 import com.ludo.backend.game.LudoColor;
+import com.ludo.backend.platform.wallet.MatchEconomyService;
 import com.ludo.backend.realtime.RedisMatchQueue;
 import java.security.SecureRandom;
 import java.time.Instant;
@@ -26,6 +27,7 @@ public class RoomService {
   private final RoomRepository roomRepository;
   private final GameEngineService gameEngineService;
   private final RedisMatchQueue redisMatchQueue;
+  private final MatchEconomyService matchEconomy;
   private final SecureRandom random = new SecureRandom();
 
   private final ConcurrentHashMap<String, ConcurrentLinkedQueue<QueueEntry>> queues =
@@ -34,11 +36,13 @@ public class RoomService {
   public RoomService(
       RoomRepository roomRepository,
       GameEngineService gameEngineService,
-      @Autowired(required = false) RedisMatchQueue redisMatchQueue
+      @Autowired(required = false) RedisMatchQueue redisMatchQueue,
+      MatchEconomyService matchEconomy
   ) {
     this.roomRepository = roomRepository;
     this.gameEngineService = gameEngineService;
     this.redisMatchQueue = redisMatchQueue;
+    this.matchEconomy = matchEconomy;
   }
 
   public record QueueEntry(String userId, String username, Instant enqueuedAt) {
@@ -70,6 +74,13 @@ public class RoomService {
       int seat = room.getPlayers().size();
       room.getPlayers().add(new RoomPlayer(userId, username, colors.get(seat).name(), false, seat));
       room = roomRepository.save(room);
+      try {
+        matchEconomy.reserveEntry(room.getId(), userId);
+      } catch (RuntimeException e) {
+        room.getPlayers().removeIf(p -> userId.equals(p.getUserId()));
+        roomRepository.save(room);
+        throw e;
+      }
       if (room.getPlayers().size() == room.getMaxPlayers()) {
         room = startMatch(room);
       }
@@ -82,6 +93,12 @@ public class RoomService {
     room.getPlayers().add(new RoomPlayer(userId, username, colors.get(0).name(), false, 0));
     room.setFillDeadlineAt(Instant.now().plus(FILL_SECONDS, ChronoUnit.SECONDS));
     room = roomRepository.save(room);
+    try {
+      matchEconomy.reserveEntry(room.getId(), userId);
+    } catch (RuntimeException e) {
+      roomRepository.delete(room);
+      throw e;
+    }
     if (redisMatchQueue != null) {
       redisMatchQueue.enqueue(maxPlayers, tier, userId, username);
     }
@@ -112,8 +129,10 @@ public class RoomService {
     if (!removed) {
       return;
     }
+    matchEconomy.refundEntry(roomId, userId);
     boolean onlyBotsLeft = room.getPlayers().stream().allMatch(RoomPlayer::isBot);
     if (room.getPlayers().isEmpty() || onlyBotsLeft) {
+      matchEconomy.refundAllHumans(room);
       roomRepository.delete(room);
       return;
     }
@@ -131,7 +150,14 @@ public class RoomService {
     List<LudoColor> colors = LudoColor.forPlayerCount(maxPlayers);
     room.getPlayers().add(new RoomPlayer(userId, username, colors.get(0).name(), false, 0));
     room.setFillDeadlineAt(Instant.now().plus(FILL_SECONDS, ChronoUnit.SECONDS));
-    return roomRepository.save(room);
+    room = roomRepository.save(room);
+    try {
+      matchEconomy.reserveEntry(room.getId(), userId);
+    } catch (RuntimeException e) {
+      roomRepository.delete(room);
+      throw e;
+    }
+    return room;
   }
 
   public Room joinByCode(String roomCode, String userId, String username) {
@@ -154,6 +180,13 @@ public class RoomService {
       room.setFillDeadlineAt(Instant.now().plus(FILL_SECONDS, ChronoUnit.SECONDS));
     }
     room = roomRepository.save(room);
+    try {
+      matchEconomy.reserveEntry(room.getId(), userId);
+    } catch (RuntimeException e) {
+      room.getPlayers().removeIf(p -> userId.equals(p.getUserId()));
+      roomRepository.save(room);
+      throw e;
+    }
     if (room.getPlayers().size() == room.getMaxPlayers()) {
       room = startMatch(room);
     }
@@ -221,21 +254,42 @@ public class RoomService {
     if (room.getStatus() == RoomStatus.IN_PROGRESS) {
       return room;
     }
-    List<SeatInfo> seats = new ArrayList<>();
-    for (RoomPlayer p : room.getPlayers()) {
-      seats.add(new SeatInfo(
-          p.getUserId(),
-          p.getUsername(),
-          LudoColor.valueOf(p.getColor()),
-          p.isBot()
-      ));
+    try {
+      if (matchEconomy.isLive()) {
+        room.setEntryFee(Math.round(matchEconomy.entryFee()));
+      }
+      List<SeatInfo> seats = new ArrayList<>();
+      for (RoomPlayer p : room.getPlayers()) {
+        seats.add(new SeatInfo(
+            p.getUserId(),
+            p.getUsername(),
+            LudoColor.valueOf(p.getColor()),
+            p.isBot()
+        ));
+      }
+      gameEngineService.createMatch(room.getId(), seats);
+      room.setStatus(RoomStatus.IN_PROGRESS);
+      room.setStartedAt(Instant.now());
+      room = roomRepository.save(room);
+      matchEconomy.markPlaying(room.getId());
+      return room;
+    } catch (RuntimeException e) {
+      matchEconomy.refundAllHumans(room);
+      throw e;
     }
-    GameSnapshot snap = gameEngineService.createMatch(room.getId(), seats);
-    room.setStatus(RoomStatus.IN_PROGRESS);
-    room.setStartedAt(Instant.now());
-    room = roomRepository.save(room);
-    // snap available via engine
-    return room;
+  }
+
+  /** Settle wallet when match finishes (idempotent). */
+  public void settleIfFinished(Room room, GameSnapshot snap) {
+    if (room.getStatus() == RoomStatus.COMPLETED) {
+      return;
+    }
+    if (!GameEngineService.PHASE_FINISHED.equals(snap.getPhase())) {
+      return;
+    }
+    room.setStatus(RoomStatus.COMPLETED);
+    roomRepository.save(room);
+    matchEconomy.settleMatch(room, snap);
   }
 
   public void processExpiredFills() {
