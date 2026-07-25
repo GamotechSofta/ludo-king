@@ -9,6 +9,9 @@
   min-height: 62px;
   box-sizing: border-box;
   overflow: visible;
+  transition:
+    border-color 0.28s ease,
+    box-shadow 0.28s ease;
 }
 
 .game-profile.has-turn {

@@ -23,7 +23,13 @@ import {
   Tokens,
 } from "../game/components";
 import { getRandomValueDice } from "../game/helpers";
-import { applyTokenCell, buildMovePath, resolveLanding, shouldAutoExitJailOnFirstSix } from "../game/rules";
+import {
+  applyTokenCell,
+  buildMovePath,
+  clearDiceAvailable,
+  resolveLanding,
+  shouldAutoExitJailOnFirstSix,
+} from "../game/rules";
 import type { IGameSnapshot, IGuestUser, IResultEntry } from "./types";
 import Results from "./Results";
 import {
@@ -35,6 +41,7 @@ import {
   playersFromSnapshot,
   profileTurnIndex,
   seatColorsFromSnapshot,
+  snapshotTokenPositionsEqual,
 } from "./onlineSnapshotBoard";
 
 interface OnlineGameProps {
@@ -113,6 +120,13 @@ const OnlineGame = ({
   const suppressMoveAnimRef = useRef(false);
   const pendingSnapRef = useRef<IGameSnapshot | null>(null);
   const applySeqRef = useRef(0);
+  const lockedBoardColorRef = useRef<ReturnType<
+    typeof boardColorForSnapshot
+  > | null>(null);
+
+  useEffect(() => {
+    lockedBoardColorRef.current = null;
+  }, [roomId]);
 
   useEffect(() => {
     listTokensRef.current = listTokens;
@@ -164,6 +178,28 @@ const OnlineGame = ({
 
   const syncBoardFromSnapshot = useCallback(
     (snap: IGameSnapshot, keepDiceVisual = false) => {
+      const prev = prevSnapRef.current;
+      const prevSeat = prev?.currentSeatIndex;
+      const turnHandoff =
+        !!prev &&
+        snap.phase === "AWAITING_ROLL" &&
+        prev.currentSeatIndex !== snap.currentSeatIndex &&
+        snapshotTokenPositionsEqual(prev, snap);
+
+      if (turnHandoff) {
+        setCurrentTurn(profileTurnIndex(snap, snap.currentSeatIndex, mySeat));
+        setActionsTurn((prevActions) =>
+          actionsTurnFromSnapshot(snap, mySeat, prevActions, prevSeat)
+        );
+        setListTokens((tok) => {
+          const cleared = clearDiceAvailable(tok);
+          listTokensRef.current = cleared;
+          return cleared;
+        });
+        prevSnapRef.current = snap;
+        return;
+      }
+
       const nextPlayers = playersForView(snap, mySeat);
       const isMyTurn = snap.currentSeatIndex === mySeat;
       const canMove =
@@ -173,11 +209,20 @@ const OnlineGame = ({
       setListTokens(nextTokens);
       listTokensRef.current = nextTokens;
       setCurrentTurn(profileTurnIndex(snap, snap.currentSeatIndex, mySeat));
-      setActionsTurn((prev) => {
-        const next = actionsTurnFromSnapshot(snap, mySeat, prev);
-        if (keepDiceVisual) {
-          next.diceValue = prev.diceValue;
-          next.diceRollNumber = prev.diceRollNumber;
+      setActionsTurn((prevActions) => {
+        const next = actionsTurnFromSnapshot(
+          snap,
+          mySeat,
+          prevActions,
+          prevSeat
+        );
+        if (
+          keepDiceVisual &&
+          prevSeat != null &&
+          prevSeat === snap.currentSeatIndex
+        ) {
+          next.diceValue = prevActions.diceValue;
+          next.diceRollNumber = prevActions.diceRollNumber;
         }
         return next;
       });
@@ -295,7 +340,12 @@ const OnlineGame = ({
           profileTurnIndex(snap, snap.currentSeatIndex, mySeat)
         );
         setActionsTurn((prevActions) => {
-          const base = actionsTurnFromSnapshot(snap, mySeat, prevActions);
+          const base = actionsTurnFromSnapshot(
+            snap,
+            mySeat,
+            prevActions,
+            prev?.currentSeatIndex
+          );
           const rolled = getRandomValueDice(base, value);
           rolled.diceList = base.diceList;
           rolled.actionsBoardGame = EActionsBoardGame.ROLL_DICE;
@@ -477,7 +527,12 @@ const OnlineGame = ({
 
   const totalPlayers: TTotalPlayers = 4;
 
-  const boardColor = boardColorForSnapshot(snapshot, mySeat);
+  if (snapshot && mySeat >= 0 && lockedBoardColorRef.current === null) {
+    lockedBoardColorRef.current = boardColorForSnapshot(snapshot, mySeat);
+  }
+  const boardColor =
+    lockedBoardColorRef.current ??
+    boardColorForSnapshot(snapshot, mySeat);
 
   const profileHandlers = {
     handleTimer: () => undefined,

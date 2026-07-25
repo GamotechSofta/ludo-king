@@ -283,7 +283,8 @@ export function listTokensFromSnapshot(
 export function actionsTurnFromSnapshot(
   snapshot: IGameSnapshot,
   mySeat: number,
-  prev?: IActionsTurn
+  prev?: IActionsTurn,
+  previousSeatIndex?: number
 ): IActionsTurn {
   const isMyTurn = snapshot.currentSeatIndex === mySeat;
   const diceList: IDiceList[] = (snapshot.diceList || []).map((value, i) => ({
@@ -293,23 +294,50 @@ export function actionsTurnFromSnapshot(
 
   const awaitingRoll = snapshot.phase === "AWAITING_ROLL";
   const awaitingMove = snapshot.phase === "AWAITING_MOVE";
+  const seatChanged =
+    previousSeatIndex != null &&
+    previousSeatIndex !== snapshot.currentSeatIndex;
+  const noDiceYet = (snapshot.diceList?.length || 0) === 0;
+  /** Fresh turn — show idle die on the active profile, not the last roll value. */
+  const resetDiceVisual =
+    seatChanged || (awaitingRoll && noDiceYet && !awaitingMove);
 
   return {
     timerActivated: awaitingRoll || awaitingMove,
     disabledDice: !(isMyTurn && awaitingRoll),
     showDice: true,
-    diceValue: (prev?.diceValue || 0) as IActionsTurn["diceValue"],
+    diceValue: resetDiceVisual
+      ? 0
+      : ((prev?.diceValue || 0) as IActionsTurn["diceValue"]),
     diceList,
-    diceRollNumber: prev?.diceRollNumber || 0,
+    diceRollNumber: resetDiceVisual ? 0 : prev?.diceRollNumber || 0,
     isDisabledUI: !isMyTurn || snapshot.phase === "FINISHED",
     actionsBoardGame: awaitingMove
       ? EActionsBoardGame.SELECT_TOKEN
       : EActionsBoardGame.ROLL_DICE,
     consecutiveSixes: snapshot.consecutiveSixes || 0,
-    rollId: prev?.rollId,
+    rollId: resetDiceVisual ? undefined : prev?.rollId,
     turnSecondsRemaining: snapshot.turnSecondsRemaining ?? 20,
     turnTimeoutSeconds: snapshot.turnTimeoutSeconds ?? 20,
   };
+}
+
+export function snapshotTokenPositionsEqual(
+  a: IGameSnapshot | null | undefined,
+  b: IGameSnapshot | null | undefined
+): boolean {
+  if (!a || !b) return false;
+  const pa = a.tokenPositions || {};
+  const pb = b.tokenPositions || {};
+  const keysA = Object.keys(pa);
+  const keysB = Object.keys(pb);
+  if (keysA.length !== keysB.length) return false;
+  return keysA.every((k) => {
+    const ta = pa[k];
+    const tb = pb[k];
+    if (!ta || !tb || ta.length !== tb.length) return false;
+    return ta.every((v, i) => v === tb[i]);
+  });
 }
 
 export function totalPlayersFromSnapshot(
