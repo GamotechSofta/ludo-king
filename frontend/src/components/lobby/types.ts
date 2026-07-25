@@ -67,6 +67,11 @@ export interface IGameSnapshot {
   turnSecondsRemaining?: number;
   consecutiveSixes?: number;
   bonusRoll?: boolean;
+  lastActionType?: string | null;
+  lastActionSeat?: number | null;
+  lastActionTokenIndex?: number | null;
+  lastActionDice?: number | null;
+  actionSeq?: number;
 }
 
 export interface IResultEntry {

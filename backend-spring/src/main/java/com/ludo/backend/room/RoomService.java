@@ -4,6 +4,7 @@ import com.ludo.backend.game.GameEngineService;
 import com.ludo.backend.game.GameEngineService.SeatInfo;
 import com.ludo.backend.game.GameSnapshot;
 import com.ludo.backend.game.LudoColor;
+import com.ludo.backend.realtime.RedisMatchQueue;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -13,6 +14,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -23,14 +25,20 @@ public class RoomService {
 
   private final RoomRepository roomRepository;
   private final GameEngineService gameEngineService;
+  private final RedisMatchQueue redisMatchQueue;
   private final SecureRandom random = new SecureRandom();
 
   private final ConcurrentHashMap<String, ConcurrentLinkedQueue<QueueEntry>> queues =
       new ConcurrentHashMap<>();
 
-  public RoomService(RoomRepository roomRepository, GameEngineService gameEngineService) {
+  public RoomService(
+      RoomRepository roomRepository,
+      GameEngineService gameEngineService,
+      @Autowired(required = false) RedisMatchQueue redisMatchQueue
+  ) {
     this.roomRepository = roomRepository;
     this.gameEngineService = gameEngineService;
+    this.redisMatchQueue = redisMatchQueue;
   }
 
   public record QueueEntry(String userId, String username, Instant enqueuedAt) {
@@ -74,11 +82,17 @@ public class RoomService {
     room.getPlayers().add(new RoomPlayer(userId, username, colors.get(0).name(), false, 0));
     room.setFillDeadlineAt(Instant.now().plus(FILL_SECONDS, ChronoUnit.SECONDS));
     room = roomRepository.save(room);
+    if (redisMatchQueue != null) {
+      redisMatchQueue.enqueue(maxPlayers, tier, userId, username);
+    }
     return new QueueResponse("WAITING", room.getId(), room.getRoomCode(), room);
   }
 
   public void cancelQueue(String userId) {
     removeFromAllQueues(userId);
+    if (redisMatchQueue != null) {
+      redisMatchQueue.removeFromAll(userId);
+    }
   }
 
   /**
@@ -87,6 +101,9 @@ public class RoomService {
    */
   public void leaveRoom(String roomId, String userId) {
     removeFromAllQueues(userId);
+    if (redisMatchQueue != null) {
+      redisMatchQueue.removeFromAll(userId);
+    }
     Room room = roomRepository.findById(roomId).orElse(null);
     if (room == null || room.getStatus() != RoomStatus.WAITING) {
       return;

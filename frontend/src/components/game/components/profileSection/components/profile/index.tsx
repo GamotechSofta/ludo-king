@@ -49,6 +49,10 @@ const Profile = ({
           position={position}
           handleMuteChat={handleMuteChat}
           handleInterval={(ends) => handleTimer(ends, player.index)}
+          secondsRemaining={
+            hasTurn ? actionsTurn.turnSecondsRemaining : undefined
+          }
+          timeoutSeconds={actionsTurn.turnTimeoutSeconds}
         />
         <div className="game-profile-meta">
           <NameAndDice

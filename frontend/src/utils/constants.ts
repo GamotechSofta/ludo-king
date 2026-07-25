@@ -150,10 +150,13 @@ export const TIME_INTERVAL_CHRONOMETER = 50; // org (50), debug: 10,5,0.5
  */
 export const TOKEN_MOVEMENT_INTERVAL_VALUE = 200; // org (200), debug 100,50,0.5
 
+/** Faster cell steps for online quick match — still readable, less laggy. */
+export const ONLINE_TOKEN_MOVEMENT_INTERVAL_VALUE = 130;
+
 /**
  * Tiempo de giro del dado...
  */
-export const ROLL_TIME_VALUE = 0.6; // org (0.6), debug 0.1
+export const ROLL_TIME_VALUE = 0.45; // slightly snappier for online feel (was 0.6)
 
 /**
  * Valor para el delay que se aplica antes de enviar la confirmación al socket

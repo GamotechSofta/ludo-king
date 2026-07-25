@@ -7,6 +7,10 @@ spring:
   data:
     mongodb:
       uri: ${MONGO_URL}
+    redis:
+      # Set REDIS_URL to enable Redis (cache + pub/sub). Leave blank to run without Redis.
+      url: ${REDIS_URL:}
+      timeout: 2s
   autoconfigure:
     exclude:
       - org.springframework.boot.autoconfigure.security.oauth2.client.servlet.OAuth2ClientAutoConfiguration

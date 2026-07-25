@@ -16,6 +16,9 @@ interface ImageProps {
   position: TPositionProfile;
   handleMuteChat: ThandleMuteChat;
   handleInterval: (ends: boolean) => void;
+  /** When set, ring is driven by remaining seconds (online 20s turn). */
+  secondsRemaining?: number | null;
+  timeoutSeconds?: number;
 }
 
 const PersonSilhouette = () => (
@@ -36,6 +39,8 @@ const Image = ({
   position,
   handleMuteChat,
   handleInterval,
+  secondsRemaining,
+  timeoutSeconds,
 }: ImageProps) => {
   const {
     index = 0,
@@ -46,14 +51,27 @@ const Image = ({
   } = player;
   const [progress, setProgress] = useState(1);
   const [isRunning, setIsRunning] = useState(false);
+  const useServerTimer =
+    typeof secondsRemaining === "number" &&
+    typeof timeoutSeconds === "number" &&
+    timeoutSeconds > 0;
 
   useEffect(() => {
+    if (useServerTimer) {
+      const spent = Math.max(0, timeoutSeconds! - Math.max(0, secondsRemaining!));
+      setProgress(
+        Math.max(1, Math.min(100, Math.round((spent / timeoutSeconds!) * 100)))
+      );
+      setIsRunning(startTimer && secondsRemaining! > 0);
+      return;
+    }
     setIsRunning(startTimer);
     setProgress(1);
-  }, [startTimer]);
+  }, [startTimer, useServerTimer, secondsRemaining, timeoutSeconds]);
 
   useInterval(
     () => {
+      if (useServerTimer) return;
       const newProgress = progress + 1;
       setProgress(newProgress);
 
@@ -66,7 +84,7 @@ const Image = ({
         handleInterval(true);
       }
     },
-    isRunning ? TIME_INTERVAL_CHRONOMETER : null
+    isRunning && !useServerTimer ? TIME_INTERVAL_CHRONOMETER : null
   );
 
   const style = {

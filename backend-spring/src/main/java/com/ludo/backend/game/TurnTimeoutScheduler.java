@@ -1,13 +1,13 @@
 package com.ludo.backend.game;
 
 import com.ludo.backend.bot.BotService;
+import com.ludo.backend.realtime.GameEventBus;
 import com.ludo.backend.room.BotDifficulty;
 import com.ludo.backend.room.Room;
 import com.ludo.backend.room.RoomPlayer;
 import com.ludo.backend.room.RoomService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -17,19 +17,19 @@ public class TurnTimeoutScheduler {
   private final GameEngineService gameEngineService;
   private final RoomService roomService;
   private final BotService botService;
-  private final SimpMessagingTemplate messagingTemplate;
+  private final GameEventBus gameEventBus;
   private final ExecutorService botExecutor = Executors.newCachedThreadPool();
 
   public TurnTimeoutScheduler(
       GameEngineService gameEngineService,
       RoomService roomService,
       BotService botService,
-      SimpMessagingTemplate messagingTemplate
+      GameEventBus gameEventBus
   ) {
     this.gameEngineService = gameEngineService;
     this.roomService = roomService;
     this.botService = botService;
-    this.messagingTemplate = messagingTemplate;
+    this.gameEventBus = gameEventBus;
   }
 
   @Scheduled(fixedDelay = 1000)
@@ -52,7 +52,7 @@ public class TurnTimeoutScheduler {
         if (!changed) {
           continue;
         }
-        messagingTemplate.convertAndSend("/topic/room/" + roomId, after);
+        gameEventBus.publishSnapshot(roomId, after);
         maybeScheduleBot(roomId);
       } catch (Exception ignored) {
         // room may have ended mid-tick
@@ -77,8 +77,11 @@ public class TurnTimeoutScheduler {
               diff = p.getBotDifficulty();
             }
           }
-          snap = botService.takeTurnIfBot(roomId, diff);
-          messagingTemplate.convertAndSend("/topic/room/" + roomId, snap);
+          snap = botService.takeTurnIfBot(
+              roomId,
+              diff,
+              step -> gameEventBus.publishSnapshot(roomId, step)
+          );
         }
       } catch (Exception ignored) {
         // ignore bot errors from timeout path

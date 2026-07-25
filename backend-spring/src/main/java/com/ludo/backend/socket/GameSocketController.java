@@ -3,6 +3,7 @@ package com.ludo.backend.socket;
 import com.ludo.backend.bot.BotService;
 import com.ludo.backend.game.GameEngineService;
 import com.ludo.backend.game.GameSnapshot;
+import com.ludo.backend.realtime.GameEventBus;
 import com.ludo.backend.room.BotDifficulty;
 import com.ludo.backend.room.Room;
 import com.ludo.backend.room.RoomPlayer;
@@ -13,7 +14,6 @@ import java.util.concurrent.Executors;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 
 @Controller
@@ -22,19 +22,19 @@ public class GameSocketController {
   private final GameEngineService gameEngineService;
   private final RoomService roomService;
   private final BotService botService;
-  private final SimpMessagingTemplate messagingTemplate;
+  private final GameEventBus gameEventBus;
   private final ExecutorService botExecutor = Executors.newCachedThreadPool();
 
   public GameSocketController(
       GameEngineService gameEngineService,
       RoomService roomService,
       BotService botService,
-      SimpMessagingTemplate messagingTemplate
+      GameEventBus gameEventBus
   ) {
     this.gameEngineService = gameEngineService;
     this.roomService = roomService;
     this.botService = botService;
-    this.messagingTemplate = messagingTemplate;
+    this.gameEventBus = gameEventBus;
   }
 
   public record ActionMessage(String userId, Integer tokenIndex, Integer diceIndex) {
@@ -96,10 +96,7 @@ public class GameSocketController {
   }
 
   private void broadcast(String roomId, GameSnapshot snap) {
-    messagingTemplate.convertAndSend("/topic/room/" + roomId, snap);
-    roomService.getRoom(roomId).ifPresent(room ->
-        messagingTemplate.convertAndSend("/topic/room/" + roomId + "/meta", room)
-    );
+    gameEventBus.publishSnapshotAndMeta(roomId, snap);
   }
 
   private void maybeScheduleBot(String roomId) {
@@ -119,14 +116,14 @@ public class GameSocketController {
               diff = p.getBotDifficulty();
             }
           }
-          snap = botService.takeTurnIfBot(roomId, diff);
-          messagingTemplate.convertAndSend("/topic/room/" + roomId, snap);
+          snap = botService.takeTurnIfBot(
+              roomId,
+              diff,
+              step -> gameEventBus.publishSnapshot(roomId, step)
+          );
         }
       } catch (Exception e) {
-        messagingTemplate.convertAndSend(
-            "/topic/room/" + roomId + "/errors",
-            Map.of("error", e.getMessage())
-        );
+        // bot path errors are non-fatal for the human client
       }
     });
   }

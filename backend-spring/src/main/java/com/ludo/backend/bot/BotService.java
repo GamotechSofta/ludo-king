@@ -6,6 +6,7 @@ import com.ludo.backend.game.GameSnapshot;
 import com.ludo.backend.room.BotDifficulty;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Consumer;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -18,6 +19,18 @@ public class BotService {
   }
 
   public GameSnapshot takeTurnIfBot(String roomId, BotDifficulty difficulty) {
+    return takeTurnIfBot(roomId, difficulty, null);
+  }
+
+  /**
+   * Plays one bot seat until the turn passes. When {@code onStep} is set, each
+   * roll and each move is published immediately so clients can animate in realtime.
+   */
+  public GameSnapshot takeTurnIfBot(
+      String roomId,
+      BotDifficulty difficulty,
+      Consumer<GameSnapshot> onStep
+  ) {
     GameSnapshot snap = gameEngineService.getSnapshot(roomId);
     if (!GameEngineService.PHASE_ROLL.equals(snap.getPhase())
         && !GameEngineService.PHASE_MOVE.equals(snap.getPhase())) {
@@ -28,7 +41,6 @@ public class BotService {
       return snap;
     }
 
-    // Single-die flow: roll → move → (extra roll on 6/kill/home) → repeat while still this bot
     int guard = 0;
     while (guard++ < 12
         && snap.getIsBot() != null
@@ -39,6 +51,7 @@ public class BotService {
       if (GameEngineService.PHASE_ROLL.equals(snap.getPhase())) {
         sleepThinking();
         snap = gameEngineService.rollDiceAsSeat(roomId, seat);
+        publish(onStep, snap);
         continue;
       }
 
@@ -56,6 +69,7 @@ public class BotService {
             );
         sleepThinking();
         snap = gameEngineService.moveTokenAsSeat(roomId, seat, chosen[0], chosen[1]);
+        publish(onStep, snap);
         continue;
       }
 
@@ -64,12 +78,17 @@ public class BotService {
     return snap;
   }
 
+  private void publish(Consumer<GameSnapshot> onStep, GameSnapshot snap) {
+    if (onStep != null) {
+      onStep.accept(snap);
+    }
+  }
+
   private int[] chooseMove(String roomId, int seat, List<int[]> moves, BotDifficulty difficulty) {
     GameSnapshot snap = gameEngineService.getSnapshot(roomId);
     String color = snap.getCurrentColor();
     List<Integer> positions = snap.getTokenPositions().get(color);
 
-    // Prefer capture / exit jail / safe / closest to home
     int[] best = moves.get(0);
     int bestScore = Integer.MIN_VALUE;
 
@@ -83,7 +102,6 @@ public class BotService {
       if (from == BoardConstants.JAIL && dice == 6) {
         score += 80;
       }
-      // rough: higher dice better toward finish
       score += dice;
       if (BoardConstants.SAFE_AREAS.contains(Math.max(from, 0))) {
         score += 10;
@@ -105,7 +123,8 @@ public class BotService {
 
   private void sleepThinking() {
     try {
-      Thread.sleep(ThreadLocalRandom.current().nextInt(800, 1501));
+      // Short pause so dice/moves are visible without feeling laggy
+      Thread.sleep(ThreadLocalRandom.current().nextInt(350, 701));
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
     }

@@ -26,9 +26,37 @@ const COLOR_CORNER: Record<string, TPositionGame> = {
   BLUE: EPositionGame.BOTTOM_RIGHT,
 };
 
+/** Clockwise from bottom-left — matches RGYB board house order. */
+const CORNERS_CW: TPositionGame[] = [
+  EPositionGame.BOTTOM_LEFT,
+  EPositionGame.TOP_LEFT,
+  EPositionGame.TOP_RIGHT,
+  EPositionGame.BOTTOM_RIGHT,
+];
+
 const JAIL = -1;
 const EXIT_BASE = 100;
 const HOME = 200;
+
+/**
+ * CSS degrees to rotate the board so `color`'s house sits at bottom-left.
+ * (Negative = counter-clockwise.)
+ */
+export function boardRotationDegForColor(color: string): number {
+  const corner = COLOR_CORNER[color] || EPositionGame.BOTTOM_LEFT;
+  const idx = CORNERS_CW.indexOf(corner);
+  return idx <= 0 ? 0 : -idx * 90;
+}
+
+/** Map a server seat index into view order where `mySeat` is always 0 (bottom-left). */
+export function visualSeatIndex(
+  serverSeat: number,
+  mySeat: number,
+  totalPlayers: number
+): number {
+  if (totalPlayers <= 0 || mySeat < 0) return serverSeat;
+  return (serverSeat - mySeat + totalPlayers) % totalPlayers;
+}
 
 function decodeServerPos(
   serverPos: number,
@@ -53,6 +81,7 @@ export function seatColorsFromSnapshot(snapshot: IGameSnapshot): TColors[] {
   return Object.keys(snapshot.tokenPositions || {}) as TColors[];
 }
 
+/** Players in server seat order (for engine / capture logic). */
 export function playersFromSnapshot(snapshot: IGameSnapshot): IPlayer[] {
   const colors = seatColorsFromSnapshot(snapshot);
   return colors.map((color, i) => ({
@@ -69,6 +98,23 @@ export function playersFromSnapshot(snapshot: IGameSnapshot): IPlayer[] {
     counterMessage: 0,
     isMuted: false,
   }));
+}
+
+/**
+ * Players rotated so the local seat is index 0 (bottom-left profile).
+ * Use this for ProfileSection, not for token/capture logic.
+ */
+export function playersForView(
+  snapshot: IGameSnapshot,
+  mySeat: number
+): IPlayer[] {
+  const server = playersFromSnapshot(snapshot);
+  const n = server.length;
+  if (n === 0 || mySeat < 0) return server;
+  return server.map((_, i) => {
+    const seat = (mySeat + i) % n;
+    return { ...server[seat], index: i };
+  });
 }
 
 export function listTokensFromSnapshot(
@@ -153,7 +199,7 @@ export function actionsTurnFromSnapshot(
   const awaitingMove = snapshot.phase === "AWAITING_MOVE";
 
   return {
-    timerActivated: false,
+    timerActivated: awaitingRoll || awaitingMove,
     disabledDice: !(isMyTurn && awaitingRoll),
     showDice: true,
     diceValue: (prev?.diceValue || 0) as IActionsTurn["diceValue"],
@@ -165,6 +211,8 @@ export function actionsTurnFromSnapshot(
       : EActionsBoardGame.ROLL_DICE,
     consecutiveSixes: snapshot.consecutiveSixes || 0,
     rollId: prev?.rollId,
+    turnSecondsRemaining: snapshot.turnSecondsRemaining ?? 20,
+    turnTimeoutSeconds: snapshot.turnTimeoutSeconds ?? 20,
   };
 }
 

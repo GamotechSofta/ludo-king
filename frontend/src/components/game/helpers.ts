@@ -241,7 +241,7 @@ export const getInitialActionsTurnValue = (
   indexTurn: number,
   players: IPlayer[]
 ): IActionsTurn => ({
-  // Offline pass-and-play: no turn timer (online uses server 30s timeout).
+  // Offline pass-and-play: no turn timer (online uses server 20s timeout).
   timerActivated: false,
   disabledDice: validateDisabledDice(indexTurn, players),
   showDice: true,

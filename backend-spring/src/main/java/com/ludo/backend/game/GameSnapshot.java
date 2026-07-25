@@ -19,14 +19,20 @@ public class GameSnapshot {
   private Integer winnerSeat;
   private List<Integer> standings = new ArrayList<>();
   private Instant turnStartedAt;
-  private int turnTimeoutSeconds = 30;
-  private int turnSecondsRemaining = 30;
+  private int turnTimeoutSeconds = 20;
+  private int turnSecondsRemaining = 20;
   private int consecutiveSixes;
   private boolean[] finished;
   private boolean[] isBot;
   private List<String> userIds = new ArrayList<>();
   private List<String> usernames = new ArrayList<>();
   private List<Map<String, Integer>> legalMoves = new ArrayList<>();
+  /** ROLL | MOVE | PASS | TIMEOUT — helps clients animate smoothly */
+  private String lastActionType;
+  private Integer lastActionSeat;
+  private Integer lastActionTokenIndex;
+  private Integer lastActionDice;
+  private long actionSeq;
 
   public String getRoomId() {
     return roomId;
@@ -186,5 +192,45 @@ public class GameSnapshot {
 
   public void setLegalMoves(List<Map<String, Integer>> legalMoves) {
     this.legalMoves = legalMoves;
+  }
+
+  public String getLastActionType() {
+    return lastActionType;
+  }
+
+  public void setLastActionType(String lastActionType) {
+    this.lastActionType = lastActionType;
+  }
+
+  public Integer getLastActionSeat() {
+    return lastActionSeat;
+  }
+
+  public void setLastActionSeat(Integer lastActionSeat) {
+    this.lastActionSeat = lastActionSeat;
+  }
+
+  public Integer getLastActionTokenIndex() {
+    return lastActionTokenIndex;
+  }
+
+  public void setLastActionTokenIndex(Integer lastActionTokenIndex) {
+    this.lastActionTokenIndex = lastActionTokenIndex;
+  }
+
+  public Integer getLastActionDice() {
+    return lastActionDice;
+  }
+
+  public void setLastActionDice(Integer lastActionDice) {
+    this.lastActionDice = lastActionDice;
+  }
+
+  public long getActionSeq() {
+    return actionSeq;
+  }
+
+  public void setActionSeq(long actionSeq) {
+    this.actionSeq = actionSeq;
   }
 }

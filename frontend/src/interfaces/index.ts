@@ -158,6 +158,10 @@ export interface IActionsTurn {
   consecutiveSixes?: number;
   /** Unique roll id so turn changes never treat a new roll as a duplicate. */
   rollId?: string;
+  /** Online: seconds left on the current turn (server-synced). */
+  turnSecondsRemaining?: number | null;
+  /** Online: full turn length in seconds (default 20). */
+  turnTimeoutSeconds?: number;
 }
 
 export type TTokenByPositionType = Record<TtypeTile, IToken[]>;

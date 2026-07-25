@@ -10,6 +10,10 @@ import {
 } from "../api/ludoApi";
 
 const STOMP_JSON = { "content-type": "application/json" };
+/** Fast poll when WebSocket is down so opponent moves still feel live. */
+const POLL_DISCONNECTED_MS = 400;
+/** Slow safety poll when WS is connected (WS is primary). */
+const POLL_CONNECTED_MS = 4000;
 
 function normalizeSnapshot(raw: unknown): IGameSnapshot | null {
   if (!raw || typeof raw !== "object") return null;
@@ -23,6 +27,21 @@ function normalizeSnapshot(raw: unknown): IGameSnapshot | null {
   return snap;
 }
 
+function snapshotSig(snap: IGameSnapshot): string {
+  const positions = Object.entries(snap.tokenPositions || {})
+    .map(([c, p]) => `${c}:${(p || []).join(".")}`)
+    .join("|");
+  return [
+    snap.actionSeq ?? 0,
+    snap.phase,
+    snap.currentSeatIndex,
+    snap.lastActionType || "",
+    (snap.diceList || []).join(","),
+    snap.turnStartedAt || "",
+    positions,
+  ].join("#");
+}
+
 export function useGameSocket(
   roomId: string | null,
   userId: string | null,
@@ -34,36 +53,52 @@ export function useGameSocket(
   const [connected, setConnected] = useState(false);
   const [loadError, setLoadError] = useState("");
   const clientRef = useRef<Client | null>(null);
+  const connectedRef = useRef(false);
+  const lastSigRef = useRef(
+    initialSnapshot ? snapshotSig(initialSnapshot) : ""
+  );
+  const lastWsAtRef = useRef(0);
 
-  const applySnapshot = useCallback((snap: unknown) => {
+  const applySnapshot = useCallback((snap: unknown, fromWs = false) => {
     const normalized = normalizeSnapshot(snap);
     if (!normalized) return false;
+    const sig = snapshotSig(normalized);
+    // Ignore duplicate / out-of-order poll payloads right after a live WS push
+    if (sig === lastSigRef.current) {
+      if (fromWs) lastWsAtRef.current = Date.now();
+      return true;
+    }
+    if (!fromWs && Date.now() - lastWsAtRef.current < 800) {
+      return true;
+    }
+    lastSigRef.current = sig;
+    if (fromWs) lastWsAtRef.current = Date.now();
     setSnapshot(normalized);
     setLoadError("");
     return true;
   }, []);
 
-  // REST: keep pulling until we have a board (and keep polling for bot turns without WS)
+  // REST poll: primary when WS is down; light safety net when connected
   useEffect(() => {
     if (!roomId) return;
     let alive = true;
     let timer: number | undefined;
-    let delayMs = 400;
 
     const pull = async () => {
       try {
         const game = await ensureGameSnapshot(roomId);
         if (!alive) return;
-        if (!applySnapshot(game)) {
+        if (!applySnapshot(game, false)) {
           setLoadError("Game state missing token positions");
         }
-        delayMs = 1500;
       } catch (e) {
         if (!alive) return;
         setLoadError(e instanceof Error ? e.message : "Failed to load game");
-        delayMs = 2000;
       }
       if (alive) {
+        const delayMs = connectedRef.current
+          ? POLL_CONNECTED_MS
+          : POLL_DISCONNECTED_MS;
         timer = window.setTimeout(() => {
           void pull();
         }, delayMs);
@@ -82,12 +117,15 @@ export function useGameSocket(
 
     const client = new Client({
       webSocketFactory: () => new SockJS(`${getApiBase()}/ws`) as WebSocket,
-      reconnectDelay: 3000,
+      reconnectDelay: 2000,
+      heartbeatIncoming: 10000,
+      heartbeatOutgoing: 10000,
       onConnect: () => {
+        connectedRef.current = true;
         setConnected(true);
         client.subscribe(`/topic/room/${roomId}`, (msg: IMessage) => {
           try {
-            applySnapshot(JSON.parse(msg.body));
+            applySnapshot(JSON.parse(msg.body), true);
           } catch {
             // ignore
           }
@@ -104,9 +142,18 @@ export function useGameSocket(
           body,
         });
       },
-      onDisconnect: () => setConnected(false),
-      onStompError: () => setConnected(false),
-      onWebSocketError: () => setConnected(false),
+      onDisconnect: () => {
+        connectedRef.current = false;
+        setConnected(false);
+      },
+      onStompError: () => {
+        connectedRef.current = false;
+        setConnected(false);
+      },
+      onWebSocketError: () => {
+        connectedRef.current = false;
+        setConnected(false);
+      },
     });
 
     clientRef.current = client;
@@ -115,6 +162,7 @@ export function useGameSocket(
     return () => {
       void client.deactivate();
       clientRef.current = null;
+      connectedRef.current = false;
       setConnected(false);
     };
   }, [roomId, userId, applySnapshot]);
@@ -130,7 +178,7 @@ export function useGameSocket(
       return;
     }
     void httpRollDice(roomId, userId)
-      .then(applySnapshot)
+      .then((g) => applySnapshot(g, false))
       .catch(() => undefined);
   }, [roomId, userId, applySnapshot]);
 
@@ -146,7 +194,7 @@ export function useGameSocket(
         return;
       }
       void httpMoveToken(roomId, userId, tokenIndex, diceIndex)
-        .then(applySnapshot)
+        .then((g) => applySnapshot(g, false))
         .catch(() => undefined);
     },
     [roomId, userId, applySnapshot]
@@ -158,6 +206,6 @@ export function useGameSocket(
     loadError,
     rollDice,
     moveToken,
-    setSnapshot: applySnapshot,
+    setSnapshot: (s: unknown) => applySnapshot(s, false),
   };
 }

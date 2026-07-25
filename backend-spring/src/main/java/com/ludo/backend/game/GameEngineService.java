@@ -38,7 +38,7 @@ import org.springframework.stereotype.Service;
  *   <li>Home finish does NOT grant bonus roll</li>
  *   <li>Own stack max 2 (block); third token cannot join</li>
  *   <li>Opponent blocks: can pass through; cannot land on / capture</li>
- *   <li>AFK timeout 20s: auto-roll or auto-select first legal move</li>
+ *   <li>AFK timeout 20s: turn is passed to the next player</li>
  *   <li>Multi-winner rankings continue until ≤1 unfinished</li>
  *   <li>Team mode: not implemented</li>
  * </ul>
@@ -91,6 +91,11 @@ public class GameEngineService {
     String phase = PHASE_ROLL;
     Instant turnStartedAt = Instant.now();
     int nextRank = 1;
+    String lastActionType;
+    Integer lastActionSeat;
+    Integer lastActionTokenIndex;
+    Integer lastActionDice;
+    long actionSeq;
 
     MatchRuntime(String roomId, List<SeatInfo> seats) {
       this.roomId = roomId;
@@ -102,6 +107,11 @@ public class GameEngineService {
       this.tokens = new int[maxPlayers][4];
       this.finished = new boolean[maxPlayers];
       this.ranking = new int[maxPlayers];
+      this.lastActionType = null;
+      this.lastActionSeat = null;
+      this.lastActionTokenIndex = null;
+      this.lastActionDice = null;
+      this.actionSeq = 0;
       for (int i = 0; i < maxPlayers; i++) {
         SeatInfo s = seats.get(i);
         colors[i] = s.color;
@@ -206,8 +216,8 @@ public class GameEngineService {
   }
 
   /**
-   * AFK / disconnect timeout (server authority): auto-roll if awaiting roll,
-   * else auto-select the first legal move if awaiting move.
+   * AFK / disconnect timeout (server authority): discard the current turn
+   * and pass play to the next seat.
    */
   public GameSnapshot resolveTimeout(String roomId) {
     MatchRuntime rt = require(roomId);
@@ -222,27 +232,9 @@ public class GameEngineService {
       }
 
       int seat = rt.currentSeat;
-      if (rt.finished[seat]) {
-        nextTurn(rt);
-        return snapshot(rt);
-      }
-
-      if (PHASE_ROLL.equals(rt.phase)) {
-        return rollInternal(rt, seat);
-      }
-
-      if (PHASE_MOVE.equals(rt.phase)) {
-        List<int[]> moves = computeLegalMoves(rt, seat);
-        if (moves.isEmpty()) {
-          clearDice(rt);
-          nextTurn(rt);
-          return snapshot(rt);
-        }
-        int[] first = moves.get(0);
-        return moveInternal(rt, seat, first[0], first[1]);
-      }
-
+      clearDice(rt);
       nextTurn(rt);
+      recordAction(rt, "TIMEOUT", seat, null, null);
       return snapshot(rt);
     } finally {
       rt.lock.unlock();
@@ -288,6 +280,7 @@ public class GameEngineService {
     if (rt.consecutiveSixes >= MAX_CONSECUTIVE_SIXES) {
       clearDice(rt);
       nextTurn(rt);
+      recordAction(rt, "PASS", seat, null, value);
       return snapshot(rt);
     }
 
@@ -298,11 +291,13 @@ public class GameEngineService {
     if (moves.isEmpty()) {
       clearDice(rt);
       nextTurn(rt);
+      recordAction(rt, "PASS", seat, null, value);
       return snapshot(rt);
     }
 
     rt.phase = PHASE_MOVE;
     rt.turnStartedAt = Instant.now();
+    recordAction(rt, "ROLL", seat, null, value);
     return snapshot(rt);
   }
 
@@ -339,6 +334,7 @@ public class GameEngineService {
 
     clearDice(rt);
     rt.lastRollWasSix = false;
+    recordAction(rt, "MOVE", seat, tokenIndex, dice);
 
     if (PHASE_FINISHED.equals(rt.phase)) {
       return snapshot(rt);
@@ -366,6 +362,20 @@ public class GameEngineService {
     rt.consecutiveSixes = 0;
     nextTurn(rt);
     return snapshot(rt);
+  }
+
+  private void recordAction(
+      MatchRuntime rt,
+      String type,
+      int seat,
+      Integer tokenIndex,
+      Integer dice
+  ) {
+    rt.actionSeq += 1;
+    rt.lastActionType = type;
+    rt.lastActionSeat = seat;
+    rt.lastActionTokenIndex = tokenIndex;
+    rt.lastActionDice = dice;
   }
 
   private void clearDice(MatchRuntime rt) {
@@ -655,6 +665,11 @@ public class GameEngineService {
     }
     snap.setWinnerSeat(winner);
     snap.setStandings(standings);
+    snap.setLastActionType(rt.lastActionType);
+    snap.setLastActionSeat(rt.lastActionSeat);
+    snap.setLastActionTokenIndex(rt.lastActionTokenIndex);
+    snap.setLastActionDice(rt.lastActionDice);
+    snap.setActionSeq(rt.actionSeq);
     return snap;
   }
 }

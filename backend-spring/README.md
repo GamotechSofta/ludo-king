@@ -6,6 +6,25 @@ Replaces the Node/Express backend with the same endpoints and MongoDB setup.
 
 - Java 17+ (your machine has Java 17 / 25)
 - MongoDB connection string in `.env`
+- Optional: Redis (`REDIS_URL`) for live match cache + pub/sub (smoother multi-instance / lower WS lag)
+
+## Redis (optional)
+
+Quick match works without Redis. When `REDIS_URL` is set:
+
+1. Every roll/move is cached and published on a Redis channel
+2. Other backend instances fan that out to WebSocket clients immediately
+3. App still boots if `REDIS_URL` is blank (Redis auto-config is skipped)
+
+Local:
+
+```powershell
+docker run -d --name ludo-redis -p 6379:6379 redis:7
+# in .env:
+REDIS_URL=redis://localhost:6379
+```
+
+On Render: create a Redis instance and set `REDIS_URL` to the internal Redis URL on the backend service.
 
 ## Setup
 
