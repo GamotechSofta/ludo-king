@@ -47,7 +47,7 @@ public class RedisGameBridge implements MessageListener {
   }
 
   @Configuration
-  @ConditionalOnBean(RedisGameBridge.class)
+  @ConditionalOnBean(RedisConnectionFactory.class)
   static class ListenerConfig {
     @Bean
     RedisMessageListenerContainer ludoRedisGameListenerContainer(
