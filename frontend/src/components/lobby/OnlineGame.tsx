@@ -71,9 +71,25 @@ const OnlineGame = ({ guest, roomId, onExit, onPlayAgain }: OnlineGameProps) => 
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
 
   const mySeat = useMemo(() => {
-    if (!snapshot?.userIds) return -1;
-    return snapshot.userIds.findIndex((id) => id === guest.id);
-  }, [snapshot?.userIds, guest.id]);
+    if (!snapshot) return -1;
+    if (snapshot.userIds?.length) {
+      const byId = snapshot.userIds.findIndex((id) => id === guest.id);
+      if (byId >= 0) return byId;
+    }
+    if (snapshot.usernames?.length) {
+      const byName = snapshot.usernames.findIndex(
+        (n) => n === guest.username || n === guest.name
+      );
+      if (byName >= 0) return byName;
+    }
+    return 0;
+  }, [snapshot, guest.id, guest.username, guest.name]);
+
+  // Prefer showing the board as soon as we have token positions
+  const boardReady = !!(
+    snapshot?.tokenPositions &&
+    Object.keys(snapshot.tokenPositions).length > 0
+  );
 
   const lastDiceSigRef = useRef("");
   const animatingRef = useRef(false);
@@ -333,7 +349,7 @@ const OnlineGame = ({ guest, roomId, onExit, onPlayAgain }: OnlineGameProps) => 
     );
   }
 
-  if (!snapshot || mySeat < 0) {
+  if (!boardReady) {
     return (
       <PageWrapper>
         <button
