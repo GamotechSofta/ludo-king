@@ -149,7 +149,7 @@ const OnlineGame = ({
     null
   );
   const suppressMoveAnimRef = useRef(false);
-  const pendingSnapRef = useRef<IGameSnapshot | null>(null);
+  const pendingSnapRef = useRef<IGameSnapshot[]>([]);
   const applySeqRef = useRef(0);
   const lockedBoardColorRef = useRef<ReturnType<
     typeof boardColorForSnapshot
@@ -368,7 +368,12 @@ const OnlineGame = ({
 
     const apply = async (snap: IGameSnapshot) => {
       if (animatingRef.current) {
-        pendingSnapRef.current = snap;
+        // FIFO queue — never drop intermediate rolls/moves; skip exact seq dupes
+        const q = pendingSnapRef.current;
+        const last = q[q.length - 1];
+        if (!last || (last.actionSeq || 0) !== (snap.actionSeq || 0)) {
+          q.push(snap);
+        }
         return;
       }
 
@@ -426,7 +431,7 @@ const OnlineGame = ({
         return;
       }
 
-      // Prefer server lastAction (Redis/WS) for reliable opponent move animation
+  // Prefer server lastAction (WS event) for reliable opponent move animation
       let moved: { seat: number; tokenIndex: number } | null = null;
       let diceValue: TDicevalues | 0 = 0;
 
@@ -470,9 +475,8 @@ const OnlineGame = ({
         } else {
           syncBoardFromSnapshot(snap);
         }
-        const queued = pendingSnapRef.current;
-        pendingSnapRef.current = null;
-        if (queued) void apply(queued);
+        const next = pendingSnapRef.current.shift();
+        if (next) void apply(next);
         return;
       }
 
@@ -483,9 +487,8 @@ const OnlineGame = ({
 
       lastDiceSigRef.current = diceSig;
       syncBoardFromSnapshot(snap);
-      const queued = pendingSnapRef.current;
-      pendingSnapRef.current = null;
-      if (queued) void apply(queued);
+      const nextQueued = pendingSnapRef.current.shift();
+      if (nextQueued) void apply(nextQueued);
     };
 
     void apply(snapshot);

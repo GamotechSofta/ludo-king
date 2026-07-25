@@ -77,6 +77,8 @@ export interface IGameSnapshot {
   lastActionSeat?: number | null;
   lastActionTokenIndex?: number | null;
   lastActionDice?: number | null;
+  lastActionFrom?: number | null;
+  lastActionTo?: number | null;
   actionSeq?: number;
 }
 

@@ -95,6 +95,8 @@ public class GameEngineService {
     Integer lastActionSeat;
     Integer lastActionTokenIndex;
     Integer lastActionDice;
+    Integer lastActionFrom;
+    Integer lastActionTo;
     long actionSeq;
 
     MatchRuntime(String roomId, List<SeatInfo> seats) {
@@ -111,6 +113,8 @@ public class GameEngineService {
       this.lastActionSeat = null;
       this.lastActionTokenIndex = null;
       this.lastActionDice = null;
+      this.lastActionFrom = null;
+      this.lastActionTo = null;
       this.actionSeq = 0;
       for (int i = 0; i < maxPlayers; i++) {
         SeatInfo s = seats.get(i);
@@ -121,12 +125,146 @@ public class GameEngineService {
         Arrays.fill(tokens[i], JAIL);
       }
     }
+
+    /** Rebuild runtime from a persisted snapshot (reconnect / cross-instance). */
+    static MatchRuntime fromSnapshot(GameSnapshot snap) {
+      List<String> colorKeys = new ArrayList<>(snap.getTokenPositions().keySet());
+      int n = colorKeys.size();
+      if (snap.getUserIds() != null && snap.getUserIds().size() > 0) {
+        n = snap.getUserIds().size();
+      }
+      List<SeatInfo> seats = new ArrayList<>(n);
+      for (int i = 0; i < n; i++) {
+        String colorName = i < colorKeys.size()
+            ? colorKeys.get(i)
+            : (snap.getCurrentColor() != null ? snap.getCurrentColor() : "RED");
+        String uid = snap.getUserIds() != null && i < snap.getUserIds().size()
+            ? snap.getUserIds().get(i) : ("seat-" + i);
+        String uname = snap.getUsernames() != null && i < snap.getUsernames().size()
+            ? snap.getUsernames().get(i) : ("Player " + (i + 1));
+        boolean bot = snap.getIsBot() != null && i < snap.getIsBot().length && snap.getIsBot()[i];
+        seats.add(new SeatInfo(uid, uname, LudoColor.valueOf(colorName), bot));
+      }
+      MatchRuntime rt = new MatchRuntime(snap.getRoomId(), seats);
+      applySnapshotFields(rt, snap);
+      return rt;
+    }
   }
 
+  static void applySnapshotFields(MatchRuntime rt, GameSnapshot snap) {
+    if (snap.getPhase() != null) {
+      rt.phase = snap.getPhase();
+    }
+    rt.currentSeat = snap.getCurrentSeatIndex();
+    rt.lastDice = snap.getDiceValue();
+    rt.diceList.clear();
+    if (snap.getDiceList() != null) {
+      rt.diceList.addAll(snap.getDiceList());
+    }
+    rt.consecutiveSixes = snap.getConsecutiveSixes();
+    rt.lastRollWasSix = snap.isBonusRoll() || (rt.lastDice == 6 && PHASE_MOVE.equals(rt.phase));
+    if (snap.getTurnStartedAt() != null) {
+      rt.turnStartedAt = snap.getTurnStartedAt();
+    }
+    rt.lastActionType = snap.getLastActionType();
+    rt.lastActionSeat = snap.getLastActionSeat();
+    rt.lastActionTokenIndex = snap.getLastActionTokenIndex();
+    rt.lastActionDice = snap.getLastActionDice();
+    rt.lastActionFrom = snap.getLastActionFrom();
+    rt.lastActionTo = snap.getLastActionTo();
+    rt.actionSeq = snap.getActionSeq();
+
+    if (snap.getFinished() != null) {
+      System.arraycopy(
+          snap.getFinished(), 0, rt.finished, 0,
+          Math.min(snap.getFinished().length, rt.finished.length));
+    }
+    if (snap.getStandings() != null) {
+      int maxRank = 0;
+      for (int i = 0; i < rt.maxPlayers && i < snap.getStandings().size(); i++) {
+        rt.ranking[i] = snap.getStandings().get(i);
+        maxRank = Math.max(maxRank, rt.ranking[i]);
+      }
+      rt.nextRank = maxRank + 1;
+    }
+
+    for (int s = 0; s < rt.maxPlayers; s++) {
+      List<Integer> pos = snap.getTokenPositions().get(rt.colors[s].name());
+      if (pos == null) {
+        continue;
+      }
+      for (int t = 0; t < 4 && t < pos.size(); t++) {
+        Integer v = pos.get(t);
+        rt.tokens[s][t] = v != null ? v : JAIL;
+      }
+    }
+  }
+
+  /**
+   * Create a brand-new match. Refuses to overwrite an existing live session.
+   * Mid-game recovery must use {@link #restoreFromSnapshot(GameSnapshot)}.
+   */
   public GameSnapshot createMatch(String roomId, List<SeatInfo> seats) {
+    MatchRuntime existing = matches.get(roomId);
+    if (existing != null) {
+      existing.lock.lock();
+      try {
+        if (!PHASE_FINISHED.equals(existing.phase)) {
+          // One live session per room — never recreate mid-game
+          return snapshot(existing);
+        }
+      } finally {
+        existing.lock.unlock();
+      }
+      matches.remove(roomId, existing);
+    }
     MatchRuntime rt = new MatchRuntime(roomId, seats);
-    matches.put(roomId, rt);
+    MatchRuntime raced = matches.putIfAbsent(roomId, rt);
+    if (raced != null) {
+      return getSnapshot(roomId);
+    }
     return snapshot(rt);
+  }
+
+  /**
+   * Restore or upgrade the single authoritative MatchRuntime for a room from a
+   * persisted/cached snapshot. Never resets tokens to jail when a newer or equal
+   * local session already exists.
+   */
+  public GameSnapshot restoreFromSnapshot(GameSnapshot snap) {
+    if (snap == null || snap.getRoomId() == null || snap.getRoomId().isBlank()) {
+      throw new IllegalArgumentException("Invalid snapshot");
+    }
+    if (snap.getTokenPositions() == null || snap.getTokenPositions().isEmpty()) {
+      throw new IllegalArgumentException("Snapshot missing token positions");
+    }
+
+    String roomId = snap.getRoomId();
+    MatchRuntime existing = matches.get(roomId);
+    if (existing != null) {
+      existing.lock.lock();
+      try {
+        if (snap.getActionSeq() < existing.actionSeq) {
+          return snapshot(existing);
+        }
+        applySnapshotFields(existing, snap);
+        return snapshot(existing);
+      } finally {
+        existing.lock.unlock();
+      }
+    }
+
+    MatchRuntime rt = MatchRuntime.fromSnapshot(snap);
+    MatchRuntime raced = matches.putIfAbsent(roomId, rt);
+    if (raced != null) {
+      return restoreFromSnapshot(snap);
+    }
+    return snapshot(rt);
+  }
+
+  /** @return true if this JVM holds the live session for the room */
+  public boolean hasMatch(String roomId) {
+    return matches.containsKey(roomId);
   }
 
   public GameSnapshot getSnapshot(String roomId) {
@@ -137,10 +275,6 @@ public class GameEngineService {
     } finally {
       rt.lock.unlock();
     }
-  }
-
-  public boolean hasMatch(String roomId) {
-    return matches.containsKey(roomId);
   }
 
   /** Client sends roll intent only — server generates the die value. */
@@ -334,7 +468,7 @@ public class GameEngineService {
 
     clearDice(rt);
     rt.lastRollWasSix = false;
-    recordAction(rt, "MOVE", seat, tokenIndex, dice);
+    recordAction(rt, "MOVE", seat, tokenIndex, dice, from, to);
 
     if (PHASE_FINISHED.equals(rt.phase)) {
       return snapshot(rt);
@@ -371,11 +505,25 @@ public class GameEngineService {
       Integer tokenIndex,
       Integer dice
   ) {
+    recordAction(rt, type, seat, tokenIndex, dice, null, null);
+  }
+
+  private void recordAction(
+      MatchRuntime rt,
+      String type,
+      int seat,
+      Integer tokenIndex,
+      Integer dice,
+      Integer from,
+      Integer to
+  ) {
     rt.actionSeq += 1;
     rt.lastActionType = type;
     rt.lastActionSeat = seat;
     rt.lastActionTokenIndex = tokenIndex;
     rt.lastActionDice = dice;
+    rt.lastActionFrom = from;
+    rt.lastActionTo = to;
   }
 
   private void clearDice(MatchRuntime rt) {
@@ -669,6 +817,8 @@ public class GameEngineService {
     snap.setLastActionSeat(rt.lastActionSeat);
     snap.setLastActionTokenIndex(rt.lastActionTokenIndex);
     snap.setLastActionDice(rt.lastActionDice);
+    snap.setLastActionFrom(rt.lastActionFrom);
+    snap.setLastActionTo(rt.lastActionTo);
     snap.setActionSeq(rt.actionSeq);
     return snap;
   }

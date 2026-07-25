@@ -11,10 +11,33 @@ import {
 import { onlinePerf } from "../utils/onlinePerf";
 
 const STOMP_JSON = { "content-type": "application/json" };
-/** Fast poll when WebSocket is down so opponent moves still feel live. */
-const POLL_DISCONNECTED_MS = 500;
-/** Rare safety poll while WS is healthy — avoid constant re-renders. */
-const POLL_CONNECTED_MS = 4500;
+const POLL_DISCONNECTED_MS = 800;
+const POLL_CONNECTED_MS = 6000;
+
+/** Compact server event (GameEvent) or legacy bare GameSnapshot. */
+export interface IGameEvent {
+  type?: string;
+  actionSeq?: number;
+  roomId?: string;
+  seat?: number | null;
+  tokenIndex?: number | null;
+  dice?: number | null;
+  from?: number | null;
+  to?: number | null;
+  phase?: string;
+  currentSeatIndex?: number;
+  diceList?: number[];
+  tokenPositions?: Record<string, number[]>;
+  state?: IGameSnapshot;
+  lastActionType?: string | null;
+  turnStartedAt?: string;
+  turnSecondsRemaining?: number;
+  consecutiveSixes?: number;
+  legalTokenIndexes?: number[];
+  legalMoves?: Array<{ tokenIndex: number; diceIndex: number }>;
+  finished?: boolean[];
+  winnerSeat?: number | null;
+}
 
 function normalizeSnapshot(raw: unknown): IGameSnapshot | null {
   if (!raw || typeof raw !== "object") return null;
@@ -26,6 +49,41 @@ function normalizeSnapshot(raw: unknown): IGameSnapshot | null {
     return null;
   }
   return snap;
+}
+
+/** Unwrap GameEvent → authoritative snapshot (prefer embedded state). */
+function eventToSnapshot(raw: unknown): IGameSnapshot | null {
+  if (!raw || typeof raw !== "object") return null;
+  const ev = raw as IGameEvent;
+  if (ev.state) {
+    return normalizeSnapshot(ev.state);
+  }
+  // Bare snapshot (legacy) or compact event with tokenPositions
+  if (ev.tokenPositions && Object.keys(ev.tokenPositions).length > 0) {
+    const snap: IGameSnapshot = {
+      roomId: ev.roomId || "",
+      phase: ev.phase || "AWAITING_ROLL",
+      currentSeatIndex: ev.currentSeatIndex ?? 0,
+      currentColor: "",
+      diceValue: ev.dice ?? 0,
+      diceList: ev.diceList || [],
+      tokenPositions: ev.tokenPositions,
+      legalTokenIndexes: ev.legalTokenIndexes || [],
+      legalMoves: ev.legalMoves,
+      finished: ev.finished,
+      winnerSeat: ev.winnerSeat,
+      turnStartedAt: ev.turnStartedAt,
+      turnSecondsRemaining: ev.turnSecondsRemaining,
+      consecutiveSixes: ev.consecutiveSixes,
+      lastActionType: ev.lastActionType || ev.type || null,
+      lastActionSeat: ev.seat,
+      lastActionTokenIndex: ev.tokenIndex,
+      lastActionDice: ev.dice,
+      actionSeq: ev.actionSeq,
+    };
+    return normalizeSnapshot(snap);
+  }
+  return normalizeSnapshot(raw);
 }
 
 function snapshotSig(snap: IGameSnapshot): string {
@@ -54,6 +112,7 @@ export function useGameSocket(
   );
   const [connected, setConnected] = useState(false);
   const [loadError, setLoadError] = useState("");
+  const [lastEvent, setLastEvent] = useState<IGameEvent | null>(null);
   const clientRef = useRef<Client | null>(null);
   const connectedRef = useRef(false);
   const lastSigRef = useRef(
@@ -61,25 +120,27 @@ export function useGameSocket(
   );
   const lastSeqRef = useRef(initialSnapshot?.actionSeq ?? 0);
   const lastWsAtRef = useRef(0);
-  /** Ignore HTTP echo of an action we already applied from WS (or vice versa). */
   const inFlightActionRef = useRef(false);
+  const fallbackTimerRef = useRef<number | null>(null);
 
   const applySnapshot = useCallback((snap: unknown, fromWs = false) => {
-    const normalized = normalizeSnapshot(snap);
+    const event =
+      snap && typeof snap === "object" && "type" in (snap as object)
+        ? (snap as IGameEvent)
+        : null;
+    const normalized = eventToSnapshot(snap);
     if (!normalized) return false;
     const sig = snapshotSig(normalized);
     const nextSeq = normalized.actionSeq ?? 0;
 
-    // Duplicate / unchanged state
     if (sig === lastSigRef.current) {
       if (fromWs) lastWsAtRef.current = Date.now();
       return true;
     }
-    // Stale packet (older version)
-    if (nextSeq < lastSeqRef.current) {
+    // Strict ordering: ignore stale actionSeq
+    if (nextSeq > 0 && nextSeq < lastSeqRef.current) {
       return true;
     }
-    // Stale poll while a live WS frame just arrived with same seq
     if (
       !fromWs &&
       nextSeq === lastSeqRef.current &&
@@ -89,16 +150,20 @@ export function useGameSocket(
     }
 
     lastSigRef.current = sig;
-    lastSeqRef.current = nextSeq;
+    lastSeqRef.current = Math.max(lastSeqRef.current, nextSeq);
     if (fromWs) lastWsAtRef.current = Date.now();
     onlinePerf.markSnapshotApplied(fromWs, nextSeq);
+    if (event) setLastEvent(event);
     setSnapshot(normalized);
     setLoadError("");
     inFlightActionRef.current = false;
+    if (fallbackTimerRef.current != null) {
+      window.clearTimeout(fallbackTimerRef.current);
+      fallbackTimerRef.current = null;
+    }
     return true;
   }, []);
 
-  // REST poll: primary when WS is down; light safety net when connected
   useEffect(() => {
     if (!roomId) return;
     let alive = true;
@@ -158,11 +223,6 @@ export function useGameSocket(
           headers: STOMP_JSON,
           body,
         });
-        client.publish({
-          destination: `/app/room/${roomId}/state`,
-          headers: STOMP_JSON,
-          body,
-        });
       },
       onDisconnect: () => {
         connectedRef.current = false;
@@ -183,6 +243,9 @@ export function useGameSocket(
 
     return () => {
       onlinePerf.stopFpsProbe();
+      if (fallbackTimerRef.current != null) {
+        window.clearTimeout(fallbackTimerRef.current);
+      }
       void client.deactivate();
       clientRef.current = null;
       connectedRef.current = false;
@@ -190,10 +253,25 @@ export function useGameSocket(
     };
   }, [roomId, userId, applySnapshot]);
 
-  /**
-   * Single action path: WS when connected (room fan-out), else HTTP.
-   * Never dual-submit — that would double-roll / double-move on the server.
-   */
+  const scheduleHttpFallback = useCallback(
+    (fn: () => Promise<IGameSnapshot>, seqAtSend: number) => {
+      if (fallbackTimerRef.current != null) {
+        window.clearTimeout(fallbackTimerRef.current);
+      }
+      fallbackTimerRef.current = window.setTimeout(() => {
+        fallbackTimerRef.current = null;
+        if (lastSeqRef.current > seqAtSend) return;
+        void fn()
+          .then((g) => applySnapshot(g, false))
+          .catch(() => {
+            inFlightActionRef.current = false;
+          });
+      }, 2500);
+    },
+    [applySnapshot]
+  );
+
+  /** Primary: WebSocket. HTTP only if no newer actionSeq arrives. */
   const rollDice = useCallback(() => {
     if (!roomId || !userId) return;
     if (inFlightActionRef.current) return;
@@ -207,14 +285,7 @@ export function useGameSocket(
         headers: STOMP_JSON,
         body: JSON.stringify({ userId }),
       });
-      window.setTimeout(() => {
-        if (lastSeqRef.current > seqAtSend) return;
-        void httpRollDice(roomId, userId)
-          .then((g) => applySnapshot(g, false))
-          .catch(() => {
-            inFlightActionRef.current = false;
-          });
-      }, 2000);
+      scheduleHttpFallback(() => httpRollDice(roomId, userId), seqAtSend);
       return;
     }
 
@@ -223,11 +294,13 @@ export function useGameSocket(
       .catch(() => {
         inFlightActionRef.current = false;
       });
-  }, [roomId, userId, applySnapshot]);
+  }, [roomId, userId, applySnapshot, scheduleHttpFallback]);
 
   const moveToken = useCallback(
     (tokenIndex: number, diceIndex: number) => {
       if (!roomId || !userId) return;
+      if (inFlightActionRef.current) return;
+      inFlightActionRef.current = true;
       onlinePerf.markActionSent("move");
       const seqAtSend = lastSeqRef.current;
 
@@ -237,24 +310,25 @@ export function useGameSocket(
           headers: STOMP_JSON,
           body: JSON.stringify({ userId, tokenIndex, diceIndex }),
         });
-        window.setTimeout(() => {
-          if (lastSeqRef.current > seqAtSend) return;
-          void httpMoveToken(roomId, userId, tokenIndex, diceIndex)
-            .then((g) => applySnapshot(g, false))
-            .catch(() => undefined);
-        }, 2000);
+        scheduleHttpFallback(
+          () => httpMoveToken(roomId, userId, tokenIndex, diceIndex),
+          seqAtSend
+        );
         return;
       }
 
       void httpMoveToken(roomId, userId, tokenIndex, diceIndex)
         .then((g) => applySnapshot(g, false))
-        .catch(() => undefined);
+        .catch(() => {
+          inFlightActionRef.current = false;
+        });
     },
-    [roomId, userId, applySnapshot]
+    [roomId, userId, applySnapshot, scheduleHttpFallback]
   );
 
   return {
     snapshot,
+    lastEvent,
     connected,
     loadError,
     rollDice,

@@ -32,6 +32,8 @@ public class GameSnapshot {
   private Integer lastActionSeat;
   private Integer lastActionTokenIndex;
   private Integer lastActionDice;
+  private Integer lastActionFrom;
+  private Integer lastActionTo;
   private long actionSeq;
 
   public String getRoomId() {
@@ -224,6 +226,22 @@ public class GameSnapshot {
 
   public void setLastActionDice(Integer lastActionDice) {
     this.lastActionDice = lastActionDice;
+  }
+
+  public Integer getLastActionFrom() {
+    return lastActionFrom;
+  }
+
+  public void setLastActionFrom(Integer lastActionFrom) {
+    this.lastActionFrom = lastActionFrom;
+  }
+
+  public Integer getLastActionTo() {
+    return lastActionTo;
+  }
+
+  public void setLastActionTo(Integer lastActionTo) {
+    this.lastActionTo = lastActionTo;
   }
 
   public long getActionSeq() {

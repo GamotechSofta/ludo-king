@@ -8,6 +8,7 @@ import com.ludo.backend.platform.wallet.MatchEconomyService;
 import com.ludo.backend.platform.wallet.WalletProperties;
 import com.ludo.backend.realtime.MatchmakingEventPublisher;
 import com.ludo.backend.realtime.RedisMatchQueue;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -40,6 +41,7 @@ public class RoomService {
   private final RedisMatchQueue redisMatchQueue;
   private final MatchEconomyService matchEconomy;
   private final MatchmakingEventPublisher events;
+  private final ObjectMapper objectMapper;
   private final SecureRandom random = new SecureRandom();
 
   private final ConcurrentHashMap<String, ConcurrentLinkedQueue<QueueEntry>> queues =
@@ -50,13 +52,15 @@ public class RoomService {
       GameEngineService gameEngineService,
       @Autowired(required = false) RedisMatchQueue redisMatchQueue,
       MatchEconomyService matchEconomy,
-      MatchmakingEventPublisher events
+      MatchmakingEventPublisher events,
+      ObjectMapper objectMapper
   ) {
     this.roomRepository = roomRepository;
     this.gameEngineService = gameEngineService;
     this.redisMatchQueue = redisMatchQueue;
     this.matchEconomy = matchEconomy;
     this.events = events;
+    this.objectMapper = objectMapper;
   }
 
   public record QueueEntry(String userId, String username, Instant enqueuedAt) {
@@ -318,7 +322,11 @@ public class RoomService {
     if ((room.getStatus() == RoomStatus.IN_PROGRESS
             || room.getStatus() == RoomStatus.WAITING_RECONNECT)
         && !gameEngineService.hasMatch(id)) {
-      rehydrateMatch(room);
+      try {
+        rehydrateMatch(room);
+      } catch (RuntimeException ignored) {
+        // Snapshot missing — clients keep polling / reconnecting
+      }
     }
     Map<String, Object> body = new LinkedHashMap<>();
     body.put("room", room);
@@ -332,21 +340,65 @@ public class RoomService {
     }
     if (gameEngineService.hasMatch(id)) {
       body.put("game", gameEngineService.getSnapshot(id));
+    } else {
+      GameSnapshot persisted = readPersistedSnapshot(room);
+      if (persisted != null) {
+        body.put("game", persisted);
+      }
     }
     return body;
   }
 
+  /**
+   * Restore the existing live session. Never creates a fresh jail board for an
+   * in-progress room.
+   */
   public GameSnapshot rehydrateMatch(Room room) {
-    List<SeatInfo> seats = new ArrayList<>();
-    for (RoomPlayer p : room.getPlayers()) {
-      seats.add(new SeatInfo(
-          p.getUserId(),
-          p.getUsername(),
-          LudoColor.valueOf(p.getColor()),
-          p.isBot()
-      ));
+    if (room == null || room.getId() == null) {
+      throw new IllegalArgumentException("Room required");
     }
-    return gameEngineService.createMatch(room.getId(), seats);
+    if (gameEngineService.hasMatch(room.getId())) {
+      return gameEngineService.getSnapshot(room.getId());
+    }
+    GameSnapshot persisted = readPersistedSnapshot(room);
+    if (persisted == null) {
+      throw new IllegalStateException(
+          "Cannot restore match — no persisted snapshot for room " + room.getId());
+    }
+    persisted.setRoomId(room.getId());
+    return gameEngineService.restoreFromSnapshot(persisted);
+  }
+
+  public void persistLiveSnapshot(String roomId, GameSnapshot snap) {
+    if (roomId == null || snap == null) {
+      return;
+    }
+    try {
+      String json = objectMapper.writeValueAsString(snap);
+      roomRepository.findById(roomId).ifPresent(room -> {
+        room.setLiveSnapshotJson(json);
+        roomRepository.save(room);
+      });
+    } catch (Exception ignored) {
+      // persistence is best-effort; Redis is primary hot cache
+    }
+  }
+
+  public Optional<GameSnapshot> loadPersistedSnapshot(String roomId) {
+    return getRoom(roomId)
+        .map(this::readPersistedSnapshot)
+        .filter(s -> s != null);
+  }
+
+  private GameSnapshot readPersistedSnapshot(Room room) {
+    if (room.getLiveSnapshotJson() == null || room.getLiveSnapshotJson().isBlank()) {
+      return null;
+    }
+    try {
+      return objectMapper.readValue(room.getLiveSnapshotJson(), GameSnapshot.class);
+    } catch (Exception e) {
+      return null;
+    }
   }
 
   /** Existing bot-fill feature: pad seats then enter READY (not instant play). */
@@ -398,10 +450,16 @@ public class RoomService {
       room.setCountdownEndsAt(null);
       room.setCountdownValue(null);
       room.setFillDeadlineAt(null);
+      GameSnapshot initial = gameEngineService.getSnapshot(room.getId());
+      try {
+        room.setLiveSnapshotJson(objectMapper.writeValueAsString(initial));
+      } catch (Exception ignored) {
+        // non-fatal
+      }
       room = roomRepository.save(room);
       matchEconomy.markPlaying(room.getId());
       Map<String, Object> payload = roomPayload(room);
-      payload.put("game", gameEngineService.getSnapshot(room.getId()));
+      payload.put("game", initial);
       events.toRoom(room.getId(), MatchmakingEventPublisher.EVENT_GAME_STARTED, payload);
       return room;
     } catch (RuntimeException e) {

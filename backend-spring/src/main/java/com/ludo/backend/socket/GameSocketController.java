@@ -47,48 +47,24 @@ public class GameSocketController {
     } catch (Exception ignored) {
       // ignore
     }
-    if (!gameEngineService.hasMatch(roomId)) {
-      gameEventBus.loadCachedSnapshot(roomId).ifPresentOrElse(
-          snap -> syncState(roomId, snap),
-          () -> roomService.getRoom(roomId).ifPresent(room -> {
-            if (room.getStatus() == com.ludo.backend.room.RoomStatus.IN_PROGRESS
-                || room.getStatus() == com.ludo.backend.room.RoomStatus.WAITING_RECONNECT) {
-              roomService.rehydrateMatch(room);
-              if (gameEngineService.hasMatch(roomId)) {
-                syncState(roomId, gameEngineService.getSnapshot(roomId));
-              }
-            }
-          })
-      );
+    ensureLocalSession(roomId);
+    if (gameEngineService.hasMatch(roomId)) {
+      syncState(roomId, gameEngineService.getSnapshot(roomId));
       maybeScheduleBot(roomId);
-      return;
     }
-    syncState(roomId, gameEngineService.getSnapshot(roomId));
-    maybeScheduleBot(roomId);
   }
 
   @MessageMapping("/room/{roomId}/state")
   public void state(@DestinationVariable String roomId, @Payload ActionMessage msg) {
-    if (!gameEngineService.hasMatch(roomId)) {
-      gameEventBus.loadCachedSnapshot(roomId).ifPresentOrElse(
-          snap -> syncState(roomId, snap),
-          () -> roomService.getRoom(roomId).ifPresent(room -> {
-            if (room.getStatus() == com.ludo.backend.room.RoomStatus.IN_PROGRESS
-                || room.getStatus() == com.ludo.backend.room.RoomStatus.WAITING_RECONNECT) {
-              roomService.rehydrateMatch(room);
-              if (gameEngineService.hasMatch(roomId)) {
-                syncState(roomId, gameEngineService.getSnapshot(roomId));
-              }
-            }
-          })
-      );
-      return;
+    ensureLocalSession(roomId);
+    if (gameEngineService.hasMatch(roomId)) {
+      syncState(roomId, gameEngineService.getSnapshot(roomId));
     }
-    syncState(roomId, gameEngineService.getSnapshot(roomId));
   }
 
   @MessageMapping("/room/{roomId}/roll")
   public void roll(@DestinationVariable String roomId, @Payload ActionMessage msg) {
+    ensureLocalSession(roomId);
     GameSnapshot snap = gameEngineService.rollDice(roomId, msg.userId());
     broadcast(roomId, snap);
     maybeScheduleBot(roomId);
@@ -96,6 +72,7 @@ public class GameSocketController {
 
   @MessageMapping("/room/{roomId}/move")
   public void move(@DestinationVariable String roomId, @Payload ActionMessage msg) {
+    ensureLocalSession(roomId);
     GameSnapshot snap = gameEngineService.moveToken(
         roomId,
         msg.userId(),
@@ -104,6 +81,29 @@ public class GameSocketController {
     );
     broadcast(roomId, snap);
     maybeScheduleBot(roomId);
+  }
+
+  /** Restore MatchRuntime from Redis/Mongo — never blank create. */
+  private void ensureLocalSession(String roomId) {
+    if (gameEngineService.hasMatch(roomId)) {
+      return;
+    }
+    gameEventBus.loadCachedSnapshot(roomId).ifPresentOrElse(
+        snap -> {
+          snap.setRoomId(roomId);
+          gameEngineService.restoreFromSnapshot(snap);
+        },
+        () -> roomService.getRoom(roomId).ifPresent(room -> {
+          if (room.getStatus() == com.ludo.backend.room.RoomStatus.IN_PROGRESS
+              || room.getStatus() == com.ludo.backend.room.RoomStatus.WAITING_RECONNECT) {
+            try {
+              roomService.rehydrateMatch(room);
+            } catch (RuntimeException ignored) {
+              // no snapshot yet
+            }
+          }
+        })
+    );
   }
 
   /** Forced state sync for join/reconnect — never skipped by actionSeq dedupe. */

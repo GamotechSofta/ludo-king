@@ -1,6 +1,8 @@
 package com.ludo.backend.realtime;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ludo.backend.game.GameEngineService;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -22,9 +24,10 @@ public class RedisGameBridgeConfig {
   RedisGameBridge redisGameBridge(
       StringRedisTemplate redis,
       ObjectMapper objectMapper,
-      SimpMessagingTemplate messagingTemplate
+      SimpMessagingTemplate messagingTemplate,
+      ObjectProvider<GameEngineService> gameEngine
   ) {
-    return new RedisGameBridge(redis, objectMapper, messagingTemplate);
+    return new RedisGameBridge(redis, objectMapper, messagingTemplate, gameEngine);
   }
 
   @Bean

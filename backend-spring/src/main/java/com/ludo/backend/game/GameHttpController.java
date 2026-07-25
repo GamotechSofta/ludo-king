@@ -52,8 +52,8 @@ public class GameHttpController {
     if (gameEngineService.hasMatch(roomId)) {
       return gameEngineService.getSnapshot(roomId);
     }
-    // Reconnect / other instance: return cached authoritative snapshot if present
     return gameEventBus.loadCachedSnapshot(roomId)
+        .map(gameEngineService::restoreFromSnapshot)
         .orElseGet(() -> {
           ensureMatch(roomId);
           return gameEngineService.getSnapshot(roomId);
@@ -89,6 +89,10 @@ public class GameHttpController {
     return snap;
   }
 
+  /**
+   * Ensure the single live MatchRuntime is present. Restores from Redis/Mongo —
+   * never creates a fresh jail board for an in-progress game.
+   */
   private void ensureMatch(String roomId) {
     if (gameEngineService.hasMatch(roomId)) {
       return;
@@ -101,6 +105,13 @@ public class GameHttpController {
     if (room.getStatus() == com.ludo.backend.room.RoomStatus.WAITING
         || room.getStatus() == com.ludo.backend.room.RoomStatus.READY) {
       throw new IllegalStateException("Match not started yet — waiting for ready/countdown");
+    }
+
+    GameSnapshot cached = gameEventBus.loadCachedSnapshot(roomId).orElse(null);
+    if (cached != null) {
+      cached.setRoomId(roomId);
+      gameEngineService.restoreFromSnapshot(cached);
+      return;
     }
     roomService.rehydrateMatch(room);
   }

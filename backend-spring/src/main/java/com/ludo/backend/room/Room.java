@@ -30,6 +30,8 @@ public class Room {
   private Instant countdownEndsAt;
   private Integer countdownValue;
   private Instant reconnectDeadlineAt;
+  /** Last validated GameSnapshot JSON for restart-safe restore. */
+  private String liveSnapshotJson;
 
   public String getId() {
     return id;
@@ -157,5 +159,13 @@ public class Room {
 
   public void setReconnectDeadlineAt(Instant reconnectDeadlineAt) {
     this.reconnectDeadlineAt = reconnectDeadlineAt;
+  }
+
+  public String getLiveSnapshotJson() {
+    return liveSnapshotJson;
+  }
+
+  public void setLiveSnapshotJson(String liveSnapshotJson) {
+    this.liveSnapshotJson = liveSnapshotJson;
   }
 }

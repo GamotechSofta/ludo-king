@@ -1,5 +1,6 @@
 package com.ludo.backend.realtime;
 
+import com.ludo.backend.game.GameEvent;
 import com.ludo.backend.game.GameSnapshot;
 import com.ludo.backend.room.RoomService;
 import java.util.Optional;
@@ -13,8 +14,8 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
 /**
- * Single push path for live match updates: STOMP immediately, Redis cache +
- * pub/sub async (never block the action path on Redis/Mongo).
+ * Ordered multiplayer fan-out: compact {@link GameEvent} on the room topic.
+ * Redis cache + Mongo persistence run async after STOMP send.
  */
 @Service
 public class GameEventBus {
@@ -41,51 +42,16 @@ public class GameEventBus {
     this.redisBridge = Optional.ofNullable(redisBridge);
   }
 
-  /**
-   * Broadcast validated snapshot to every subscriber of the room.
-   * Skips identical actionSeq republishes (unchanged state) unless forced.
-   */
   public void publishSnapshot(String roomId, GameSnapshot snap) {
-    publishSnapshot(roomId, snap, false);
+    publishEvent(roomId, GameEvent.fromSnapshot(GameEvent.typeFor(snap), snap), false);
   }
 
-  /** Always fan-out (join / reconnect / explicit state sync). */
   public void publishSnapshotForced(String roomId, GameSnapshot snap) {
-    publishSnapshot(roomId, snap, true);
-  }
-
-  private void publishSnapshot(String roomId, GameSnapshot snap, boolean force) {
-    long t0 = System.nanoTime();
-    long seq = snap.getActionSeq();
-    if (!force) {
-      Long prev = lastPublishedSeq.put(roomId, seq);
-      if (prev != null && prev == seq) {
-        return;
-      }
-    } else {
-      lastPublishedSeq.put(roomId, seq);
-    }
-
-    // Fan-out first (hot path) — do not wait for Redis/Mongo
-    messagingTemplate.convertAndSend("/topic/room/" + roomId, snap);
-
-    redisBridge.ifPresent(bridge -> asyncIo.execute(() -> {
-      try {
-        bridge.cacheAndPublish(roomId, snap);
-      } catch (Exception e) {
-        log.debug("async redis publish: {}", e.getMessage());
-      }
-    }));
-
-    long ms = (System.nanoTime() - t0) / 1_000_000L;
-    if (ms > 15) {
-      log.debug("publishSnapshot room={} seq={} took {}ms", roomId, seq, ms);
-    }
+    publishEvent(roomId, GameEvent.fromSnapshot(GameEvent.STATE, snap), true);
   }
 
   public void publishSnapshotAndMeta(String roomId, GameSnapshot snap) {
-    publishSnapshot(roomId, snap, false);
-    // Room meta is heavier and rarely needed for pawn motion — async
+    publishSnapshot(roomId, snap);
     asyncIo.execute(() -> {
       try {
         roomService.getRoom(roomId).ifPresent(room ->
@@ -97,8 +63,40 @@ public class GameEventBus {
     });
   }
 
+  private void publishEvent(String roomId, GameEvent event, boolean force) {
+    long seq = event.getActionSeq();
+    if (!force) {
+      Long prev = lastPublishedSeq.put(roomId, seq);
+      if (prev != null && prev == seq) {
+        return;
+      }
+    } else {
+      lastPublishedSeq.put(roomId, seq);
+    }
+
+    messagingTemplate.convertAndSend("/topic/room/" + roomId, event);
+
+    GameSnapshot snap = event.getState();
+    if (snap != null) {
+      redisBridge.ifPresent(bridge -> asyncIo.execute(() -> {
+        try {
+          bridge.cacheAndPublish(roomId, snap);
+        } catch (Exception e) {
+          log.debug("async redis publish: {}", e.getMessage());
+        }
+      }));
+      asyncIo.execute(() -> roomService.persistLiveSnapshot(roomId, snap));
+    }
+  }
+
   public Optional<GameSnapshot> loadCachedSnapshot(String roomId) {
-    return redisBridge.map(bridge -> bridge.loadSnapshot(roomId));
+    if (redisBridge.isPresent()) {
+      GameSnapshot cached = redisBridge.get().loadSnapshot(roomId);
+      if (cached != null) {
+        return Optional.of(cached);
+      }
+    }
+    return roomService.loadPersistedSnapshot(roomId);
   }
 
   public void clearRoom(String roomId) {

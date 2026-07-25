@@ -1,21 +1,21 @@
 package com.ludo.backend.realtime;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ludo.backend.game.GameEngineService;
 import com.ludo.backend.game.GameSnapshot;
 import java.time.Duration;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.redis.connection.Message;
 import org.springframework.data.redis.connection.MessageListener;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 
 /**
- * Caches live match snapshots in Redis and fans out updates over pub/sub so
- * every backend instance can push WebSocket frames with minimal delay.
- *
- * Registered only when Redis is available — see {@link RedisGameBridgeConfig}.
+ * Caches live match snapshots and fans out over pub/sub.
+ * On fan-in, restores the local MatchRuntime so every instance shares one logical session.
  */
 public class RedisGameBridge implements MessageListener {
 
@@ -27,16 +27,19 @@ public class RedisGameBridge implements MessageListener {
   private final StringRedisTemplate redis;
   private final ObjectMapper objectMapper;
   private final SimpMessagingTemplate messagingTemplate;
+  private final ObjectProvider<GameEngineService> gameEngine;
   private final String instanceId = UUID.randomUUID().toString();
 
   public RedisGameBridge(
       StringRedisTemplate redis,
       ObjectMapper objectMapper,
-      SimpMessagingTemplate messagingTemplate
+      SimpMessagingTemplate messagingTemplate,
+      ObjectProvider<GameEngineService> gameEngine
   ) {
     this.redis = redis;
     this.objectMapper = objectMapper;
     this.messagingTemplate = messagingTemplate;
+    this.gameEngine = gameEngine;
   }
 
   public void cacheAndPublish(String roomId, GameSnapshot snap) {
@@ -82,7 +85,19 @@ public class RedisGameBridge implements MessageListener {
         return;
       }
       GameSnapshot snap = objectMapper.readValue(env.snapshotJson(), GameSnapshot.class);
-      messagingTemplate.convertAndSend("/topic/room/" + env.roomId(), snap);
+      GameEngineService engine = gameEngine.getIfAvailable();
+      if (engine != null) {
+        try {
+          engine.restoreFromSnapshot(snap);
+        } catch (Exception e) {
+          log.debug("restore on fan-in: {}", e.getMessage());
+        }
+      }
+      // Re-emit as GameEvent for local WS subscribers
+      com.ludo.backend.game.GameEvent event =
+          com.ludo.backend.game.GameEvent.fromSnapshot(
+              com.ludo.backend.game.GameEvent.typeFor(snap), snap);
+      messagingTemplate.convertAndSend("/topic/room/" + env.roomId(), event);
     } catch (Exception e) {
       log.warn("Redis fan-in failed: {}", e.getMessage());
     }
