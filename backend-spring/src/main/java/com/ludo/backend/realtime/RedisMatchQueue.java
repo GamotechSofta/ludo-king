@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
@@ -13,7 +14,7 @@ import org.springframework.stereotype.Component;
  * Key: ludo:queue:{maxPlayers}|{tier} → Redis list of "userId|username|enqueuedAt"
  */
 @Component
-@ConditionalOnBean(StringRedisTemplate.class)
+@ConditionalOnBean(RedisConnectionFactory.class)
 public class RedisMatchQueue {
 
   private static final String KEY_PREFIX = "ludo:queue:";
