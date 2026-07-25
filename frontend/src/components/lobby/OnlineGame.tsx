@@ -14,7 +14,7 @@ import {
   EtypeTile,
   ONLINE_TOKEN_MOVEMENT_INTERVAL_VALUE,
 } from "../../utils/constants";
-import { playSound, preloadGameSounds, startBackgroundMusic, stopBackgroundMusic } from "../../utils/sounds";
+import { playSound, preloadGameSounds, beginMatchMusic, stopBackgroundMusic } from "../../utils/sounds";
 import { PageWrapper } from "../wrapper";
 import {
   Board,
@@ -170,7 +170,6 @@ const OnlineGame = ({
 
   useEffect(() => {
     preloadGameSounds();
-    startBackgroundMusic();
     return () => {
       stopBackgroundMusic();
     };
@@ -382,6 +381,7 @@ const OnlineGame = ({
         if (snap.currentSeatIndex !== mySeat) {
           playSound("diceRolling");
         }
+        beginMatchMusic();
         setPlayers(playersForView(snap, mySeat));
         setCurrentTurn(
           profileTurnIndex(snap, snap.currentSeatIndex, mySeat)
@@ -486,6 +486,7 @@ const OnlineGame = ({
       if (snapshot.phase !== "AWAITING_ROLL") return;
       if (actionsTurnRef.current.disabledDice) return;
       playSound("diceRolling");
+      beginMatchMusic();
       setActionsTurn((prev) => ({
         ...prev,
         disabledDice: true,

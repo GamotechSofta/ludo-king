@@ -20,7 +20,7 @@ import {
   EtypeTile,
   TOKEN_MOVEMENT_INTERVAL_VALUE,
 } from "../../utils/constants";
-import { playSound, preloadGameSounds, startBackgroundMusic, stopBackgroundMusic } from "../../utils/sounds";
+import { playSound, preloadGameSounds, beginMatchMusic, stopBackgroundMusic } from "../../utils/sounds";
 import { PageWrapper } from "../wrapper";
 import {
   Board,
@@ -132,7 +132,6 @@ const Game = ({
   useEffect(() => {
     resetDiceKeyCounter();
     preloadGameSounds();
-    startBackgroundMusic();
     return () => {
       stopBackgroundMusic();
     };
@@ -347,6 +346,7 @@ const Game = ({
 
       // Sync ref immediately so rollDone can read diceValue without waiting for React
       playSound("diceRolling");
+      beginMatchMusic();
       setActionsTurn((current) => {
         const next = getRandomValueDice(current, diceValue);
         rollSeqRef.current += 1;

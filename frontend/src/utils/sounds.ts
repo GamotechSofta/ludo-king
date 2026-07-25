@@ -51,7 +51,16 @@ export const playSound = (name: TGameSound, volume = 0.55) => {
   }
 };
 
-/** Looping BGM for an active match (call on game start). */
+/** Looping BGM once actual gameplay starts (first roll / move), not on board load. */
+let matchMusicStarted = false;
+
+export const beginMatchMusic = (volume = BG_MUSIC_VOLUME) => {
+  if (matchMusicStarted) return;
+  matchMusicStarted = true;
+  startBackgroundMusic(volume);
+};
+
+/** Looping BGM for an active match. */
 export const startBackgroundMusic = (volume = BG_MUSIC_VOLUME) => {
   try {
     const audio = getBgMusic();
@@ -68,6 +77,7 @@ export const startBackgroundMusic = (volume = BG_MUSIC_VOLUME) => {
 };
 
 export const stopBackgroundMusic = () => {
+  matchMusicStarted = false;
   try {
     if (!bgMusic) return;
     bgMusic.pause();

@@ -121,10 +121,10 @@ public class BotService {
     return best;
   }
 
-  /** Online bot dice — feels like a real player thinking (2–5 s). */
+  /** Online bot dice — wait 2–3 s before rolling. */
   private void sleepBeforeDiceRoll() {
     try {
-      Thread.sleep(ThreadLocalRandom.current().nextInt(2000, 5001));
+      Thread.sleep(ThreadLocalRandom.current().nextInt(2000, 3001));
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
     }
