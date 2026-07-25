@@ -58,7 +58,7 @@ export const createPrivateRoom = (
   });
 
 export const joinRoom = (roomCode: string, userId: string, username: string) =>
-  json<IOnlineRoom>(`/api/rooms/${roomCode}/join`, {
+  json<IOnlineRoom>(`/api/rooms/${encodeURIComponent(roomCode)}/join`, {
     method: "POST",
     body: JSON.stringify({ userId, username }),
   });
@@ -69,10 +69,23 @@ export const leaveRoom = (roomId: string, userId: string) =>
     body: JSON.stringify({ userId }),
   });
 
+export const markRoomReady = (roomId: string, userId: string) =>
+  json<IOnlineRoom>(`/api/rooms/${roomId}/ready`, {
+    method: "POST",
+    body: JSON.stringify({ userId }),
+  });
+
 export const getRoomState = (roomId: string) =>
-  json<{ room: IOnlineRoom; game?: IGameSnapshot }>(
-    `/api/rooms/${roomId}/state`
-  );
+  json<{
+    room: IOnlineRoom;
+    game?: IGameSnapshot;
+    displayStatus?: string;
+    playersJoined?: number;
+    maxPlayers?: number;
+    readyCount?: number;
+    allReady?: boolean;
+    countdown?: number;
+  }>(`/api/rooms/${roomId}/state`);
 
 /** Always returns a game snapshot (rehydrates engine if needed). */
 export const ensureGameSnapshot = (roomId: string) =>

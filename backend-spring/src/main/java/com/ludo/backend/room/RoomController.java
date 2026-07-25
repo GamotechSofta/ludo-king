@@ -31,6 +31,9 @@ public class RoomController {
   public record CancelRequest(String userId) {
   }
 
+  public record ReadyRequest(String userId) {
+  }
+
   @PostMapping("/queue")
   public RoomService.QueueResponse queue(@RequestBody QueueRequest req) {
     return roomService.enqueue(
@@ -65,6 +68,21 @@ public class RoomController {
   @GetMapping("/{id}/state")
   public Map<String, Object> state(@PathVariable String id) {
     return roomService.getRoomState(id);
+  }
+
+  @PostMapping("/{id}/ready")
+  public Room ready(@PathVariable String id, @RequestBody ReadyRequest req) {
+    return roomService.markReady(id, req.userId());
+  }
+
+  @PostMapping("/{id}/disconnect")
+  public Room disconnect(@PathVariable String id, @RequestBody CancelRequest req) {
+    return roomService.markDisconnected(id, req.userId());
+  }
+
+  @PostMapping("/{id}/reconnect")
+  public Room reconnect(@PathVariable String id, @RequestBody CancelRequest req) {
+    return roomService.reconnect(id, req.userId());
   }
 
   @PostMapping("/queue/cancel")

@@ -42,8 +42,14 @@ export interface IOnlineRoom {
     bot: boolean;
     seatIndex: number;
     connectionStatus?: string;
+    ready?: boolean;
+    avatar?: string;
+    rating?: number;
   }>;
   fillDeadlineAt?: string;
+  countdownEndsAt?: string;
+  countdownValue?: number;
+  reconnectDeadlineAt?: string;
 }
 
 export interface IGameSnapshot {

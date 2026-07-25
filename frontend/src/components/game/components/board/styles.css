@@ -417,7 +417,8 @@
   height: var(--size-board);
   position: relative;
   width: var(--size-board);
-  overflow: hidden;
+  /* Pin pawns sit above cell centers; keep them visible on edge rows/cols */
+  overflow: visible;
 
   /* Mestra las celdas de salida y las celda seguras */
   background-image: var(--finish-row-top), var(--finish-row-left),

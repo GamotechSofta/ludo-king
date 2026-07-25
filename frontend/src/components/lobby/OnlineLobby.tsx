@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { getRoomState, leaveRoom } from "../../api/ludoApi";
+import { getRoomState, leaveRoom, markRoomReady } from "../../api/ludoApi";
 import type { IGameSnapshot, IGuestUser, IOnlineRoom } from "./types";
 import "./styles.css";
 
@@ -13,6 +13,10 @@ interface OnlineLobbyProps {
   onStart: (room: IOnlineRoom, game?: IGameSnapshot | null) => void;
 }
 
+/**
+ * Matchmaking lobby only — ready / countdown / seat list.
+ * Does not touch board, dice, or pawn UI.
+ */
 const OnlineLobby = ({
   guest,
   roomId,
@@ -23,7 +27,9 @@ const OnlineLobby = ({
   onStart,
 }: OnlineLobbyProps) => {
   const [room, setRoom] = useState<IOnlineRoom | null>(null);
+  const [countdown, setCountdown] = useState<number | "GO" | null>(null);
   const [error, setError] = useState("");
+  const [readyBusy, setReadyBusy] = useState(false);
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
@@ -39,7 +45,18 @@ const OnlineLobby = ({
         const state = await getRoomState(roomId);
         if (!alive) return;
         setRoom(state.room);
-        if (state.room.status === "IN_PROGRESS" && !started) {
+        if (typeof state.countdown === "number") {
+          setCountdown(state.countdown <= 0 ? "GO" : state.countdown);
+        } else if (state.room.countdownValue != null) {
+          setCountdown(
+            state.room.countdownValue <= 0 ? "GO" : state.room.countdownValue
+          );
+        }
+        if (
+          (state.room.status === "IN_PROGRESS" ||
+            state.displayStatus === "PLAYING") &&
+          !started
+        ) {
           started = true;
           onStart(state.room, state.game ?? null);
         }
@@ -50,7 +67,7 @@ const OnlineLobby = ({
       }
     };
     void tick();
-    const id = window.setInterval(tick, 1200);
+    const id = window.setInterval(tick, 800);
     return () => {
       alive = false;
       window.clearInterval(id);
@@ -58,19 +75,44 @@ const OnlineLobby = ({
   }, [roomId, onStart]);
 
   const secondsLeft = useMemo(() => {
-    if (!room?.fillDeadlineAt) return null;
+    if (!room?.fillDeadlineAt || room.status !== "WAITING") return null;
     const ms = new Date(room.fillDeadlineAt).getTime() - now;
     return Math.max(0, Math.ceil(ms / 1000));
-  }, [room?.fillDeadlineAt, now]);
+  }, [room?.fillDeadlineAt, room?.status, now]);
 
   const seats = room?.maxPlayers || 4;
   const filled = room?.players?.length || 0;
+  const me = room?.players?.find((p) => p.userId === guest.id);
+  const isReadyPhase = room?.status === "READY";
+  const iAmReady = !!me?.ready;
+
+  const handleReady = useCallback(async () => {
+    if (readyBusy || iAmReady) return;
+    setReadyBusy(true);
+    setError("");
+    try {
+      const updated = await markRoomReady(roomId, guest.id);
+      setRoom(updated);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not ready up");
+    } finally {
+      setReadyBusy(false);
+    }
+  }, [readyBusy, iAmReady, roomId, guest.id]);
 
   const handleBack = useCallback(() => {
-    // Free the seat so the room can't bot-fill into a ghost match
     void leaveRoom(roomId, guest.id).catch(() => undefined);
     onBack();
   }, [roomId, guest.id, onBack]);
+
+  const title =
+    countdown != null
+      ? countdown === "GO"
+        ? "GO!"
+        : String(countdown)
+      : isReadyPhase
+      ? "Waiting for Players…"
+      : "Finding Players";
 
   return (
     <div className="lobby">
@@ -78,7 +120,7 @@ const OnlineLobby = ({
         <button className="lobby-back" type="button" onClick={handleBack}>
           ← Back
         </button>
-        <h2 className="lobby-heading">Finding Players</h2>
+        <h2 className="lobby-heading">{title}</h2>
         <p className="lobby-sub">
           Room <strong>{roomCode}</strong> · {guest.username}
           {walletBalance != null
@@ -97,8 +139,15 @@ const OnlineLobby = ({
 
         <div className="lobby-panel">
           <p className="lobby-footer-note" style={{ marginBottom: 12 }}>
-            Seats {filled}/{seats}
-            {secondsLeft !== null ? ` · Bots in ${secondsLeft}s` : ""}
+            {filled} / {seats} Players Joined
+            {room?.status === "WAITING" && secondsLeft != null
+              ? ` · Searching ${secondsLeft}s`
+              : ""}
+            {isReadyPhase
+              ? ` · Ready ${
+                  room?.players?.filter((p) => p.bot || p.ready).length || 0
+                }/${seats}`
+              : ""}
           </p>
 
           {Array.from({ length: seats }).map((_, i) => {
@@ -115,17 +164,36 @@ const OnlineLobby = ({
                   {p
                     ? `${p.username}${p.bot ? " (Bot)" : ""}${
                         p.userId === guest.id ? " · You" : ""
-                      }`
+                      }${p.ready || p.bot ? " ✓" : ""}`
                     : "Waiting…"}
                 </span>
               </div>
             );
           })}
 
-          <p className="lobby-footer-note">
-            Share code <strong>{roomCode}</strong> with friends, or wait for
-            auto bot-fill.
-          </p>
+          {isReadyPhase && !iAmReady && (
+            <button
+              className="lobby-btn primary"
+              type="button"
+              disabled={readyBusy}
+              onClick={() => void handleReady()}
+              style={{ marginTop: 14 }}
+            >
+              {readyBusy ? "…" : "READY"}
+            </button>
+          )}
+
+          {isReadyPhase && iAmReady && countdown == null && (
+            <p className="lobby-footer-note" style={{ marginTop: 12 }}>
+              You are ready — waiting for others…
+            </p>
+          )}
+
+          {room?.status === "WAITING" && (
+            <p className="lobby-footer-note">
+              Share code <strong>{roomCode}</strong> with friends.
+            </p>
+          )}
           {error && (
             <p className="lobby-footer-note" style={{ color: "#ffd0d0" }}>
               {error}

@@ -1,13 +1,20 @@
 package com.ludo.backend.room;
 
+import java.time.Instant;
+
 public class RoomPlayer {
   private String userId;
   private String username;
+  private String avatar;
+  private int rating;
   private String color;
   private boolean bot;
   private BotDifficulty botDifficulty;
   private int seatIndex;
   private ConnectionStatus connectionStatus = ConnectionStatus.CONNECTED;
+  private boolean ready;
+  private Instant disconnectedAt;
+  private String socketId;
 
   public RoomPlayer() {
   }
@@ -19,6 +26,9 @@ public class RoomPlayer {
     this.bot = bot;
     this.seatIndex = seatIndex;
     this.botDifficulty = bot ? BotDifficulty.MEDIUM : null;
+    this.ready = bot;
+    this.avatar = bot ? "bot" : "default";
+    this.rating = 1000;
   }
 
   public String getUserId() {
@@ -35,6 +45,22 @@ public class RoomPlayer {
 
   public void setUsername(String username) {
     this.username = username;
+  }
+
+  public String getAvatar() {
+    return avatar;
+  }
+
+  public void setAvatar(String avatar) {
+    this.avatar = avatar;
+  }
+
+  public int getRating() {
+    return rating;
+  }
+
+  public void setRating(int rating) {
+    this.rating = rating;
   }
 
   public String getColor() {
@@ -75,5 +101,29 @@ public class RoomPlayer {
 
   public void setConnectionStatus(ConnectionStatus connectionStatus) {
     this.connectionStatus = connectionStatus;
+  }
+
+  public boolean isReady() {
+    return ready;
+  }
+
+  public void setReady(boolean ready) {
+    this.ready = ready;
+  }
+
+  public Instant getDisconnectedAt() {
+    return disconnectedAt;
+  }
+
+  public void setDisconnectedAt(Instant disconnectedAt) {
+    this.disconnectedAt = disconnectedAt;
+  }
+
+  public String getSocketId() {
+    return socketId;
+  }
+
+  public void setSocketId(String socketId) {
+    this.socketId = socketId;
   }
 }

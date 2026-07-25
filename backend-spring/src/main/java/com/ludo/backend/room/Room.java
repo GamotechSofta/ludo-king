@@ -26,6 +26,10 @@ public class Room {
   private Instant fillDeadlineAt;
   private String winnerId;
   private List<Integer> finalStandings = new ArrayList<>();
+  /** When set, room is in countdown before PLAYING. */
+  private Instant countdownEndsAt;
+  private Integer countdownValue;
+  private Instant reconnectDeadlineAt;
 
   public String getId() {
     return id;
@@ -129,5 +133,29 @@ public class Room {
 
   public void setFinalStandings(List<Integer> finalStandings) {
     this.finalStandings = finalStandings;
+  }
+
+  public Instant getCountdownEndsAt() {
+    return countdownEndsAt;
+  }
+
+  public void setCountdownEndsAt(Instant countdownEndsAt) {
+    this.countdownEndsAt = countdownEndsAt;
+  }
+
+  public Integer getCountdownValue() {
+    return countdownValue;
+  }
+
+  public void setCountdownValue(Integer countdownValue) {
+    this.countdownValue = countdownValue;
+  }
+
+  public Instant getReconnectDeadlineAt() {
+    return reconnectDeadlineAt;
+  }
+
+  public void setReconnectDeadlineAt(Instant reconnectDeadlineAt) {
+    this.reconnectDeadlineAt = reconnectDeadlineAt;
   }
 }

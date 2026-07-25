@@ -91,12 +91,9 @@ public class GameHttpController {
     if (room.getPlayers() == null || room.getPlayers().isEmpty()) {
       throw new IllegalStateException("Room has no players");
     }
-    if (room.getStatus() == com.ludo.backend.room.RoomStatus.WAITING) {
-      if (room.getPlayers().size() >= room.getMaxPlayers()) {
-        roomService.startMatch(room);
-        return;
-      }
-      throw new IllegalStateException("Match not started yet");
+    if (room.getStatus() == com.ludo.backend.room.RoomStatus.WAITING
+        || room.getStatus() == com.ludo.backend.room.RoomStatus.READY) {
+      throw new IllegalStateException("Match not started yet — waiting for ready/countdown");
     }
     roomService.rehydrateMatch(room);
   }
