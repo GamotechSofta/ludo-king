@@ -49,7 +49,6 @@ const Results = ({
                 )}
                 <span style={{ flex: 1, fontWeight: 600 }}>
                   {entry.name}
-                  {entry.isBot ? " · Bot" : ""}
                   {entry.isYou ? " · You" : ""}
                 </span>
               </li>

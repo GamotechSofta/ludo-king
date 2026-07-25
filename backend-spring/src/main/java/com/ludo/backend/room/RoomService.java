@@ -200,9 +200,12 @@ public class RoomService {
     List<LudoColor> colors = LudoColor.forPlayerCount(room.getMaxPlayers());
     while (room.getPlayers().size() < room.getMaxPlayers()) {
       int seat = room.getPlayers().size();
+      List<String> takenNames = room.getPlayers().stream()
+          .map(RoomPlayer::getUsername)
+          .toList();
       RoomPlayer bot = new RoomPlayer(
           "bot-" + room.getId() + "-" + seat,
-          "Bot " + (seat + 1),
+          BotNames.randomName(takenNames),
           colors.get(seat).name(),
           true,
           seat

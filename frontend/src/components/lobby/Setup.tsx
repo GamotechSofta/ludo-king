@@ -1,27 +1,64 @@
 import React, { useEffect, useState } from "react";
 import type { IGameConfig, ILobbyPlayer, TPlayMode } from "./types";
 import type { TTotalPlayers } from "../../interfaces";
+import { getOneBotName, getRandomBotNames } from "../../data/botNames";
 import "./styles.css";
 
 const COLORS = ["red", "green", "yellow", "blue"] as const;
 
-const defaultName = (index: number, mode: TPlayMode, isBot: boolean) => {
-  if (mode === "computer" && isBot) return `Bot ${index}`;
-  return `Player ${index}`;
-};
+const isGenericBotName = (name: string) => /^Bot\s*\d+$/i.test(name.trim());
 
 const buildPlayers = (
   total: TTotalPlayers,
   mode: TPlayMode,
   previous: ILobbyPlayer[] = []
 ): ILobbyPlayer[] => {
+  const usedNames: string[] = [];
+  const freshBotNames =
+    mode === "computer" ? getRandomBotNames(total) : [];
+  let freshIndex = 0;
+
+  const nextFreshBotName = () => {
+    while (freshIndex < freshBotNames.length) {
+      const candidate = freshBotNames[freshIndex++];
+      if (!usedNames.includes(candidate)) {
+        usedNames.push(candidate);
+        return candidate;
+      }
+    }
+    const fallback = getOneBotName(usedNames);
+    usedNames.push(fallback);
+    return fallback;
+  };
+
   return Array.from({ length: total }, (_, i) => {
     const existing = previous[i];
-    const isBot =
-      mode === "computer" ? i !== 0 : existing?.isBot ?? false;
+    const isBot = mode === "computer" ? i !== 0 : existing?.isBot ?? false;
+
+    let name: string;
+    if (mode === "computer" && isBot) {
+      const keepExisting =
+        !!existing?.isBot &&
+        !!existing.name &&
+        !isGenericBotName(existing.name) &&
+        !usedNames.includes(existing.name);
+      if (keepExisting) {
+        name = existing.name;
+        usedNames.push(name);
+      } else {
+        name = nextFreshBotName();
+      }
+    } else if (existing?.name && !existing.isBot) {
+      name = existing.name;
+      usedNames.push(name);
+    } else {
+      name = `Player ${i + 1}`;
+      usedNames.push(name);
+    }
+
     return {
       id: existing?.id ?? String(i + 1),
-      name: existing?.name ?? defaultName(i + 1, mode, isBot),
+      name,
       isBot,
     };
   });
@@ -51,17 +88,20 @@ const Setup = ({ mode, onBack, onStart }: SetupProps) => {
 
   const toggleBot = (index: number) => {
     if (mode !== "computer" || index === 0) return;
-    setPlayers((prev) =>
-      prev.map((p, i) => {
+    setPlayers((prev) => {
+      const usedNames = prev.map((p) => p.name);
+      return prev.map((p, i) => {
         if (i !== index) return p;
         const isBot = !p.isBot;
         return {
           ...p,
           isBot,
-          name: isBot ? `Bot ${i + 1}` : `Player ${i + 1}`,
+          name: isBot
+            ? getOneBotName(usedNames.filter((_, idx) => idx !== i))
+            : `Player ${i + 1}`,
         };
-      })
-    );
+      });
+    });
   };
 
   const handleStart = () => {
@@ -99,7 +139,7 @@ const Setup = ({ mode, onBack, onStart }: SetupProps) => {
                 <div className={`player-swatch ${COLORS[index]}`} />
                 <input
                   value={player.name}
-                  maxLength={12}
+                  maxLength={16}
                   onChange={(e) => updateName(index, e.target.value)}
                   aria-label={`Name for seat ${index + 1}`}
                 />
