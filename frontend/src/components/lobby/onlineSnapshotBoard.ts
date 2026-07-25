@@ -15,30 +15,52 @@ import {
   EActionsBoardGame,
   EBoardColors,
   EPositionGame,
-  ESufixColors,
   EtypeTile,
 } from "../../utils/constants";
 import { getOneBotName } from "../../data/botNames";
 import type { IGameSnapshot } from "./types";
 import { applyTokenCell, recomputeStacking } from "../game/rules";
 
-/** Default RGYB art: which house each server color owns. */
-const DEFAULT_COLOR_CORNER: Record<string, TPositionGame> = {
+/**
+ * Fixed RGYB board art. Online path cells from the server are absolute for this
+ * layout — never CSS-rotate or swap boardColor schemes, or tokens land on the
+ * wrong painted paths (e.g. red piece on green home stretch).
+ */
+const COLOR_CORNER: Record<string, TPositionGame> = {
   RED: EPositionGame.BOTTOM_LEFT,
   GREEN: EPositionGame.TOP_LEFT,
   YELLOW: EPositionGame.TOP_RIGHT,
   BLUE: EPositionGame.BOTTOM_RIGHT,
 };
 
-/** Seat order used by the Spring backend (`LudoColor.forPlayerCount`). */
+/** Backend seat order (`LudoColor.forPlayerCount`). */
 const SEAT_COLOR_ORDER = ["RED", "GREEN", "YELLOW", "BLUE"] as const;
 
-const CORNERS_CW: TPositionGame[] = [
-  EPositionGame.BOTTOM_LEFT,
-  EPositionGame.TOP_LEFT,
-  EPositionGame.TOP_RIGHT,
-  EPositionGame.BOTTOM_RIGHT,
-];
+/**
+ * Profile slot index (0-based) for each house on the fixed board.
+ * Matches ProfileSection DISTRIBUTION_PROFILES (1-based there).
+ * 2p: BL + TR only. 3p: BL + TL + TR. 4p: all four.
+ */
+const PROFILE_INDEX_BY_CORNER: Record<
+  number,
+  Partial<Record<TPositionGame, number>>
+> = {
+  2: {
+    [EPositionGame.BOTTOM_LEFT]: 0,
+    [EPositionGame.TOP_RIGHT]: 1,
+  },
+  3: {
+    [EPositionGame.BOTTOM_LEFT]: 0,
+    [EPositionGame.TOP_LEFT]: 1,
+    [EPositionGame.TOP_RIGHT]: 2,
+  },
+  4: {
+    [EPositionGame.BOTTOM_LEFT]: 0,
+    [EPositionGame.TOP_LEFT]: 1,
+    [EPositionGame.TOP_RIGHT]: 2,
+    [EPositionGame.BOTTOM_RIGHT]: 3,
+  },
+};
 
 const JAIL = -1;
 const EXIT_BASE = 100;
@@ -67,64 +89,26 @@ export function displayPlayerName(
   return fresh;
 }
 
-/**
- * Map boardColor scheme (e.g. YBRG) → each paint color's house corner.
- * Must stay in sync with `.game-board.YBRG` CSS variables.
- */
-export function cornerMapForBoardColor(
-  boardColor: TBoardColors
-): Record<string, TPositionGame> {
-  const letters = String(boardColor).split("");
-  const map: Record<string, TPositionGame> = {};
-  letters.forEach((letter, i) => {
-    const color = ESufixColors[letter as keyof typeof ESufixColors];
-    if (color && CORNERS_CW[i]) {
-      map[color] = CORNERS_CW[i];
-    }
-  });
-  return map;
-}
-
-/**
- * Board CSS class so `myColor` is painted at bottom-left.
- * 3-player online (R,G,Y) can't remapping cleanly onto BL/TL/TR profiles —
- * those matches use CSS rotate instead (see OnlineGame).
- */
+/** Always default art — do not remap. */
 export function boardColorForSeatColor(
-  color?: string,
-  totalPlayers?: number
+  _color?: string,
+  _totalPlayers?: number
 ): TBoardColors {
-  if (totalPlayers === 3) {
-    return EBoardColors.RGYB;
-  }
-  switch ((color || "RED").toUpperCase()) {
-    case "GREEN":
-      return EBoardColors.GYBR;
-    case "YELLOW":
-      return EBoardColors.YBRG;
-    case "BLUE":
-      return EBoardColors.BRGY;
-    default:
-      return EBoardColors.RGYB;
-  }
+  return EBoardColors.RGYB;
 }
 
-/** Degrees to rotate the whole board so `color`'s house sits at bottom-left. */
-export function boardRotationDegForColor(color?: string): number {
-  const corner =
-    DEFAULT_COLOR_CORNER[(color || "RED").toUpperCase()] ||
-    EPositionGame.BOTTOM_LEFT;
-  const idx = CORNERS_CW.indexOf(corner);
-  return idx <= 0 ? 0 : -idx * 90;
+/** Always 0 — do not rotate. */
+export function boardRotationDegForColor(_color?: string): number {
+  return 0;
 }
 
 export function visualSeatIndex(
   serverSeat: number,
-  mySeat: number,
-  totalPlayers: number
+  _mySeat: number,
+  _totalPlayers: number
 ): number {
-  if (totalPlayers <= 0 || mySeat < 0) return serverSeat;
-  return (serverSeat - mySeat + totalPlayers) % totalPlayers;
+  // Profiles follow house color, not "local player = 0".
+  return serverSeat;
 }
 
 function decodeServerPos(
@@ -146,9 +130,6 @@ function decodeServerPos(
   return { typeTile: EtypeTile.NORMAL, positionTile: serverPos };
 }
 
-/**
- * Colors in backend seat order (never Object.keys — that can desync seats).
- */
 export function seatColorsFromSnapshot(snapshot: IGameSnapshot): TColors[] {
   const positions = snapshot.tokenPositions || {};
   const ordered = SEAT_COLOR_ORDER.filter((c) =>
@@ -158,6 +139,14 @@ export function seatColorsFromSnapshot(snapshot: IGameSnapshot): TColors[] {
   return Object.keys(positions) as TColors[];
 }
 
+function profileIndexForColor(color: string, totalPlayers: number): number {
+  const corner = COLOR_CORNER[color] || EPositionGame.BOTTOM_LEFT;
+  const map = PROFILE_INDEX_BY_CORNER[totalPlayers] || PROFILE_INDEX_BY_CORNER[4];
+  const idx = map[corner];
+  return typeof idx === "number" ? idx : 0;
+}
+
+/** Players in server seat order (engine / capture). */
 export function playersFromSnapshot(snapshot: IGameSnapshot): IPlayer[] {
   const colors = seatColorsFromSnapshot(snapshot);
   const used: string[] = [];
@@ -183,18 +172,47 @@ export function playersFromSnapshot(snapshot: IGameSnapshot): IPlayer[] {
   });
 }
 
-/** Local seat becomes profile index 0 (bottom-left). */
+/**
+ * Players ordered for ProfileSection slots so each profile sits by its house
+ * (red bottom-left, green top-left, …). No fake "you are always bottom" rotate.
+ */
 export function playersForView(
   snapshot: IGameSnapshot,
-  mySeat: number
+  _mySeat: number
 ): IPlayer[] {
   const server = playersFromSnapshot(snapshot);
   const n = server.length;
-  if (n === 0 || mySeat < 0) return server;
-  return server.map((_, i) => {
-    const seat = (mySeat + i) % n;
-    return { ...server[seat], index: i };
+  if (n === 0) return server;
+
+  const slots: IPlayer[] = new Array(n);
+  server.forEach((p) => {
+    const slot = profileIndexForColor(p.color, n);
+    slots[slot] = { ...p, index: slot };
   });
+
+  // Fill any hole (shouldn't happen) from leftover seats.
+  let next = 0;
+  server.forEach((p) => {
+    if (slots.some((s) => s && s.id === p.id)) return;
+    while (next < n && slots[next]) next += 1;
+    if (next < n) {
+      slots[next] = { ...p, index: next };
+      next += 1;
+    }
+  });
+
+  return slots.filter(Boolean);
+}
+
+/** Profile currentTurn index for a server seat. */
+export function profileTurnIndex(
+  snapshot: IGameSnapshot,
+  serverSeat: number
+): number {
+  const colors = seatColorsFromSnapshot(snapshot);
+  const color = colors[serverSeat];
+  if (!color) return serverSeat;
+  return profileIndexForColor(color, colors.length);
 }
 
 export function listTokensFromSnapshot(
@@ -203,10 +221,6 @@ export function listTokensFromSnapshot(
   canMove: boolean
 ): IListTokens[] {
   const colors = seatColorsFromSnapshot(snapshot);
-  const n = colors.length;
-  const myColor = mySeat >= 0 && mySeat < n ? colors[mySeat] : colors[0];
-  const boardColor = boardColorForSeatColor(myColor, n);
-  const cornerMap = cornerMapForBoardColor(boardColor);
 
   const legal =
     snapshot.legalMoves?.length
@@ -222,12 +236,7 @@ export function listTokensFromSnapshot(
   }));
 
   const groups: IListTokens[] = colors.map((color, seat) => {
-    // Always place tokens in the house that matches this color on the
-    // current board scheme (never a different seat's corner).
-    const positionGame =
-      cornerMap[color] ||
-      DEFAULT_COLOR_CORNER[color] ||
-      EPositionGame.BOTTOM_LEFT;
+    const positionGame = COLOR_CORNER[color] || EPositionGame.BOTTOM_LEFT;
     const positions = snapshot.tokenPositions[color] || [-1, -1, -1, -1];
     const tokens: IToken[] = positions.map((serverPos, tokenIndex) => {
       const { typeTile, positionTile } = decodeServerPos(serverPos, tokenIndex);

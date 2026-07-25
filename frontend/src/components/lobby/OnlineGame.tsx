@@ -27,15 +27,14 @@ import { applyTokenCell, buildMovePath, resolveLanding, shouldAutoExitJailOnFirs
 import type { IGameSnapshot, IGuestUser, IResultEntry } from "./types";
 import Results from "./Results";
 import {
+  ONLINE_BOARD_COLOR,
   actionsTurnFromSnapshot,
-  boardColorForSeatColor,
-  boardRotationDegForColor,
   displayPlayerName,
   listTokensFromSnapshot,
   playersForView,
   playersFromSnapshot,
+  profileTurnIndex,
   seatColorsFromSnapshot,
-  visualSeatIndex,
 } from "./onlineSnapshotBoard";
 
 interface OnlineGameProps {
@@ -170,11 +169,10 @@ const OnlineGame = ({
       const canMove =
         isMyTurn && snap.phase === "AWAITING_MOVE" && !animatingRef.current;
       const nextTokens = listTokensFromSnapshot(snap, mySeat, canMove);
-      const n = seatColorsFromSnapshot(snap).length;
       setPlayers(nextPlayers);
       setListTokens(nextTokens);
       listTokensRef.current = nextTokens;
-      setCurrentTurn(visualSeatIndex(snap.currentSeatIndex, mySeat, n));
+      setCurrentTurn(profileTurnIndex(snap, snap.currentSeatIndex));
       setActionsTurn((prev) => {
         const next = actionsTurnFromSnapshot(snap, mySeat, prev);
         if (keepDiceVisual) {
@@ -293,13 +291,7 @@ const OnlineGame = ({
           playSound("diceRolling");
         }
         setPlayers(playersForView(snap, mySeat));
-        setCurrentTurn(
-          visualSeatIndex(
-            snap.currentSeatIndex,
-            mySeat,
-            seatColorsFromSnapshot(snap).length
-          )
-        );
+        setCurrentTurn(profileTurnIndex(snap, snap.currentSeatIndex));
         setActionsTurn((prevActions) => {
           const base = actionsTurnFromSnapshot(snap, mySeat, prevActions);
           const rolled = getRandomValueDice(base, value);
@@ -472,9 +464,7 @@ const OnlineGame = ({
     [snapshot, guest.id]
   );
 
-  // Players state is filled by an effect; fall back to the snapshot so the
-  // board never renders a profile slot without a player (avoids .color crash).
-  // Always rotated so the local player is index 0 (bottom-left).
+  // Profiles sit by house color on the fixed RGYB board (no rotate / remap).
   const renderPlayers =
     players.length > 0
       ? players
@@ -489,14 +479,7 @@ const OnlineGame = ({
       ? renderPlayers.length
       : 4;
 
-  const myColor =
-    snapshot && mySeat >= 0
-      ? seatColorsFromSnapshot(snapshot)[mySeat]
-      : undefined;
-  const boardColor = boardColorForSeatColor(myColor, totalPlayers);
-  // 3p keeps RGYB art and rotates the board so your house is at the bottom.
-  const boardRotationDeg =
-    totalPlayers === 3 ? boardRotationDegForColor(myColor) : 0;
+  const boardColor = ONLINE_BOARD_COLOR;
 
   const profileHandlers = {
     handleTimer: () => undefined,
@@ -613,10 +596,6 @@ const OnlineGame = ({
             width: "100%",
             display: "flex",
             justifyContent: "center",
-            transform: boardRotationDeg
-              ? `rotate(${boardRotationDeg}deg)`
-              : undefined,
-            transformOrigin: "center center",
           }}
         >
           <Board boardColor={boardColor}>
