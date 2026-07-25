@@ -6,6 +6,7 @@ import type {
   IPlayer,
   ISelectTokenValues,
   TDicevalues,
+  TTotalPlayers,
 } from "../../interfaces";
 import {
   EActionsBoardGame,
@@ -30,7 +31,6 @@ import {
   actionsTurnFromSnapshot,
   listTokensFromSnapshot,
   playersFromSnapshot,
-  totalPlayersFromSnapshot,
 } from "./onlineSnapshotBoard";
 import "../game/game-over.css";
 
@@ -331,9 +331,19 @@ const OnlineGame = ({
     [snapshot, guest.id]
   );
 
-  const totalPlayers = snapshot
-    ? totalPlayersFromSnapshot(snapshot)
-    : (4 as const);
+  // Players state is filled by an effect; fall back to the snapshot so the
+  // board never renders a profile slot without a player (avoids .color crash).
+  const renderPlayers =
+    players.length > 0
+      ? players
+      : snapshot
+      ? playersFromSnapshot(snapshot)
+      : [];
+
+  const totalPlayers: TTotalPlayers =
+    renderPlayers.length === 2 || renderPlayers.length === 3
+      ? renderPlayers.length
+      : 4;
 
   const profileHandlers = {
     handleTimer: () => undefined,
@@ -343,7 +353,7 @@ const OnlineGame = ({
   };
 
   const profileProps = {
-    players,
+    players: renderPlayers,
     totalPlayers,
     currentTurn,
     actionsTurn,

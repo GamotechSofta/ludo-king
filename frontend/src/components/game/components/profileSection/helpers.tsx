@@ -88,7 +88,9 @@ export const renderProfileComponent = (
   const indexProfile =
     DISTRIBUTION_PROFILES[totalPlayers]?.[basePosition]?.[position] || 0;
 
-  if (indexProfile !== 0) {
+  const player = indexProfile !== 0 ? players[indexProfile - 1] : undefined;
+
+  if (indexProfile !== 0 && player) {
     /**
      * Valida si el usuario tiene el turno, dependiendo del valor de currentTurn...
      */
@@ -112,6 +114,6 @@ export const renderProfileComponent = (
       ...profileHandlers,
     };
 
-    return <Profile {...extProps} player={players[indexProfile - 1]} />;
+    return <Profile {...extProps} player={player} />;
   }
 };
