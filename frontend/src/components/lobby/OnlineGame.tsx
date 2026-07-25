@@ -23,7 +23,7 @@ import {
   Tokens,
 } from "../game/components";
 import { getRandomValueDice } from "../game/helpers";
-import { applyTokenCell, buildMovePath, resolveLanding } from "../game/rules";
+import { applyTokenCell, buildMovePath, resolveLanding, shouldAutoExitJailOnFirstSix } from "../game/rules";
 import type { IGameSnapshot, IGuestUser, IResultEntry } from "./types";
 import Results from "./Results";
 import {
@@ -387,23 +387,6 @@ const OnlineGame = ({
     void apply(snapshot);
   }, [snapshot, mySeat, syncBoardFromSnapshot, runMoveAnimation]);
 
-  const handleDoneDice = useCallback(() => {
-    if (!snapshot) return;
-    // After dice spin, show selectable tokens for the current snap
-    const canMove =
-      snapshot.currentSeatIndex === mySeat &&
-      snapshot.phase === "AWAITING_MOVE";
-    const nextTokens = listTokensFromSnapshot(snapshot, mySeat, canMove);
-    setListTokens(nextTokens);
-    listTokensRef.current = nextTokens;
-    setActionsTurn((prev) => ({
-      ...prev,
-      ...actionsTurnFromSnapshot(snapshot, mySeat, prev),
-      diceValue: prev.diceValue,
-      diceRollNumber: prev.diceRollNumber,
-    }));
-  }, [snapshot, mySeat]);
-
   const handleSelectDice = useCallback(
     (_diceValue?: TDicevalues) => {
       if (!snapshot || isBusy || animatingRef.current) return;
@@ -441,6 +424,47 @@ const OnlineGame = ({
     },
     [snapshot, isBusy, mySeat, runMoveAnimation, moveToken]
   );
+
+  const handleDoneDice = useCallback(() => {
+    if (!snapshot) return;
+    // After dice spin, show selectable tokens for the current snap
+    const canMove =
+      snapshot.currentSeatIndex === mySeat &&
+      snapshot.phase === "AWAITING_MOVE";
+    const nextTokens = listTokensFromSnapshot(snapshot, mySeat, canMove);
+    setListTokens(nextTokens);
+    listTokensRef.current = nextTokens;
+    setActionsTurn((prev) => ({
+      ...prev,
+      ...actionsTurnFromSnapshot(snapshot, mySeat, prev),
+      diceValue: prev.diceValue,
+      diceRollNumber: prev.diceRollNumber,
+    }));
+
+    // First 6 with all pawns still in jail → auto-exit one pawn (no click)
+    if (!canMove || isBusy || animatingRef.current) return;
+    const colors = seatColorsFromSnapshot(snapshot);
+    const color = colors[mySeat];
+    const positions = (color && snapshot.tokenPositions[color]) || [];
+    const allInJail = positions.map((p) => p === -1);
+    const diceValues = snapshot.diceList || [];
+    if (!shouldAutoExitJailOnFirstSix(allInJail, diceValues)) return;
+
+    const legal =
+      snapshot.legalMoves?.length
+        ? snapshot.legalMoves
+        : (snapshot.legalTokenIndexes || []).map((tokenIndex) => ({
+            tokenIndex,
+            diceIndex: 0,
+          }));
+    const jailExit =
+      legal.find((m) => positions[m.tokenIndex] === -1) || legal[0];
+    if (!jailExit) return;
+    void handleSelectedToken({
+      tokenIndex: jailExit.tokenIndex,
+      diceIndex: jailExit.diceIndex,
+    });
+  }, [snapshot, mySeat, isBusy, handleSelectedToken]);
 
   const resultEntries: IResultEntry[] = useMemo(
     () => buildResults(snapshot, guest.id),

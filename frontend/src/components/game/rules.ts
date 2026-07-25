@@ -624,6 +624,17 @@ export const decideAfterMove = (
   };
 };
 
+/**
+ * First time out of base: all pawns still in jail and rolled a 6 → auto-exit one pawn.
+ */
+export const shouldAutoExitJailOnFirstSix = (
+  tokensInJail: boolean[],
+  diceValues: number[]
+): boolean =>
+  tokensInJail.length > 0 &&
+  tokensInJail.every(Boolean) &&
+  diceValues.includes(DICE_VALUE_GET_OUT_JAIL);
+
 export const pickBotMove = (
   listTokens: IListTokens[],
   playerIndex: number,

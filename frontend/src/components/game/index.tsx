@@ -48,6 +48,7 @@ import {
   getPossibleMoves,
   isGameOver,
   pickBotMove,
+  shouldAutoExitJailOnFirstSix,
   resetDiceKeyCounter,
   resolveLanding,
 } from "./rules";
@@ -416,7 +417,15 @@ const Game = ({
           )
           .filter((m) => m.diceIndex >= 0);
 
-        if (human && moves.length === 1) {
+        const allInJail = decision.listTokens[seat].tokens.map(
+          (t) => t.typeTile === EtypeTile.JAIL
+        );
+        const diceValues = decision.actionsTurn.diceList.map((d) => d.value);
+        if (
+          human &&
+          (moves.length === 1 ||
+            shouldAutoExitJailOnFirstSix(allInJail, diceValues))
+        ) {
           void runTokenMove(moves[0].tokenIndex, moves[0].diceIndex);
         }
       }
