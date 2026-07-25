@@ -27,9 +27,9 @@ import { applyTokenCell, buildMovePath, resolveLanding, shouldAutoExitJailOnFirs
 import type { IGameSnapshot, IGuestUser, IResultEntry } from "./types";
 import Results from "./Results";
 import {
-  ONLINE_BOARD_COLOR,
   actionsTurnFromSnapshot,
-  boardRotationDegForColor,
+  boardColorForSeatColor,
+  displayPlayerName,
   listTokensFromSnapshot,
   playersForView,
   playersFromSnapshot,
@@ -492,7 +492,7 @@ const OnlineGame = ({
     snapshot && mySeat >= 0
       ? seatColorsFromSnapshot(snapshot)[mySeat]
       : undefined;
-  const boardRotationDeg = myColor ? boardRotationDegForColor(myColor) : 0;
+  const boardColor = boardColorForSeatColor(myColor);
 
   const profileHandlers = {
     handleTimer: () => undefined,
@@ -609,13 +609,9 @@ const OnlineGame = ({
             width: "100%",
             display: "flex",
             justifyContent: "center",
-            transform: boardRotationDeg
-              ? `rotate(${boardRotationDeg}deg)`
-              : undefined,
-            transformOrigin: "center center",
           }}
         >
-          <Board boardColor={ONLINE_BOARD_COLOR}>
+          <Board boardColor={boardColor}>
             <Tokens
               isDisabledUI={actionsTurn.isDisabledUI || isBusy}
               listTokens={listTokens}
@@ -639,14 +635,20 @@ function buildResults(
   myId: string
 ): IResultEntry[] {
   if (!snapshot?.usernames || !snapshot.standings) return [];
-  const colors = Object.keys(snapshot.tokenPositions || {});
-  return snapshot.usernames.map((name, seat) => ({
-    rank: snapshot.standings![seat] || seat + 1,
-    name,
-    color: colors[seat],
-    isBot: snapshot.isBot?.[seat],
-    isYou: snapshot.userIds?.[seat] === myId,
-  }));
+  const colors = seatColorsFromSnapshot(snapshot);
+  const used: string[] = [];
+  return snapshot.usernames.map((name, seat) => {
+    const seatKey = `${snapshot.roomId || "room"}:${snapshot.userIds?.[seat] || seat}`;
+    const display = displayPlayerName(name, seatKey, used);
+    used.push(display);
+    return {
+      rank: snapshot.standings![seat] || seat + 1,
+      name: display,
+      color: colors[seat],
+      isBot: snapshot.isBot?.[seat],
+      isYou: snapshot.userIds?.[seat] === myId,
+    };
+  });
 }
 
 /** Prefer the mover seat; ignore captured tokens sent back to jail. */
