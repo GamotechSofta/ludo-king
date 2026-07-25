@@ -81,6 +81,34 @@ public class RoomService {
     removeFromAllQueues(userId);
   }
 
+  /**
+   * Player backs out of a WAITING room (e.g. leaves the lobby screen).
+   * Deletes the room when it empties so it can't bot-fill into a ghost match.
+   */
+  public void leaveRoom(String roomId, String userId) {
+    removeFromAllQueues(userId);
+    Room room = roomRepository.findById(roomId).orElse(null);
+    if (room == null || room.getStatus() != RoomStatus.WAITING) {
+      return;
+    }
+    boolean removed = room.getPlayers().removeIf(p -> userId.equals(p.getUserId()));
+    if (!removed) {
+      return;
+    }
+    boolean onlyBotsLeft = room.getPlayers().stream().allMatch(RoomPlayer::isBot);
+    if (room.getPlayers().isEmpty() || onlyBotsLeft) {
+      roomRepository.delete(room);
+      return;
+    }
+    List<LudoColor> colors = LudoColor.forPlayerCount(room.getMaxPlayers());
+    for (int i = 0; i < room.getPlayers().size(); i++) {
+      RoomPlayer p = room.getPlayers().get(i);
+      p.setSeatIndex(i);
+      p.setColor(colors.get(i).name());
+    }
+    roomRepository.save(room);
+  }
+
   public Room createPrivateRoom(String userId, String username, int maxPlayers) {
     Room room = newEmptyRoom(maxPlayers, "PRIVATE");
     List<LudoColor> colors = LudoColor.forPlayerCount(maxPlayers);

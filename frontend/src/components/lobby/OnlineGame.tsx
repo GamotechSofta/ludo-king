@@ -37,16 +37,24 @@ import "../game/game-over.css";
 interface OnlineGameProps {
   guest: IGuestUser;
   roomId: string;
+  initialSnapshot?: IGameSnapshot | null;
   onExit: () => void;
   onPlayAgain: () => void;
 }
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const OnlineGame = ({ guest, roomId, onExit, onPlayAgain }: OnlineGameProps) => {
-  const { snapshot, connected, rollDice, moveToken } = useGameSocket(
+const OnlineGame = ({
+  guest,
+  roomId,
+  initialSnapshot = null,
+  onExit,
+  onPlayAgain,
+}: OnlineGameProps) => {
+  const { snapshot, connected, loadError, rollDice, moveToken } = useGameSocket(
     roomId,
-    guest.id
+    guest.id,
+    initialSnapshot
   );
   const [showResults, setShowResults] = useState(false);
   const [listTokens, setListTokens] = useState<IListTokens[]>([]);
@@ -184,7 +192,10 @@ const OnlineGame = ({ guest, roomId, onExit, onPlayAgain }: OnlineGameProps) => 
       const value = snapshot.diceList[
         snapshot.diceList.length - 1
       ] as TDicevalues;
-      playSound("diceRolling");
+      // Own roll already played the sound on click
+      if (snapshot.currentSeatIndex !== mySeat) {
+        playSound("diceRolling");
+      }
       setPlayers(playersFromSnapshot(snapshot));
       setCurrentTurn(snapshot.currentSeatIndex);
       setActionsTurn((prev) => {
@@ -371,6 +382,17 @@ const OnlineGame = ({ guest, roomId, onExit, onPlayAgain }: OnlineGameProps) => 
         </button>
         <p className="lobby-sub" style={{ marginTop: 80, textAlign: "center" }}>
           {connected ? "Loading board…" : "Connecting…"}
+        </p>
+        {loadError && (
+          <p
+            className="lobby-footer-note"
+            style={{ color: "#ffd0d0", textAlign: "center", marginTop: 12 }}
+          >
+            {loadError}
+          </p>
+        )}
+        <p className="lobby-footer-note" style={{ textAlign: "center" }}>
+          API: {process.env.REACT_APP_API_URL || "http://localhost:3000"}
         </p>
       </PageWrapper>
     );

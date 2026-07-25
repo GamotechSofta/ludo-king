@@ -3,46 +3,77 @@ import { Client, IMessage } from "@stomp/stompjs";
 import SockJS from "sockjs-client";
 import type { IGameSnapshot } from "../components/lobby/types";
 import {
+  ensureGameSnapshot,
   getApiBase,
-  getRoomState,
   httpMoveToken,
   httpRollDice,
 } from "../api/ludoApi";
 
 const STOMP_JSON = { "content-type": "application/json" };
 
-export function useGameSocket(roomId: string | null, userId: string | null) {
-  const [snapshot, setSnapshot] = useState<IGameSnapshot | null>(null);
+function normalizeSnapshot(raw: unknown): IGameSnapshot | null {
+  if (!raw || typeof raw !== "object") return null;
+  const snap = raw as IGameSnapshot & { tokenPositions?: Record<string, number[]> };
+  if (!snap.tokenPositions || typeof snap.tokenPositions !== "object") {
+    return null;
+  }
+  if (Object.keys(snap.tokenPositions).length === 0) {
+    return null;
+  }
+  return snap;
+}
+
+export function useGameSocket(
+  roomId: string | null,
+  userId: string | null,
+  initialSnapshot?: IGameSnapshot | null
+) {
+  const [snapshot, setSnapshot] = useState<IGameSnapshot | null>(() =>
+    normalizeSnapshot(initialSnapshot)
+  );
   const [connected, setConnected] = useState(false);
+  const [loadError, setLoadError] = useState("");
   const clientRef = useRef<Client | null>(null);
 
-  const applySnapshot = useCallback((snap: IGameSnapshot | null | undefined) => {
-    if (!snap || !snap.tokenPositions) return;
-    setSnapshot(snap);
+  const applySnapshot = useCallback((snap: unknown) => {
+    const normalized = normalizeSnapshot(snap);
+    if (!normalized) return false;
+    setSnapshot(normalized);
+    setLoadError("");
+    return true;
   }, []);
 
-  // REST bootstrap + poll (works even if STOMP/SockJS fails)
+  // REST: keep pulling until we have a board (and keep polling for bot turns without WS)
   useEffect(() => {
     if (!roomId) return;
     let alive = true;
+    let timer: number | undefined;
+    let delayMs = 400;
 
     const pull = async () => {
       try {
-        const state = await getRoomState(roomId);
+        const game = await ensureGameSnapshot(roomId);
         if (!alive) return;
-        if (state.game) {
-          applySnapshot(state.game);
+        if (!applySnapshot(game)) {
+          setLoadError("Game state missing token positions");
         }
-      } catch {
-        // ignore transient errors
+        delayMs = 1500;
+      } catch (e) {
+        if (!alive) return;
+        setLoadError(e instanceof Error ? e.message : "Failed to load game");
+        delayMs = 2000;
+      }
+      if (alive) {
+        timer = window.setTimeout(() => {
+          void pull();
+        }, delayMs);
       }
     };
 
     void pull();
-    const id = window.setInterval(pull, 2000);
     return () => {
       alive = false;
-      window.clearInterval(id);
+      if (timer !== undefined) window.clearTimeout(timer);
     };
   }, [roomId, applySnapshot]);
 
@@ -56,7 +87,7 @@ export function useGameSocket(roomId: string | null, userId: string | null) {
         setConnected(true);
         client.subscribe(`/topic/room/${roomId}`, (msg: IMessage) => {
           try {
-            applySnapshot(JSON.parse(msg.body) as IGameSnapshot);
+            applySnapshot(JSON.parse(msg.body));
           } catch {
             // ignore
           }
@@ -121,5 +152,12 @@ export function useGameSocket(roomId: string | null, userId: string | null) {
     [roomId, userId, applySnapshot]
   );
 
-  return { snapshot, connected, rollDice, moveToken, setSnapshot: applySnapshot };
+  return {
+    snapshot,
+    connected,
+    loadError,
+    rollDice,
+    moveToken,
+    setSnapshot: applySnapshot,
+  };
 }

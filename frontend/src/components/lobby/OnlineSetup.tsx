@@ -17,7 +17,7 @@ interface OnlineSetupProps {
 
 const OnlineSetup = ({ onBack, onQueued }: OnlineSetupProps) => {
   const [name, setName] = useState("Player");
-  const [maxPlayers, setMaxPlayers] = useState<TPlayers>(4);
+  const [maxPlayers, setMaxPlayers] = useState<TPlayers>(2);
   const [roomCode, setRoomCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -33,11 +33,9 @@ const OnlineSetup = ({ onBack, onQueued }: OnlineSetupProps) => {
     setError("");
     try {
       const guest = await ensureGuest();
-      // Classic Ludo: always 4 players
-      const seats = 4 as TPlayers;
-      const res = await queueMatch(guest.id, guest.username, seats);
+      const res = await queueMatch(guest.id, guest.username, maxPlayers);
       if (!res.roomId) throw new Error("No room returned");
-      onQueued(guest, res.roomId, res.roomCode, seats);
+      onQueued(guest, res.roomId, res.roomCode, maxPlayers);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Matchmaking failed");
     } finally {
@@ -97,21 +95,7 @@ const OnlineSetup = ({ onBack, onQueued }: OnlineSetupProps) => {
             />
           </div>
 
-          <button
-            className="lobby-btn primary"
-            type="button"
-            disabled={busy}
-            onClick={() => {
-              setMaxPlayers(4);
-              void handleQuickMatch();
-            }}
-          >
-            QUICK MATCH · 4P
-          </button>
-
-          <p className="lobby-footer-note" style={{ marginTop: 14 }}>
-            Private room player count
-          </p>
+          <p className="lobby-footer-note">Players</p>
           <div className="player-count">
             {([2, 3, 4] as TPlayers[]).map((count) => (
               <button
@@ -124,6 +108,16 @@ const OnlineSetup = ({ onBack, onQueued }: OnlineSetupProps) => {
               </button>
             ))}
           </div>
+
+          <button
+            className="lobby-btn primary"
+            type="button"
+            disabled={busy}
+            onClick={() => void handleQuickMatch()}
+            style={{ marginTop: 12 }}
+          >
+            QUICK MATCH · {maxPlayers}P
+          </button>
 
           <button
             className="lobby-btn secondary"

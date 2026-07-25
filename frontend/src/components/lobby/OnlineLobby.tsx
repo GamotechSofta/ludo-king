@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { getRoomState } from "../../api/ludoApi";
-import type { IGuestUser, IOnlineRoom } from "./types";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { getRoomState, leaveRoom } from "../../api/ludoApi";
+import type { IGameSnapshot, IGuestUser, IOnlineRoom } from "./types";
 import "./styles.css";
 
 interface OnlineLobbyProps {
@@ -8,7 +8,7 @@ interface OnlineLobbyProps {
   roomId: string;
   roomCode: string;
   onBack: () => void;
-  onStart: (room: IOnlineRoom) => void;
+  onStart: (room: IOnlineRoom, game?: IGameSnapshot | null) => void;
 }
 
 const OnlineLobby = ({
@@ -37,7 +37,7 @@ const OnlineLobby = ({
         setRoom(state.room);
         if (state.room.status === "IN_PROGRESS" && !started) {
           started = true;
-          onStart(state.room);
+          onStart(state.room, state.game ?? null);
         }
       } catch (e) {
         if (alive) {
@@ -62,10 +62,16 @@ const OnlineLobby = ({
   const seats = room?.maxPlayers || 4;
   const filled = room?.players?.length || 0;
 
+  const handleBack = useCallback(() => {
+    // Free the seat so the room can't bot-fill into a ghost match
+    void leaveRoom(roomId, guest.id).catch(() => undefined);
+    onBack();
+  }, [roomId, guest.id, onBack]);
+
   return (
     <div className="lobby">
       <div className="lobby-top" style={{ width: "100%" }}>
-        <button className="lobby-back" type="button" onClick={onBack}>
+        <button className="lobby-back" type="button" onClick={handleBack}>
           ← Back
         </button>
         <h2 className="lobby-heading">Finding Players</h2>

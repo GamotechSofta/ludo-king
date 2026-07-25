@@ -12,7 +12,16 @@ async function json<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(text || res.statusText);
+    let message = text || res.statusText;
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed && typeof parsed.error === "string") {
+        message = parsed.error;
+      }
+    } catch {
+      // not JSON — keep raw text
+    }
+    throw new Error(message);
   }
   return res.json() as Promise<T>;
 }
@@ -53,10 +62,20 @@ export const joinRoom = (roomCode: string, userId: string, username: string) =>
     body: JSON.stringify({ userId, username }),
   });
 
+export const leaveRoom = (roomId: string, userId: string) =>
+  json<{ ok: boolean }>(`/api/rooms/${roomId}/leave`, {
+    method: "POST",
+    body: JSON.stringify({ userId }),
+  });
+
 export const getRoomState = (roomId: string) =>
   json<{ room: IOnlineRoom; game?: IGameSnapshot }>(
     `/api/rooms/${roomId}/state`
   );
+
+/** Always returns a game snapshot (rehydrates engine if needed). */
+export const ensureGameSnapshot = (roomId: string) =>
+  json<IGameSnapshot>(`/api/rooms/${roomId}/game`);
 
 export const httpRollDice = (roomId: string, userId: string) =>
   json<IGameSnapshot>(`/api/rooms/${roomId}/game/roll`, {

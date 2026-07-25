@@ -8,7 +8,11 @@ import com.ludo.backend.room.RoomService;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -41,6 +45,12 @@ public class GameHttpController {
   }
 
   public record ActionRequest(String userId, Integer tokenIndex, Integer diceIndex) {
+  }
+
+  @GetMapping
+  public GameSnapshot get(@PathVariable String roomId) {
+    ensureMatch(roomId);
+    return gameEngineService.getSnapshot(roomId);
   }
 
   @PostMapping("/roll")
@@ -78,7 +88,28 @@ public class GameHttpController {
     }
     Room room = roomService.getRoom(roomId)
         .orElseThrow(() -> new IllegalArgumentException("Room not found"));
+    if (room.getPlayers() == null || room.getPlayers().isEmpty()) {
+      throw new IllegalStateException("Room has no players");
+    }
+    if (room.getStatus() == com.ludo.backend.room.RoomStatus.WAITING) {
+      // Full but not started (race with the scheduler) → start it now.
+      if (room.getPlayers().size() >= room.getMaxPlayers()) {
+        roomService.startMatch(room);
+        return;
+      }
+      // Never rehydrate a half-filled room: that would create a broken partial board.
+      throw new IllegalStateException("Match not started yet");
+    }
     roomService.rehydrateMatch(room);
+  }
+
+  @ExceptionHandler({IllegalArgumentException.class, IllegalStateException.class})
+  public ResponseEntity<Map<String, String>> handleGameError(RuntimeException e) {
+    String msg = e.getMessage() == null ? "Game error" : e.getMessage();
+    HttpStatus status = e instanceof IllegalArgumentException
+        ? HttpStatus.NOT_FOUND
+        : HttpStatus.CONFLICT;
+    return ResponseEntity.status(status).body(Map.of("error", msg));
   }
 
   private void broadcast(String roomId, GameSnapshot snap) {
