@@ -122,12 +122,30 @@ public class RoomService {
   public Map<String, Object> getRoomState(String id) {
     Room room = roomRepository.findById(id)
         .orElseThrow(() -> new IllegalArgumentException("Room not found"));
+    // In-memory engine can be empty after deploy/restart while Mongo still says IN_PROGRESS
+    if (room.getStatus() == RoomStatus.IN_PROGRESS && !gameEngineService.hasMatch(id)) {
+      rehydrateMatch(room);
+    }
     Map<String, Object> body = new java.util.LinkedHashMap<>();
     body.put("room", room);
     if (gameEngineService.hasMatch(id)) {
       body.put("game", gameEngineService.getSnapshot(id));
     }
     return body;
+  }
+
+  /** Recreate engine state for an in-progress room (fresh board after JVM restart). */
+  public GameSnapshot rehydrateMatch(Room room) {
+    List<SeatInfo> seats = new ArrayList<>();
+    for (RoomPlayer p : room.getPlayers()) {
+      seats.add(new SeatInfo(
+          p.getUserId(),
+          p.getUsername(),
+          LudoColor.valueOf(p.getColor()),
+          p.isBot()
+      ));
+    }
+    return gameEngineService.createMatch(room.getId(), seats);
   }
 
   public Room fillBotsAndStart(Room room) {

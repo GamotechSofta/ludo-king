@@ -29,12 +29,14 @@ const OnlineLobby = ({
 
   useEffect(() => {
     let alive = true;
+    let started = false;
     const tick = async () => {
       try {
         const state = await getRoomState(roomId);
         if (!alive) return;
         setRoom(state.room);
-        if (state.room.status === "IN_PROGRESS") {
+        if (state.room.status === "IN_PROGRESS" && !started) {
+          started = true;
           onStart(state.room);
         }
       } catch (e) {

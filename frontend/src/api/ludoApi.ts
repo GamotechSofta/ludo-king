@@ -58,4 +58,21 @@ export const getRoomState = (roomId: string) =>
     `/api/rooms/${roomId}/state`
   );
 
+export const httpRollDice = (roomId: string, userId: string) =>
+  json<IGameSnapshot>(`/api/rooms/${roomId}/game/roll`, {
+    method: "POST",
+    body: JSON.stringify({ userId }),
+  });
+
+export const httpMoveToken = (
+  roomId: string,
+  userId: string,
+  tokenIndex: number,
+  diceIndex: number
+) =>
+  json<IGameSnapshot>(`/api/rooms/${roomId}/game/move`, {
+    method: "POST",
+    body: JSON.stringify({ userId, tokenIndex, diceIndex }),
+  });
+
 export const getApiBase = () => API_BASE;
