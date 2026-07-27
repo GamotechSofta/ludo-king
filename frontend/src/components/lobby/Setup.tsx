@@ -118,7 +118,7 @@ const Setup = ({ mode, onBack, onStart }: SetupProps) => {
           {mode === "computer" ? "Online" : "Pass & Play"}
           <span className="lobby-sub" style={{ display: "block", marginTop: 4 }}>
             {mode === "computer"
-              ? "You vs bots · smooth classic Ludo"
+              ? "You vs opponents · smooth classic Ludo"
               : "Share one device"}
           </span>
         </h2>
@@ -154,7 +154,7 @@ const Setup = ({ mode, onBack, onStart }: SetupProps) => {
                     className={`bot-toggle ${player.isBot ? "on" : ""}`}
                     onClick={() => toggleBot(index)}
                   >
-                    {player.isBot ? "BOT" : "HUMAN"}
+                    {player.isBot ? "AI" : "HUMAN"}
                   </button>
                 )}
               </div>

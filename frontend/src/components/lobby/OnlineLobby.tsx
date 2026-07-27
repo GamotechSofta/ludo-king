@@ -162,7 +162,7 @@ const OnlineLobby = ({
                 />
                 <span style={{ flex: 1, fontWeight: 600 }}>
                   {p
-                    ? `${p.username}${p.bot ? " (Bot)" : ""}${
+                    ? `${p.username}${
                         p.userId === guest.id ? " · You" : ""
                       }${p.ready || p.bot ? " ✓" : ""}`
                     : "Waiting…"}

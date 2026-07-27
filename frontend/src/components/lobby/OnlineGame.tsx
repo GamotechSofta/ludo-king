@@ -47,12 +47,14 @@ import { onlinePerf } from "../../utils/onlinePerf";
 import {
   actionsTurnFromSnapshot,
   boardColorForSnapshot,
+  clearDisplayNameCache,
   displayPlayerName,
   listTokensFromSnapshot,
   playersForView,
   playersFromSnapshot,
   profileTurnIndex,
   seatColorsFromSnapshot,
+  seatDisplayKey,
   snapshotTokenPositionsEqual,
   viewTileFromServerPos,
 } from "./onlineSnapshotBoard";
@@ -176,6 +178,7 @@ const OnlineGame = ({
   useEffect(() => {
     lockedBoardColorRef.current = null;
     diceOwnerSeatRef.current = -1;
+    clearDisplayNameCache(roomId);
   }, [roomId]);
 
   /** Map dice-owner server seat → profile slot (BL/TL/TR/BR). */
@@ -266,7 +269,7 @@ const OnlineGame = ({
       const isMoveSnap = snap.lastActionType === "MOVE";
       if (isMoveSnap && !forceTokens) {
         const prev = prevSnapRef.current;
-        setPlayers(playersForView(snap, mySeat));
+        setPlayers(playersForView(snap, mySeat, roomId));
         // Keep dice on the mover until hop finishes — do not jump to next seat yet
         applyDiceOwnerTurn(snap);
         setActionsTurn((prevActions) =>
@@ -312,7 +315,7 @@ const OnlineGame = ({
         return;
       }
 
-      const nextPlayers = playersForView(snap, mySeat);
+      const nextPlayers = playersForView(snap, mySeat, roomId);
       const isMyTurn = snap.currentSeatIndex === mySeat;
       const canMove =
         isMyTurn && snap.phase === "AWAITING_MOVE" && !animatingRef.current;
@@ -337,8 +340,7 @@ const OnlineGame = ({
         );
         if (
           keepDiceVisual &&
-          prevSeat != null &&
-          prevSeat === snap.currentSeatIndex
+          (prevActions.diceValue || prevActions.diceRollNumber)
         ) {
           next.diceValue = prevActions.diceValue;
           next.diceRollNumber = prevActions.diceRollNumber;
@@ -347,7 +349,7 @@ const OnlineGame = ({
       });
       prevSnapRef.current = snap;
     },
-    [mySeat, applyDiceOwnerTurn]
+    [mySeat, applyDiceOwnerTurn, roomId]
   );
 
   const animCancelRef = useRef<AnimCancel>({ cancelled: false });
@@ -532,7 +534,7 @@ const OnlineGame = ({
 
       const landing = resolveLanding(
         working,
-        playersFromSnapshot(snapForLanding),
+        playersFromSnapshot(snapForLanding, roomId),
         seat,
         tokenIndex
       );
@@ -626,7 +628,7 @@ const OnlineGame = ({
           playSound("diceRolling");
         }
         beginMatchMusic();
-        setPlayers(playersForView(snap, mySeat));
+        setPlayers(playersForView(snap, mySeat, roomId));
         diceOwnerSeatRef.current = snap.currentSeatIndex;
         applyDiceOwnerTurn(snap);
         setActionsTurn((prevActions) => {
@@ -641,22 +643,19 @@ const OnlineGame = ({
           rolled.actionsBoardGame = EActionsBoardGame.ROLL_DICE;
           return rolled;
         });
-        // Keep token positions until the move arrives so we can animate the path
-        if (!prev) {
-          syncBoardFromSnapshot(snap, true);
-        } else {
-          prevSnapRef.current = {
-            ...prev,
-            phase: snap.phase,
-            currentSeatIndex: snap.currentSeatIndex,
-            diceList: snap.diceList,
-            turnStartedAt: snap.turnStartedAt,
-            turnSecondsRemaining: snap.turnSecondsRemaining,
-            actionSeq: snap.actionSeq ?? prev.actionSeq,
-            // Keep pre-move pawn cells — never copy destination here
-            tokenPositions: prev.tokenPositions,
-          };
-        }
+        // Never full-sync here — it races the dice visual and clears the first roll value
+        prevSnapRef.current = prev
+          ? {
+              ...prev,
+              phase: snap.phase,
+              currentSeatIndex: snap.currentSeatIndex,
+              diceList: snap.diceList,
+              turnStartedAt: snap.turnStartedAt,
+              turnSecondsRemaining: snap.turnSecondsRemaining,
+              actionSeq: snap.actionSeq ?? prev.actionSeq,
+              tokenPositions: prev.tokenPositions,
+            }
+          : snap;
         return;
       }
 
@@ -676,7 +675,7 @@ const OnlineGame = ({
         if (rollerSeat === mySeat) {
           playSound("diceRolling");
         }
-        setPlayers(playersForView(snap, mySeat));
+        setPlayers(playersForView(snap, mySeat, roomId));
         applyDiceOwnerTurn(snap, rollerSeat);
         setActionsTurn((prevActions) => {
           const base = actionsTurnFromSnapshot(
@@ -931,8 +930,8 @@ const OnlineGame = ({
   }, [snapshot, mySeat, isBusy, handleSelectedToken]);
 
   const resultEntries: IResultEntry[] = useMemo(
-    () => buildResults(snapshot, guest.id),
-    [snapshot, guest.id]
+    () => buildResults(snapshot, guest.id, roomId),
+    [snapshot, guest.id, roomId]
   );
 
   // 4-slot sparse view (BL/TL/TR/BR) with my house rotated to bottom-left.
@@ -941,7 +940,7 @@ const OnlineGame = ({
     players.length > 0
       ? players
       : snapshot
-      ? playersForView(snapshot, mySeat)
+      ? playersForView(snapshot, mySeat, roomId)
       : [];
 
   const totalPlayers: TTotalPlayers = 4;
@@ -1137,14 +1136,21 @@ const OnlineGame = ({
 
 function buildResults(
   snapshot: IGameSnapshot | null,
-  myId: string
+  myId: string,
+  stableRoomId: string
 ): IResultEntry[] {
   if (!snapshot?.usernames || !snapshot.standings) return [];
+  const roomId = stableRoomId || snapshot.roomId || "room";
   const colors = seatColorsFromSnapshot(snapshot);
   const used: string[] = [];
   return snapshot.usernames.map((name, seat) => {
-    const seatKey = `${snapshot.roomId || "room"}:${snapshot.userIds?.[seat] || seat}`;
-    const display = displayPlayerName(name, seatKey, used);
+    const seatKey = seatDisplayKey(roomId, snapshot.userIds?.[seat], seat);
+    const display = displayPlayerName(
+      name,
+      seatKey,
+      used,
+      !!snapshot.isBot?.[seat]
+    );
     used.push(display);
     return {
       rank: snapshot.standings![seat] || seat + 1,

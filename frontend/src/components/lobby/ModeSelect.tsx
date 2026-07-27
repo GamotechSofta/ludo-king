@@ -27,7 +27,7 @@ const ModeSelect = ({ onBack, onSelect }: ModeSelectProps) => {
           <span className="mode-icon online" aria-hidden />
           <span className="mode-copy">
             <span>Online</span>
-            <small>Matchmaking + bots fill</small>
+            <small>Quick match · auto fill</small>
           </span>
         </button>
       </div>

@@ -69,16 +69,49 @@ const isGenericBotLabel = (name?: string) =>
 
 const displayNameCache = new Map<string, string>();
 
+/** Drop cached names when entering a new room (module cache survives route changes). */
+export function clearDisplayNameCache(roomId?: string) {
+  if (!roomId) {
+    displayNameCache.clear();
+    return;
+  }
+  const prefix = `${roomId}:`;
+  for (const key of displayNameCache.keys()) {
+    if (key.startsWith(prefix)) {
+      displayNameCache.delete(key);
+    }
+  }
+}
+
+export function seatDisplayKey(
+  roomId: string,
+  userId: string | undefined,
+  seatIndex: number
+): string {
+  return `${roomId}:${userId || `seat-${seatIndex}`}`;
+}
+
 export function displayPlayerName(
   rawName: string | undefined,
   seatKey: string,
-  usedNames: string[] = []
+  usedNames: string[] = [],
+  isBot = false
 ): string {
-  if (rawName && !isGenericBotLabel(rawName)) {
-    return rawName;
-  }
   const cached = displayNameCache.get(seatKey);
   if (cached) return cached;
+
+  if (rawName && !isGenericBotLabel(rawName)) {
+    const stable = rawName.trim();
+    displayNameCache.set(seatKey, stable);
+    return stable;
+  }
+
+  if (!isBot) {
+    const fallback = rawName?.trim() || "Player";
+    displayNameCache.set(seatKey, fallback);
+    return fallback;
+  }
+
   const fresh = getOneBotName([
     ...usedNames,
     ...Array.from(displayNameCache.values()),
@@ -165,13 +198,17 @@ function decodeServerPos(
 }
 
 /** Players in server seat order (engine / results logic). */
-export function playersFromSnapshot(snapshot: IGameSnapshot): IPlayer[] {
+export function playersFromSnapshot(
+  snapshot: IGameSnapshot,
+  stableRoomId?: string
+): IPlayer[] {
+  const roomId = stableRoomId || snapshot.roomId || "room";
   const colors = seatColorsFromSnapshot(snapshot);
   const used: string[] = [];
   return colors.map((color, i) => {
     const raw = snapshot.usernames?.[i];
-    const seatKey = `${snapshot.roomId || "room"}:${snapshot.userIds?.[i] || i}`;
-    const name = displayPlayerName(raw, seatKey, used);
+    const seatKey = seatDisplayKey(roomId, snapshot.userIds?.[i], i);
+    const name = displayPlayerName(raw, seatKey, used, !!snapshot.isBot?.[i]);
     used.push(name);
     return {
       id: snapshot.userIds?.[i] || `seat-${i}`,
@@ -197,9 +234,10 @@ export function playersFromSnapshot(snapshot: IGameSnapshot): IPlayer[] {
  */
 export function playersForView(
   snapshot: IGameSnapshot,
-  mySeat: number
+  mySeat: number,
+  stableRoomId?: string
 ): IPlayer[] {
-  const server = playersFromSnapshot(snapshot);
+  const server = playersFromSnapshot(snapshot, stableRoomId);
   const k = cornerOffsetForSeat(snapshot, mySeat);
   const slots: IPlayer[] = new Array(4);
   server.forEach((p) => {
