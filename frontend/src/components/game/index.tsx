@@ -52,10 +52,10 @@ import {
   getPossibleMoves,
   isGameOver,
   pickBotMove,
-  shouldAutoExitJailOnFirstSix,
   resetDiceKeyCounter,
   resolveLanding,
 } from "./rules";
+import { pickHumanAutoMoveOffline } from "./humanAutoMove";
 import "./game-over.css";
 
 import type { IResultEntry } from "../lobby/types";
@@ -114,6 +114,8 @@ const Game = ({
   const currentTurnRef = useRef(currentTurn);
   const busyRef = useRef(false);
   const gameOverRef = useRef(false);
+  const lastAutoMoveKeyRef = useRef("");
+  const autoMoveTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     playersRef.current = players;
@@ -383,6 +385,46 @@ const Game = ({
     [applyDecision, passToNextPlayer]
   );
 
+  const scheduleHumanAutoMove = useCallback(() => {
+    if (autoMoveTimerRef.current != null) {
+      window.clearTimeout(autoMoveTimerRef.current);
+    }
+    let attempts = 0;
+    const attempt = () => {
+      attempts += 1;
+      if (gameOverRef.current) return;
+      const turn = currentTurnRef.current;
+      if (playersRef.current[turn]?.isBot) return;
+      if (busyRef.current) {
+        if (attempts < 30) {
+          autoMoveTimerRef.current = window.setTimeout(attempt, 50);
+        }
+        return;
+      }
+      if (
+        actionsTurnRef.current.actionsBoardGame !== EActionsBoardGame.SELECT_TOKEN
+      ) {
+        if (attempts < 30) {
+          autoMoveTimerRef.current = window.setTimeout(attempt, 50);
+        }
+        return;
+      }
+      const autoMove = pickHumanAutoMoveOffline(
+        listTokensRef.current,
+        turn,
+        actionsTurnRef.current.diceList
+      );
+      if (!autoMove) return;
+      const key = `${turn}|${actionsTurnRef.current.diceList
+        .map((d) => d.value)
+        .join(",")}|${autoMove.tokenIndex}|${autoMove.diceIndex}`;
+      if (lastAutoMoveKeyRef.current === key) return;
+      lastAutoMoveKeyRef.current = key;
+      void runTokenMove(autoMove.tokenIndex, autoMove.diceIndex);
+    };
+    autoMoveTimerRef.current = window.setTimeout(attempt, 0);
+  }, [runTokenMove]);
+
   const handleSelectedToken = (selectTokenValues: ISelectTokenValues) => {
     if (busyRef.current || gameOverRef.current) return;
     const turn = currentTurnRef.current;
@@ -474,32 +516,13 @@ const Game = ({
 
       if (decision.type === ENextStepGame.MOVE_TOKENS_AGAIN) {
         const seat = currentTurnRef.current;
-        const human = !playersRef.current[seat]?.isBot;
-        const moves = decision.listTokens[seat].tokens
-          .flatMap((token, tokenIndex) =>
-            token.diceAvailable.map((dice) => {
-              const diceIndex = decision.actionsTurn.diceList.findIndex(
-                (d) => d.key === dice.key
-              );
-              return { tokenIndex, diceIndex };
-            })
-          )
-          .filter((m) => m.diceIndex >= 0);
-
-        const allInJail = decision.listTokens[seat].tokens.map(
-          (t) => t.typeTile === EtypeTile.JAIL
-        );
-        const diceValues = decision.actionsTurn.diceList.map((d) => d.value);
-        if (
-          human &&
-          (moves.length === 1 ||
-            shouldAutoExitJailOnFirstSix(allInJail, diceValues))
-        ) {
-          void runTokenMove(moves[0].tokenIndex, moves[0].diceIndex);
+        if (!playersRef.current[seat]?.isBot) {
+          lastAutoMoveKeyRef.current = "";
+          scheduleHumanAutoMove();
         }
       }
     },
-    [applyDecision, passToNextPlayer, runTokenMove]
+    [applyDecision, passToNextPlayer, scheduleHumanAutoMove]
   );
 
   const handleMuteChat = (playerIndex: number) => {
@@ -615,6 +638,23 @@ const Game = ({
     passToNextPlayer,
     players,
     runTokenMove,
+  ]);
+
+  // Human: auto-move when only one pawn can move (or jail exit on 6)
+  useEffect(() => {
+    if (gameOver || isBusy) return;
+    const player = players[currentTurn];
+    if (player?.isBot) return;
+    if (actionsTurn.actionsBoardGame !== EActionsBoardGame.SELECT_TOKEN) return;
+    scheduleHumanAutoMove();
+  }, [
+    actionsTurn.actionsBoardGame,
+    actionsTurn.diceList,
+    currentTurn,
+    gameOver,
+    isBusy,
+    listTokens,
+    scheduleHumanAutoMove,
   ]);
 
   // Human: auto-pass if SELECT_TOKEN with no legal moves

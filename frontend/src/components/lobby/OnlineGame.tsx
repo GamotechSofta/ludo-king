@@ -20,6 +20,7 @@ import {
   EActionsBoardGame,
   EPositionProfiles,
   EtypeTile,
+  DICE_ROLL_ANIM_MS,
   ONLINE_TURN_PASS_DELAY_MS,
   ONLINE_TOKEN_MOVEMENT_INTERVAL_VALUE,
   ROLL_TIME_VALUE,
@@ -38,8 +39,8 @@ import {
   applyTokenCell,
   buildMovePath,
   clearDiceAvailable,
-  shouldAutoExitJailOnFirstSix,
 } from "../game/rules";
+import { pickHumanAutoMoveFromSnapshot } from "../game/humanAutoMove";
 import type { IGameSnapshot, IGuestUser, IResultEntry } from "./types";
 import Results from "./Results";
 import { fetchWalletBalance, leaveRoom } from "../../api/ludoApi";
@@ -202,6 +203,13 @@ const OnlineGame = ({
   const diceOwnerSeatRef = useRef(-1);
   /** PASS roll-flash: keep die on roller until this time. */
   const passFlashUntilRef = useRef(0);
+  const lastAutoMoveKeyRef = useRef("");
+  const autoMoveTimerRef = useRef<number | null>(null);
+  const diceRollPendingRef = useRef(false);
+  const diceRollWaitersRef = useRef<Array<() => void>>([]);
+  const diceRollFallbackRef = useRef<number | null>(null);
+  const scheduleHumanAutoMoveRef = useRef<(snap?: IGameSnapshot) => void>(() => {});
+  const isBusyRef = useRef(false);
   const lockedBoardColorRef = useRef<ReturnType<
     typeof boardColorForSnapshot
   > | null>(null);
@@ -215,9 +223,47 @@ const OnlineGame = ({
     lockedBoardColorRef.current = null;
     diceOwnerSeatRef.current = -1;
     passFlashUntilRef.current = 0;
+    lastAutoMoveKeyRef.current = "";
+    if (autoMoveTimerRef.current != null) {
+      window.clearTimeout(autoMoveTimerRef.current);
+    }
+    if (diceRollFallbackRef.current != null) {
+      window.clearTimeout(diceRollFallbackRef.current);
+      diceRollFallbackRef.current = null;
+    }
+    diceRollPendingRef.current = false;
+    diceRollWaitersRef.current = [];
     setTurnColor(null);
     clearDisplayNameCache(roomId);
   }, [roomId]);
+
+  const finishDiceRollAnimation = useCallback(() => {
+    if (!diceRollPendingRef.current) return;
+    diceRollPendingRef.current = false;
+    if (diceRollFallbackRef.current != null) {
+      window.clearTimeout(diceRollFallbackRef.current);
+      diceRollFallbackRef.current = null;
+    }
+    const waiters = diceRollWaitersRef.current.splice(0);
+    waiters.forEach((resolve) => resolve());
+  }, []);
+
+  const beginDiceRollAnimation = useCallback(() => {
+    diceRollPendingRef.current = true;
+    if (diceRollFallbackRef.current != null) {
+      window.clearTimeout(diceRollFallbackRef.current);
+    }
+    diceRollFallbackRef.current = window.setTimeout(() => {
+      finishDiceRollAnimation();
+    }, DICE_ROLL_ANIM_MS + 120);
+  }, [finishDiceRollAnimation]);
+
+  const waitForDiceRollAnimation = useCallback(async () => {
+    if (!diceRollPendingRef.current) return;
+    await new Promise<void>((resolve) => {
+      diceRollWaitersRef.current.push(resolve);
+    });
+  }, []);
 
   /** Map dice-owner server seat → profile slot + house color for the die UI. */
   const applyDiceOwnerTurn = useCallback(
@@ -304,6 +350,9 @@ const OnlineGame = ({
   useEffect(() => {
     actionsTurnRef.current = actionsTurn;
   }, [actionsTurn]);
+  useEffect(() => {
+    isBusyRef.current = isBusy;
+  }, [isBusy]);
 
   useEffect(() => {
     preloadGameSounds();
@@ -421,7 +470,10 @@ const OnlineGame = ({
       const nextPlayers = playersForView(snap, mySeat, roomId);
       const isMyTurn = snap.currentSeatIndex === mySeat;
       const canMove =
-        isMyTurn && snap.phase === "AWAITING_MOVE" && !animatingRef.current;
+        isMyTurn &&
+        snap.phase === "AWAITING_MOVE" &&
+        !animatingRef.current &&
+        !diceRollPendingRef.current;
       const nextTokens = listTokensFromSnapshot(snap, mySeat, canMove);
       setPlayers(nextPlayers);
       setListTokens(nextTokens);
@@ -745,6 +797,7 @@ const OnlineGame = ({
       if (diceAppeared) {
         rollingRef.current = false;
         lastDiceSigRef.current = diceSig;
+        beginDiceRollAnimation();
         pendingDiceRef.current = {
           seat: snap.currentSeatIndex,
           diceList: [...snap.diceList],
@@ -752,6 +805,11 @@ const OnlineGame = ({
         const value = snap.diceList[snap.diceList.length - 1] as TDicevalues;
         if (snap.currentSeatIndex !== mySeat) {
           playSound("diceRolling");
+        } else {
+          lastAutoMoveKeyRef.current = "";
+          const nextTokens = listTokensFromSnapshot(snap, mySeat, false);
+          setListTokens(nextTokens);
+          listTokensRef.current = nextTokens;
         }
         setPlayers(playersForView(snap, mySeat, roomId));
         diceOwnerSeatRef.current = snap.currentSeatIndex;
@@ -897,6 +955,8 @@ const OnlineGame = ({
           syncBoardFromSnapshot(snap, true, true);
           return;
         }
+        await waitForDiceRollAnimation();
+        if (cancelled) return;
         // Freeze board BEFORE any paint of destination positions
         animatingRef.current = true;
         lastDiceSigRef.current = diceSig;
@@ -1001,7 +1061,7 @@ const OnlineGame = ({
     return () => {
       cancelled = true;
     };
-  }, [snapshot, mySeat, syncBoardFromSnapshot, runMoveAnimation]);
+  }, [snapshot, mySeat, syncBoardFromSnapshot, runMoveAnimation, beginDiceRollAnimation, waitForDiceRollAnimation]);
 
   const handleSelectDice = useCallback(
     (_diceValue?: TDicevalues) => {
@@ -1032,37 +1092,46 @@ const OnlineGame = ({
   );
 
   const handleSelectedToken = useCallback(
-    async (select: ISelectTokenValues) => {
-      if (!snapshot || isBusy || animatingRef.current) return;
-      if (snapshot.currentSeatIndex !== mySeat) return;
-      if (snapshot.phase !== "AWAITING_MOVE") return;
+    async (
+      select: ISelectTokenValues,
+      snapOverride?: IGameSnapshot
+    ): Promise<boolean> => {
+      const live = snapOverride ?? snapshotRef.current ?? snapshot;
+      if (!live || animatingRef.current) return false;
+      if (live.currentSeatIndex !== mySeat) return false;
+      if (live.phase !== "AWAITING_MOVE") return false;
+      if (isActionInFlight()) return false;
 
       const { tokenIndex, diceIndex } = select;
-      const diceValue = (snapshot.diceList || [])[diceIndex] as TDicevalues;
-      if (!diceValue) return;
+      const diceValue = (live.diceList || [])[diceIndex] as TDicevalues;
+      if (!diceValue) return false;
 
-      // Lock BEFORE moveToken so the MOVE snapshot cannot paint destination first
+      const moveKey = `${live.actionSeq ?? 0}|${(live.diceList || []).join(",")}|${tokenIndex}|${diceIndex}`;
+      if (lastAutoMoveKeyRef.current === moveKey) return false;
+      lastAutoMoveKeyRef.current = moveKey;
+
+      await waitForDiceRollAnimation();
+
       animatingRef.current = true;
+      isBusyRef.current = true;
       setIsBusy(true);
       suppressMoveAnimRef.current = true;
       pendingDiceRef.current = {
         seat: mySeat,
-        diceList: [...(snapshot.diceList || [])],
+        diceList: [...(live.diceList || [])],
       };
-      // Pre-move snapshot still has the start cell — never use post-move positions
-      const colors = seatColorsFromSnapshot(snapshot);
+      const colors = seatColorsFromSnapshot(live);
       const startPos =
-        snapshot.tokenPositions?.[colors[mySeat]]?.[tokenIndex] ?? null;
+        live.tokenPositions?.[colors[mySeat]]?.[tokenIndex] ?? null;
       moveToken(tokenIndex, diceIndex);
       const ok = await runMoveAnimation(
-        snapshot,
+        live,
         mySeat,
         tokenIndex,
         diceValue,
         startPos
       );
       suppressMoveAnimRef.current = false;
-      // Apply any snapshots that arrived during the hop (sync only, no re-anim)
       const queued = pendingSnapRef.current.splice(0);
       const latest = queued.length ? queued[queued.length - 1] : null;
       if (latest) {
@@ -1076,32 +1145,69 @@ const OnlineGame = ({
           await rafDelay(ONLINE_TURN_PASS_DELAY_MS, animCancelRef.current);
         }
         syncBoardFromSnapshot(latest, false, true);
-      } else if (ok && snapshot) {
+      } else if (ok && live) {
         prevSnapRef.current = {
-          ...(prevSnapRef.current || snapshot),
+          ...(prevSnapRef.current || live),
           actionSeq: (prevSnapRef.current?.actionSeq || 0) + 1,
         };
       }
+      return true;
     },
-    [snapshot, isBusy, mySeat, runMoveAnimation, moveToken, syncBoardFromSnapshot]
+    [snapshot, mySeat, isActionInFlight, runMoveAnimation, moveToken, syncBoardFromSnapshot, waitForDiceRollAnimation]
   );
 
+  const scheduleHumanAutoMove = useCallback(
+    (snap?: IGameSnapshot) => {
+      if (autoMoveTimerRef.current != null) {
+        window.clearTimeout(autoMoveTimerRef.current);
+      }
+      let attempts = 0;
+      const attempt = () => {
+        attempts += 1;
+        const live = snap ?? snapshotRef.current ?? snapshot;
+        if (!live || live.currentSeatIndex !== mySeat) return;
+        if (live.phase !== "AWAITING_MOVE") return;
+        if (!shouldEnableTokenSelection(live, mySeat)) {
+          if (attempts < 40) {
+            autoMoveTimerRef.current = window.setTimeout(attempt, 50);
+          }
+          return;
+        }
+        if (animatingRef.current || isActionInFlight() || diceRollPendingRef.current) {
+          if (attempts < 40) {
+            autoMoveTimerRef.current = window.setTimeout(attempt, 50);
+          }
+          return;
+        }
+        const autoMove = pickHumanAutoMoveFromSnapshot(live, mySeat);
+        if (!autoMove) return;
+        void handleSelectedToken(autoMove, live).then((started) => {
+          if (!started && attempts < 40) {
+            lastAutoMoveKeyRef.current = "";
+            autoMoveTimerRef.current = window.setTimeout(attempt, 50);
+          }
+        });
+      };
+      autoMoveTimerRef.current = window.setTimeout(attempt, 0);
+    },
+    [snapshot, mySeat, isActionInFlight, handleSelectedToken]
+  );
+
+  scheduleHumanAutoMoveRef.current = scheduleHumanAutoMove;
+
+  useEffect(() => {
+    if (!snapshot || mySeat < 0) return;
+    scheduleHumanAutoMove(snapshot);
+  }, [snapshot, mySeat, scheduleHumanAutoMove, isBusy, listTokens]);
+
   const handleDoneDice = useCallback(() => {
+    finishDiceRollAnimation();
     if (!snapshot) return;
     if (animatingRef.current) return;
     rollingRef.current = false;
 
     const live = snapshotRef.current ?? snapshot;
-    const actions = actionsTurnRef.current as IActionsTurn & { rollId?: string };
-    const rollId = buildRollDedupKey(
-      live,
-      actions.diceRollNumber,
-      actions.diceValue as number
-    );
-    if (rollId && lastProcessedRollIdRef.current === rollId) return;
-    lastProcessedRollIdRef.current = rollId;
 
-    // Opponent/bot roll finished — refresh or hand off when server moved on
     if (live.currentSeatIndex !== mySeat) {
       rollingRef.current = false;
       const owner = diceOwnerSeatRef.current;
@@ -1125,7 +1231,18 @@ const OnlineGame = ({
       return;
     }
 
-    // After dice spin, show selectable tokens for the current snap
+    const actions = actionsTurnRef.current as IActionsTurn & { rollId?: string };
+    const rollId = buildRollDedupKey(
+      live,
+      actions.diceRollNumber,
+      actions.diceValue as number
+    );
+    if (rollId && lastProcessedRollIdRef.current === rollId) {
+      scheduleHumanAutoMove(live);
+      return;
+    }
+    lastProcessedRollIdRef.current = rollId;
+
     const canMove = shouldEnableTokenSelection(live, mySeat);
     const nextTokens = listTokensFromSnapshot(live, mySeat, canMove);
     setListTokens(nextTokens);
@@ -1135,32 +1252,11 @@ const OnlineGame = ({
       ...actionsTurnFromSnapshot(live, mySeat, prev),
       diceValue: prev.diceValue,
       diceRollNumber: prev.diceRollNumber,
+      actionsBoardGame: EActionsBoardGame.SELECT_TOKEN,
     }));
 
-    // First 6 with all pawns still in jail → auto-exit one pawn (no click)
-    if (!canMove || isBusy || animatingRef.current) return;
-    const colors = seatColorsFromSnapshot(live);
-    const color = colors[mySeat];
-    const positions = (color && live.tokenPositions[color]) || [];
-    const allInJail = positions.map((p) => p === -1);
-    const diceValues = live.diceList || [];
-    if (!shouldAutoExitJailOnFirstSix(allInJail, diceValues)) return;
-
-    const legal =
-      live.legalMoves?.length
-        ? live.legalMoves
-        : (live.legalTokenIndexes || []).map((tokenIndex) => ({
-            tokenIndex,
-            diceIndex: 0,
-          }));
-    const jailExit =
-      legal.find((m) => positions[m.tokenIndex] === -1) || legal[0];
-    if (!jailExit) return;
-    void handleSelectedToken({
-      tokenIndex: jailExit.tokenIndex,
-      diceIndex: jailExit.diceIndex,
-    });
-  }, [snapshot, mySeat, isBusy, handleSelectedToken, syncBoardFromSnapshot]);
+    scheduleHumanAutoMove(live);
+  }, [snapshot, mySeat, syncBoardFromSnapshot, scheduleHumanAutoMove, finishDiceRollAnimation]);
 
   const resultEntries: IResultEntry[] = useMemo(
     () => buildResults(snapshot, guest.id, roomId),

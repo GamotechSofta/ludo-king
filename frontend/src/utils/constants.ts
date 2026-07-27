@@ -169,6 +169,9 @@ export const CAPTURE_RETURN_PAUSE_MS = 0;
  */
 export const ROLL_TIME_VALUE = 0.65;
 
+/** Online: wait for react-dice-complete spin before pawn hops. */
+export const DICE_ROLL_ANIM_MS = Math.round(ROLL_TIME_VALUE * 1000);
+
 /** Pause before the die handoff to the next player (online). */
 export const ONLINE_TURN_PASS_DELAY_MS = 1000;
 
