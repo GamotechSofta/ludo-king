@@ -240,14 +240,37 @@ const OnlineGame = ({
       applyDiceOwnerTurn(snapshot, snapshot.lastActionSeat);
       return;
     }
-    // Jail non-6 / timeout: keep die on roller for the flash window only
+    // PASS/TIMEOUT: apply() shows roll on roller then hands off — never jump early
     if (
       isNoMovePassSnapshot(snapshot) &&
       snapshot.lastActionSeat != null &&
-      snapshot.lastActionSeat !== snapshot.currentSeatIndex &&
-      performance.now() < passFlashUntilRef.current
+      snapshot.lastActionSeat !== snapshot.currentSeatIndex
     ) {
-      applyDiceOwnerTurn(snapshot, snapshot.lastActionSeat);
+      if (performance.now() < passFlashUntilRef.current) {
+        applyDiceOwnerTurn(snapshot, snapshot.lastActionSeat);
+      }
+      return;
+    }
+    // Turn handoff — idle die before painting on next profile (no spin on pass)
+    const prev = prevSnapRef.current;
+    const seatHandoff =
+      prev != null &&
+      prev.currentSeatIndex !== snapshot.currentSeatIndex &&
+      snapshot.phase === "AWAITING_ROLL" &&
+      (snapshot.diceList?.length ?? 0) === 0;
+    if (seatHandoff) {
+      flushSync(() => {
+        setActionsTurn((prevActions) =>
+          actionsTurnFromSnapshot(
+            snapshot,
+            mySeat,
+            prevActions,
+            prev.currentSeatIndex
+          )
+        );
+        diceOwnerSeatRef.current = snapshot.currentSeatIndex;
+        applyDiceOwnerTurn(snapshot, snapshot.currentSeatIndex);
+      });
       return;
     }
     applyDiceOwnerTurn(snapshot, snapshot.currentSeatIndex);
@@ -367,11 +390,13 @@ const OnlineGame = ({
       if (turnHandoff) {
         lastProcessedRollIdRef.current = "";
         lastDiceSigRef.current = `${snap.currentSeatIndex}|${snap.phase}|`;
-        diceOwnerSeatRef.current = snap.currentSeatIndex;
-        applyDiceOwnerTurn(snap, snap.currentSeatIndex);
-        setActionsTurn((prevActions) =>
-          actionsTurnFromSnapshot(snap, mySeat, prevActions, prevSeat)
-        );
+        flushSync(() => {
+          setActionsTurn((prevActions) =>
+            actionsTurnFromSnapshot(snap, mySeat, prevActions, prevSeat)
+          );
+          diceOwnerSeatRef.current = snap.currentSeatIndex;
+          applyDiceOwnerTurn(snap, snap.currentSeatIndex);
+        });
         setListTokens((tok) => {
           const cleared = clearDiceAvailable(tok);
           listTokensRef.current = cleared;
@@ -782,8 +807,6 @@ const OnlineGame = ({
         rollingRef.current = false;
         pendingDiceRef.current = null;
         passFlashUntilRef.current = 0;
-        diceOwnerSeatRef.current = snap.currentSeatIndex;
-        applyDiceOwnerTurn(snap, snap.currentSeatIndex);
         syncBoardFromSnapshot(snap);
         const nextPass = pendingSnapRef.current.shift();
         if (nextPass) void apply(nextPass);
