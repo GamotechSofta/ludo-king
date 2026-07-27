@@ -655,10 +655,8 @@ export const pickBotMove = (
   return sorted[0];
 };
 
-export const isGameOver = (players: IPlayer[]) => {
-  const unfinished = players.filter((p) => !p.finished);
-  return unfinished.length <= 1 && players.some((p) => p.finished);
-};
+export const isGameOver = (players: IPlayer[]) =>
+  players.some((p) => p.finished && p.ranking === 1);
 
 export const finalizeRankings = (players: IPlayer[]): IPlayer[] => {
   const copy = cloneDeep(players);

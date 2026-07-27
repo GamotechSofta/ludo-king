@@ -40,7 +40,7 @@ import org.springframework.stereotype.Service;
  *   <li>Opponent blocks: can pass through; cannot land on / capture</li>
  *   <li>AFK timeout 20s: turn is passed to the next player</li>
  *   <li>5 consecutive timeouts → AFK eliminated (skipped, tokens removed)</li>
- *   <li>Multi-winner rankings continue until ≤1 unfinished</li>
+ *   <li>First player to bring all 4 tokens home wins — match ends immediately</li>
  *   <li>Team mode: not implemented</li>
  * </ul>
  */
@@ -613,20 +613,25 @@ public class GameEngineService {
         return;
       }
     }
-    if (!rt.finished[seat]) {
-      rt.finished[seat] = true;
-      rt.ranking[seat] = rt.nextRank++;
+    finishMatchOnFirstWinner(rt, seat);
+  }
+
+  /** First seat with all tokens home wins; assign remaining ranks and end. */
+  private void finishMatchOnFirstWinner(MatchRuntime rt, int winnerSeat) {
+    if (!rt.finished[winnerSeat]) {
+      rt.finished[winnerSeat] = true;
+      rt.ranking[winnerSeat] = 1;
+      rt.nextRank = 2;
     }
-    int unfinished = 0;
+    int rank = rt.nextRank;
     for (int i = 0; i < rt.maxPlayers; i++) {
       if (!rt.finished[i]) {
-        unfinished++;
+        rt.finished[i] = true;
+        rt.ranking[i] = rank++;
       }
     }
-    // Continue for rankings until ≤1 unfinished, then seal last place
-    if (unfinished <= 1) {
-      sealLastPlaceIfNeeded(rt);
-    }
+    rt.nextRank = rank;
+    rt.phase = PHASE_FINISHED;
   }
 
   private boolean resolveCapture(MatchRuntime rt, int moverSeat, int moverToken, int landPos) {
