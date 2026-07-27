@@ -1,0 +1,167 @@
+package com.ludo.backend.bot;
+
+import static com.ludo.backend.game.BoardConstants.HOME_STEPS;
+import static com.ludo.backend.game.BoardConstants.JAIL;
+import static com.ludo.backend.game.BoardConstants.TOTAL_TILES;
+import static com.ludo.backend.game.BoardConstants.isHome;
+import static com.ludo.backend.game.BoardConstants.isJail;
+
+import com.ludo.backend.bot.BotMoveEvaluator.VictimInfo;
+import com.ludo.backend.game.GameSnapshot;
+import com.ludo.backend.game.LudoColor;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Optional bot dice assist: when enabled, rolls the exact value (1–6) needed for
+ * the highest-priority legal capture. Humans and random rolls are unaffected when
+ * no capture is reachable or assist is disabled.
+ */
+final class BotKillDiceAssist {
+
+  private BotKillDiceAssist() {}
+
+  @FunctionalInterface
+  interface MoveLegality {
+    boolean canMove(int tokenIndex, int dice);
+  }
+
+  static final class CaptureOpportunity {
+    final int dice;
+    final int tokenIndex;
+    final int landPos;
+    final VictimInfo victim;
+    final int victimRemaining;
+    final int victimProgress;
+    final boolean safeAfterCapture;
+    final int botAdvance;
+
+    CaptureOpportunity(
+        int dice,
+        int tokenIndex,
+        int landPos,
+        VictimInfo victim,
+        int victimRemaining,
+        int victimProgress,
+        boolean safeAfterCapture,
+        int botAdvance
+    ) {
+      this.dice = dice;
+      this.tokenIndex = tokenIndex;
+      this.landPos = landPos;
+      this.victim = victim;
+      this.victimRemaining = victimRemaining;
+      this.victimProgress = victimProgress;
+      this.safeAfterCapture = safeAfterCapture;
+      this.botAdvance = botAdvance;
+    }
+  }
+
+  /**
+   * @return dice value 1–6 for the best capture, or {@code null} for random roll
+   */
+  static Integer pickCaptureDice(
+      GameSnapshot snap,
+      int botSeat,
+      MoveLegality legality
+  ) {
+    if (snap == null || legality == null || botSeat < 0) {
+      return null;
+    }
+    if (snap.getIsBot() == null
+        || botSeat >= snap.getIsBot().length
+        || !Boolean.TRUE.equals(snap.getIsBot()[botSeat])) {
+      return null;
+    }
+
+    String colorName = seatColor(snap, botSeat);
+    if (colorName == null) {
+      return null;
+    }
+    LudoColor color;
+    try {
+      color = LudoColor.valueOf(colorName);
+    } catch (RuntimeException ex) {
+      return null;
+    }
+
+    List<Integer> own = snap.getTokenPositions().get(colorName);
+    Map<String, List<Integer>> all = snap.getTokenPositions();
+    List<String> seatColors = snap.getSeatColors();
+    if (own == null || all == null || seatColors == null) {
+      return null;
+    }
+
+    List<CaptureOpportunity> opportunities = new ArrayList<>();
+    for (int t = 0; t < own.size(); t++) {
+      Integer fromObj = own.get(t);
+      int from = fromObj == null ? JAIL : fromObj;
+      if (isJail(from) || isHome(from)) {
+        continue;
+      }
+      for (int dice = 1; dice <= 6; dice++) {
+        if (!legality.canMove(t, dice)) {
+          continue;
+        }
+        int land = BotMoveEvaluator.applySteps(color, from, dice);
+        VictimInfo victim =
+            BotMoveEvaluator.findCaptureVictim(botSeat, land, all, seatColors);
+        if (victim == null) {
+          continue;
+        }
+        int victimRem = BotMoveEvaluator.remainingDistance(victim.color, land);
+        if (victimRem == Integer.MAX_VALUE) {
+          victimRem = TOTAL_TILES + HOME_STEPS;
+        }
+        int victimProgress = Math.max(0, TOTAL_TILES + HOME_STEPS - victimRem);
+        boolean safe =
+            !BotMoveEvaluator.isPositionThreatened(botSeat, land, all, seatColors);
+        int botFromRem = BotMoveEvaluator.remainingDistance(color, from);
+        int botToRem = BotMoveEvaluator.remainingDistance(color, land);
+        int botAdvance =
+            botFromRem != Integer.MAX_VALUE && botToRem != Integer.MAX_VALUE
+                ? botFromRem - botToRem
+                : 0;
+        opportunities.add(
+            new CaptureOpportunity(
+                dice,
+                t,
+                land,
+                victim,
+                victimRem,
+                victimProgress,
+                safe,
+                botAdvance));
+      }
+    }
+
+    if (opportunities.isEmpty()) {
+      return null;
+    }
+
+    opportunities.sort(priorityComparator());
+    return opportunities.get(0).dice;
+  }
+
+  private static Comparator<CaptureOpportunity> priorityComparator() {
+    return Comparator
+        // Closest victim to HOME first (lowest remaining steps)
+        .comparingInt((CaptureOpportunity o) -> o.victimRemaining)
+        // Then greatest victim progress on the board
+        .thenComparing(Comparator.comparingInt((CaptureOpportunity o) -> o.victimProgress).reversed())
+        // Prefer landing safe after the capture
+        .thenComparing((CaptureOpportunity o) -> !o.safeAfterCapture)
+        // Then prefer the move that advances the bot the most
+        .thenComparing(Comparator.comparingInt((CaptureOpportunity o) -> o.botAdvance).reversed());
+  }
+
+  private static String seatColor(GameSnapshot snap, int seat) {
+    List<String> colors = snap.getSeatColors();
+    if (colors != null && seat >= 0 && seat < colors.size()) {
+      return colors.get(seat);
+    }
+    return snap.getCurrentColor();
+  }
+}

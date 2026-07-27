@@ -16,6 +16,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
@@ -38,9 +39,14 @@ public class BotService {
   private static final int HARD_MISTAKE_PCT = 3;
 
   private final GameEngineService gameEngineService;
+  private final boolean smartKillDiceAssist;
 
-  public BotService(GameEngineService gameEngineService) {
+  public BotService(
+      GameEngineService gameEngineService,
+      @Value("${ludo.bot.smart-kill-dice-assist:false}") boolean smartKillDiceAssist
+  ) {
     this.gameEngineService = gameEngineService;
+    this.smartKillDiceAssist = smartKillDiceAssist;
   }
 
   public GameSnapshot takeTurnIfBot(String roomId, BotDifficulty difficulty) {
@@ -82,7 +88,16 @@ public class BotService {
       try {
         if (GameEngineService.PHASE_ROLL.equals(snap.getPhase())) {
           sleepBeforeDiceRoll();
-          snap = gameEngineService.rollDiceAsSeat(roomId, seat);
+          Integer assistDice = null;
+          if (smartKillDiceAssist) {
+            assistDice =
+                BotKillDiceAssist.pickCaptureDice(
+                    snap,
+                    seat,
+                    (token, dice) ->
+                        gameEngineService.canBotUseDiceForAssist(roomId, seat, token, dice));
+          }
+          snap = gameEngineService.rollDiceAsSeat(roomId, seat, assistDice);
           publish(onStep, snap);
           if (snap.getCurrentSeatIndex() != seat
               || !GameEngineService.PHASE_MOVE.equals(snap.getPhase())) {

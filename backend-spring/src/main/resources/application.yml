@@ -48,6 +48,9 @@ ludo:
     password: ${ADMIN_PASSWORD:admin123}
     name: ${ADMIN_NAME:PotLudo Admin}
     token-ttl-hours: ${ADMIN_TOKEN_TTL_HOURS:24}
+  bot:
+    # When true, bots roll the exact 1–6 needed for the best legal capture (if any).
+    smart-kill-dice-assist: ${SMART_BOT_DICE_ASSIST:false}
 
 logging:
   level:

@@ -298,17 +298,41 @@ public class GameEngineService {
       if (seat < 0) {
         throw new IllegalStateException("Not a player in this room");
       }
-      return rollInternal(rt, seat);
+      return rollInternal(rt, seat, null);
     } finally {
       rt.lock.unlock();
     }
   }
 
   public GameSnapshot rollDiceAsSeat(String roomId, int seat) {
+    return rollDiceAsSeat(roomId, seat, null);
+  }
+
+  /**
+   * Bot-only assist path may pass a forced value 1–6; {@code null} uses secure random.
+   * Human rolls always call {@link #rollDice} which ignores forced values.
+   */
+  public GameSnapshot rollDiceAsSeat(String roomId, int seat, Integer forcedValue) {
     MatchRuntime rt = require(roomId);
     rt.lock.lock();
     try {
-      return rollInternal(rt, seat);
+      return rollInternal(rt, seat, forcedValue);
+    } finally {
+      rt.lock.unlock();
+    }
+  }
+
+  /**
+   * Pre-roll legality probe for bot kill dice assist (AWAITING_ROLL only).
+   */
+  public boolean canBotUseDiceForAssist(String roomId, int seat, int tokenIndex, int dice) {
+    MatchRuntime rt = require(roomId);
+    rt.lock.lock();
+    try {
+      if (seat != rt.currentSeat || !PHASE_ROLL.equals(rt.phase) || rt.finished[seat]) {
+        return false;
+      }
+      return canUseDice(rt, seat, tokenIndex, dice);
     } finally {
       rt.lock.unlock();
     }
@@ -409,7 +433,7 @@ public class GameEngineService {
     return matches.keySet();
   }
 
-  private GameSnapshot rollInternal(MatchRuntime rt, int seat) {
+  private GameSnapshot rollInternal(MatchRuntime rt, int seat, Integer forcedValue) {
     assertActive(rt);
     if (rt.finished[seat]) {
       // All tokens home already — no-op / pass
@@ -428,8 +452,14 @@ public class GameEngineService {
 
     resetTimeoutStreak(rt, seat);
 
-    // Cryptographically sound RNG; client never supplies this value
-    int value = secureRandom.nextInt(6) + 1;
+    // Cryptographically sound RNG; client never supplies this value.
+    // Bot assist may force 1–6 when a legal capture is guaranteed.
+    int value;
+    if (forcedValue != null && forcedValue >= 1 && forcedValue <= 6) {
+      value = forcedValue;
+    } else {
+      value = secureRandom.nextInt(6) + 1;
+    }
     rt.lastDice = value;
     rt.diceList.clear();
     rt.diceList.add(value);
