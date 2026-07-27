@@ -148,13 +148,13 @@ export const TIME_INTERVAL_CHRONOMETER = 50; // org (50), debug: 10,5,0.5
  * Interval between pawn cell steps (ms).
  * One box at a time — slow enough to clearly see each cell.
  */
-export const TOKEN_MOVEMENT_INTERVAL_VALUE = 620;
+export const TOKEN_MOVEMENT_INTERVAL_VALUE = 380;
 
 /** Online: same cell-by-cell cadence as offline. */
-export const ONLINE_TOKEN_MOVEMENT_INTERVAL_VALUE = 620;
+export const ONLINE_TOKEN_MOVEMENT_INTERVAL_VALUE = 380;
 
 /** Extra pause on each cell after the hop lands (ms). */
-export const TOKEN_STEP_PAUSE_MS = 80;
+export const TOKEN_STEP_PAUSE_MS = 40;
 
 /**
  * Dice spin duration (seconds) for react-dice-complete.
