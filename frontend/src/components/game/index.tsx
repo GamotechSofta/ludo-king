@@ -21,7 +21,7 @@ import {
   TOKEN_MOVEMENT_INTERVAL_VALUE,
   TOKEN_STEP_PAUSE_MS,
 } from "../../utils/constants";
-import { playSound, preloadGameSounds, beginMatchMusic, stopBackgroundMusic } from "../../utils/sounds";
+import { playSound, preloadGameSounds, stopBackgroundMusic } from "../../utils/sounds";
 import { runCellByCellSteps, nextFrame } from "../lobby/onlineAnimate";
 import { PageWrapper } from "../wrapper";
 import {
@@ -231,8 +231,6 @@ const Game = ({
         setIsBusy(false);
         return;
       }
-
-      beginMatchMusic();
 
       setActionsTurn((prev) => {
         const next = {

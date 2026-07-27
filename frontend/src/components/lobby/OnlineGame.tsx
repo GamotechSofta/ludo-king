@@ -25,7 +25,7 @@ import {
   ROLL_TIME_VALUE,
   TOKEN_STEP_PAUSE_MS,
 } from "../../utils/constants";
-import { playSound, preloadGameSounds, beginMatchMusic, stopBackgroundMusic } from "../../utils/sounds";
+import { playSound, preloadGameSounds, stopBackgroundMusic } from "../../utils/sounds";
 import { PageWrapper } from "../wrapper";
 import {
   Board,
@@ -516,8 +516,6 @@ const OnlineGame = ({
         setIsBusy(false);
         return false;
       }
-
-      beginMatchMusic();
 
       setActionsTurn((prev) => ({
         ...prev,
