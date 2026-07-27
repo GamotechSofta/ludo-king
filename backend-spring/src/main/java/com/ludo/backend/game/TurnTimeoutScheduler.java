@@ -83,8 +83,18 @@ public class TurnTimeoutScheduler {
               step -> gameEventBus.publishSnapshot(roomId, step)
           );
         }
+        gameEventBus.publishSnapshot(roomId, gameEngineService.getSnapshot(roomId));
       } catch (Exception ignored) {
-        // ignore bot errors from timeout path
+        try {
+          if (gameEngineService.hasMatch(roomId)) {
+            gameEventBus.publishSnapshot(
+                roomId,
+                gameEngineService.getSnapshot(roomId)
+            );
+          }
+        } catch (Exception ignored2) {
+          // ignore recovery publish failure
+        }
       }
     });
   }

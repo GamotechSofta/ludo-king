@@ -162,6 +162,9 @@ export const TOKEN_STEP_PAUSE_MS = 80;
  */
 export const ROLL_TIME_VALUE = 0.65;
 
+/** Pause before the die handoff to the next player (online). */
+export const ONLINE_TURN_PASS_DELAY_MS = 1000;
+
 /**
  * Valor para el delay que se aplica antes de enviar la confirmación al socket
  * que el movimiento de un token ha terminado...

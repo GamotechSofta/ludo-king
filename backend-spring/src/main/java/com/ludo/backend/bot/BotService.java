@@ -121,10 +121,10 @@ public class BotService {
     return best;
   }
 
-  /** Online bot dice — wait 2–3 s before rolling. */
+  /** Online bot dice — wait ~3–4.5 s before rolling. */
   private void sleepBeforeDiceRoll() {
     try {
-      Thread.sleep(ThreadLocalRandom.current().nextInt(2000, 3001));
+      Thread.sleep(ThreadLocalRandom.current().nextInt(3000, 4501));
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
     }
@@ -132,8 +132,7 @@ public class BotService {
 
   private void sleepThinking() {
     try {
-      // Short pause so dice/moves are visible without feeling laggy
-      Thread.sleep(ThreadLocalRandom.current().nextInt(350, 701));
+      Thread.sleep(ThreadLocalRandom.current().nextInt(900, 1601));
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
     }

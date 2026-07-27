@@ -311,7 +311,12 @@ export function listTokensFromSnapshot(
         false
       );
 
-      if (canMove && seat === mySeat && snapshot.phase === "AWAITING_MOVE") {
+      if (
+        canMove &&
+        seat === snapshot.currentSeatIndex &&
+        seat === mySeat &&
+        snapshot.phase === "AWAITING_MOVE"
+      ) {
         const movesForToken = legal.filter((m) => m.tokenIndex === tokenIndex);
         if (movesForToken.length) {
           token = {

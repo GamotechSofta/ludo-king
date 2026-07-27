@@ -82,6 +82,89 @@ export function buildRollDedupKey(
   return `${snapshot.actionSeq ?? 0}:${snapshot.currentSeatIndex}:${diceRollNumber}:${diceValue}`;
 }
 
+/** Turn passed to next seat — idle die, no roll animation. */
+export function isStableTurnPass(
+  snap: IGameSnapshot,
+  prev: IGameSnapshot | null | undefined
+): boolean {
+  if (!prev || (snap.actionSeq ?? 0) === (prev.actionSeq ?? 0)) return false;
+  if (snap.phase !== "AWAITING_ROLL") return false;
+  if ((snap.diceList?.length ?? 0) > 0) return false;
+  if (prev.currentSeatIndex === snap.currentSeatIndex) return false;
+  const passType = snap.lastActionType;
+  return passType === "PASS" || passType === "TIMEOUT";
+}
+
+/** Jail / no-move pass — rolled value shown, then turn hands off. */
+export function isNoMovePassSnapshot(snap: IGameSnapshot): boolean {
+  const passType = snap.lastActionType;
+  return (
+    (passType === "PASS" || passType === "TIMEOUT") &&
+    snap.phase === "AWAITING_ROLL" &&
+    (snap.diceList?.length ?? 0) === 0
+  );
+}
+
+/** Server seat changed while waiting to roll — clear stuck dice on prior profile. */
+export function isTurnSeatHandoff(
+  snap: IGameSnapshot,
+  prev: IGameSnapshot | null | undefined
+): boolean {
+  if (!prev || (snap.actionSeq ?? 0) === (prev.actionSeq ?? 0)) return false;
+  if (snap.phase !== "AWAITING_ROLL") return false;
+  if ((snap.diceList?.length ?? 0) > 0) return false;
+  if (prev.currentSeatIndex === snap.currentSeatIndex) return false;
+  // PASS/TIMEOUT (jail non-6, void 6, timeout) — show roll flash first
+  if (isNoMovePassSnapshot(snap)) return false;
+  return true;
+}
+
+/** Client still shows a roll face but server turn already moved on. */
+export function shouldClearStuckDice(
+  snap: IGameSnapshot,
+  diceOwnerSeat: number,
+  diceFace: number
+): boolean {
+  if (diceOwnerSeat < 0) return false;
+  if (snap.currentSeatIndex === diceOwnerSeat) return false;
+  if ((snap.diceList?.length ?? 0) > 0) return false;
+  // Let isStableTurnPass show roll flash for jail non-6 / timeout PASS
+  if (isNoMovePassSnapshot(snap)) return false;
+  if (snap.phase === "AWAITING_ROLL") return diceFace > 0;
+  return diceFace > 0 && snap.phase !== "AWAITING_MOVE";
+}
+
+/** Resolve hop count for MOVE animation when lastActionDice is missing on the event. */
+export function moveDiceValueFromSnapshot(
+  snap: IGameSnapshot,
+  fallbacks: number[] = []
+): number {
+  if (
+    snap.lastActionDice != null &&
+    snap.lastActionDice >= 1 &&
+    snap.lastActionDice <= 6
+  ) {
+    return snap.lastActionDice;
+  }
+  for (const v of fallbacks) {
+    if (v >= 1 && v <= 6) return v;
+  }
+  const fromList = snap.diceList?.find((d) => d >= 1 && d <= 6);
+  return fromList ?? 0;
+}
+
+/** Server MOVE event that still needs client animation. */
+export function isMoveSnapshot(
+  snap: IGameSnapshot,
+  lastAnimatedMoveSeq: number
+): boolean {
+  if (snap.lastActionType !== "MOVE") return false;
+  if (snap.lastActionSeat == null || snap.lastActionTokenIndex == null) {
+    return false;
+  }
+  return (snap.actionSeq || 0) !== lastAnimatedMoveSeq;
+}
+
 /**
  * Turn order (server seats): clockwise board colors via LudoColor.forPlayerCount.
  * 4p: RED(BL)→GREEN(TL)→YELLOW(TR)→BLUE(BR); 2p: RED↔YELLOW; 3p: RED→GREEN→YELLOW.

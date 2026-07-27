@@ -157,8 +157,20 @@ public class GameSocketController {
               step -> gameEventBus.publishSnapshot(roomId, step)
           );
         }
+        // Ensure clients see final seat (e.g. after bot chain → human turn)
+        gameEventBus.publishSnapshot(roomId, gameEngineService.getSnapshot(roomId));
       } catch (Exception e) {
         // bot path errors are non-fatal for the human client
+        try {
+          if (gameEngineService.hasMatch(roomId)) {
+            gameEventBus.publishSnapshot(
+                roomId,
+                gameEngineService.getSnapshot(roomId)
+            );
+          }
+        } catch (Exception ignored) {
+          // ignore recovery publish failure
+        }
       }
     });
   }
