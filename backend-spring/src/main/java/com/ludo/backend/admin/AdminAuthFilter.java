@@ -27,12 +27,15 @@ public class AdminAuthFilter extends OncePerRequestFilter {
 
   @Override
   protected boolean shouldNotFilter(HttpServletRequest request) {
-    String path = request.getRequestURI();
-    if (!path.startsWith("/api/v1/admin/")) {
+    // Preflight must pass through to Spring CORS (no Bearer on OPTIONS)
+    if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
       return true;
     }
-    return "POST".equalsIgnoreCase(request.getMethod())
-        && path.equals("/api/v1/admin/auth/login");
+    String path = request.getRequestURI();
+    if (path == null || !path.startsWith("/api/v1/admin/")) {
+      return true;
+    }
+    return path.equals("/api/v1/admin/auth/login");
   }
 
   @Override

@@ -156,6 +156,8 @@ public class SecurityConfig {
     }
     patterns.add("http://localhost:*");
     patterns.add("http://127.0.0.1:*");
+    // Render static sites (game + admin) call this API cross-origin
+    patterns.add("https://*.onrender.com");
 
     config.setAllowedOriginPatterns(new ArrayList<>(patterns));
     config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
