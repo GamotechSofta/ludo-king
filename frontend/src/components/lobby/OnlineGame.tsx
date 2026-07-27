@@ -31,7 +31,7 @@ import {
   ProfileSection,
   Tokens,
 } from "../game/components";
-import { getRandomValueDice } from "../game/helpers";
+import { applyServerDiceVisual } from "../game/helpers";
 import {
   applyTokenCell,
   buildMovePath,
@@ -56,6 +56,11 @@ import {
   snapshotTokenPositionsEqual,
   viewTileFromServerPos,
 } from "./onlineSnapshotBoard";
+import {
+  buildRollDedupKey,
+  canRequestOnlineRoll,
+  shouldEnableTokenSelection,
+} from "./diceTurnLogic";
 
 interface OnlineGameProps {
   guest: IGuestUser;
@@ -74,11 +79,8 @@ const OnlineGame = ({
   onExit,
   onPlayAgain,
 }: OnlineGameProps) => {
-  const { snapshot, connected, loadError, rollDice, moveToken } = useGameSocket(
-    roomId,
-    guest.id,
-    initialSnapshot
-  );
+  const { snapshot, connected, loadError, rollDice, moveToken, isActionInFlight } =
+    useGameSocket(roomId, guest.id, initialSnapshot);
   const [showResults, setShowResults] = useState(false);
   const [listTokens, setListTokens] = useState<IListTokens[]>([]);
   const [players, setPlayers] = useState<IPlayer[]>([]);
@@ -163,13 +165,41 @@ const OnlineGame = ({
   const applySeqRef = useRef(0);
   /** actionSeq of MOVE we already finished animating — prevents double-play */
   const lastAnimatedMoveSeqRef = useRef(0);
+  const rollingRef = useRef(false);
+  const lastProcessedRollIdRef = useRef("");
+  /** Server seat that owns the dice UI until their turn fully ends. */
+  const diceOwnerSeatRef = useRef(-1);
   const lockedBoardColorRef = useRef<ReturnType<
     typeof boardColorForSnapshot
   > | null>(null);
 
   useEffect(() => {
     lockedBoardColorRef.current = null;
+    diceOwnerSeatRef.current = -1;
   }, [roomId]);
+
+  /** Map dice-owner server seat → profile slot (BL/TL/TR/BR). */
+  const applyDiceOwnerTurn = useCallback(
+    (snap: IGameSnapshot, ownerSeat?: number) => {
+      if (ownerSeat != null && ownerSeat >= 0) {
+        diceOwnerSeatRef.current = ownerSeat;
+      }
+      const seat =
+        diceOwnerSeatRef.current >= 0
+          ? diceOwnerSeatRef.current
+          : snap.currentSeatIndex;
+      setCurrentTurn(profileTurnIndex(snap, seat, mySeat));
+    },
+    [mySeat]
+  );
+
+  useEffect(() => {
+    if (!snapshot || mySeat < 0) return;
+    if (diceOwnerSeatRef.current < 0) {
+      diceOwnerSeatRef.current = snapshot.currentSeatIndex;
+      applyDiceOwnerTurn(snapshot);
+    }
+  }, [snapshot, mySeat, applyDiceOwnerTurn]);
 
   useEffect(() => {
     listTokensRef.current = listTokens;
@@ -229,6 +259,7 @@ const OnlineGame = ({
       if (animatingRef.current && !forceTokens) {
         return;
       }
+      rollingRef.current = false;
 
       // MOVE snapshots carry destination tokenPositions — never paint those
       // until forceTokens (animation finished). Chrome/UI-only update instead.
@@ -236,7 +267,8 @@ const OnlineGame = ({
       if (isMoveSnap && !forceTokens) {
         const prev = prevSnapRef.current;
         setPlayers(playersForView(snap, mySeat));
-        setCurrentTurn(profileTurnIndex(snap, snap.currentSeatIndex, mySeat));
+        // Keep dice on the mover until hop finishes — do not jump to next seat yet
+        applyDiceOwnerTurn(snap);
         setActionsTurn((prevActions) =>
           actionsTurnFromSnapshot(
             snap,
@@ -265,7 +297,9 @@ const OnlineGame = ({
         snapshotTokenPositionsEqual(prev, snap);
 
       if (turnHandoff) {
-        setCurrentTurn(profileTurnIndex(snap, snap.currentSeatIndex, mySeat));
+        lastProcessedRollIdRef.current = "";
+        diceOwnerSeatRef.current = snap.currentSeatIndex;
+        applyDiceOwnerTurn(snap);
         setActionsTurn((prevActions) =>
           actionsTurnFromSnapshot(snap, mySeat, prevActions, prevSeat)
         );
@@ -286,7 +320,14 @@ const OnlineGame = ({
       setPlayers(nextPlayers);
       setListTokens(nextTokens);
       listTokensRef.current = nextTokens;
-      setCurrentTurn(profileTurnIndex(snap, snap.currentSeatIndex, mySeat));
+      if (
+        !animatingRef.current &&
+        prevSeat != null &&
+        prevSeat !== snap.currentSeatIndex
+      ) {
+        diceOwnerSeatRef.current = snap.currentSeatIndex;
+      }
+      applyDiceOwnerTurn(snap);
       setActionsTurn((prevActions) => {
         const next = actionsTurnFromSnapshot(
           snap,
@@ -306,7 +347,7 @@ const OnlineGame = ({
       });
       prevSnapRef.current = snap;
     },
-    [mySeat]
+    [mySeat, applyDiceOwnerTurn]
   );
 
   const animCancelRef = useRef<AnimCancel>({ cancelled: false });
@@ -574,6 +615,7 @@ const OnlineGame = ({
         snap.phase === "AWAITING_MOVE";
 
       if (diceAppeared) {
+        rollingRef.current = false;
         lastDiceSigRef.current = diceSig;
         pendingDiceRef.current = {
           seat: snap.currentSeatIndex,
@@ -585,9 +627,8 @@ const OnlineGame = ({
         }
         beginMatchMusic();
         setPlayers(playersForView(snap, mySeat));
-        setCurrentTurn(
-          profileTurnIndex(snap, snap.currentSeatIndex, mySeat)
-        );
+        diceOwnerSeatRef.current = snap.currentSeatIndex;
+        applyDiceOwnerTurn(snap);
         setActionsTurn((prevActions) => {
           const base = actionsTurnFromSnapshot(
             snap,
@@ -595,7 +636,7 @@ const OnlineGame = ({
             prevActions,
             prev?.currentSeatIndex
           );
-          const rolled = getRandomValueDice(base, value);
+          const rolled = applyServerDiceVisual(base, value);
           rolled.diceList = base.diceList;
           rolled.actionsBoardGame = EActionsBoardGame.ROLL_DICE;
           return rolled;
@@ -616,6 +657,44 @@ const OnlineGame = ({
             tokenPositions: prev.tokenPositions,
           };
         }
+        return;
+      }
+
+      // Auto-pass (no moves / 3rd six): show rolled value briefly, then sync turn
+      const passWithDice =
+        snap.lastActionType === "PASS" &&
+        snap.lastActionDice != null &&
+        snap.lastActionDice >= 1 &&
+        snap.lastActionDice <= 6 &&
+        (snap.diceList?.length || 0) === 0 &&
+        (!prev || (snap.actionSeq || 0) !== (prev.actionSeq || 0));
+
+      if (passWithDice) {
+        rollingRef.current = false;
+        const value = snap.lastActionDice as TDicevalues;
+        const rollerSeat = snap.lastActionSeat ?? snap.currentSeatIndex;
+        if (rollerSeat === mySeat) {
+          playSound("diceRolling");
+        }
+        setPlayers(playersForView(snap, mySeat));
+        applyDiceOwnerTurn(snap, rollerSeat);
+        setActionsTurn((prevActions) => {
+          const base = actionsTurnFromSnapshot(
+            snap,
+            mySeat,
+            prevActions,
+            prev?.currentSeatIndex
+          );
+          const rolled = applyServerDiceVisual(base, value);
+          rolled.diceList = [];
+          rolled.actionsBoardGame = EActionsBoardGame.ROLL_DICE;
+          return rolled;
+        });
+        prevSnapRef.current = snap;
+        window.setTimeout(() => {
+          diceOwnerSeatRef.current = snap.currentSeatIndex;
+          syncBoardFromSnapshot(snap);
+        }, 450);
         return;
       }
 
@@ -724,20 +803,31 @@ const OnlineGame = ({
 
   const handleSelectDice = useCallback(
     (_diceValue?: TDicevalues) => {
-      if (!snapshot || isBusy || animatingRef.current) return;
-      if (snapshot.currentSeatIndex !== mySeat) return;
-      if (snapshot.phase !== "AWAITING_ROLL") return;
-      if (actionsTurnRef.current.disabledDice) return;
+      if (
+        !canRequestOnlineRoll(snapshot, {
+          mySeat,
+          isBusy,
+          isAnimating: animatingRef.current,
+          isRolling: rollingRef.current,
+          isActionInFlight: isActionInFlight(),
+          disabledDice: actionsTurnRef.current.disabledDice,
+        })
+      ) {
+        return;
+      }
+      rollingRef.current = true;
       playSound("diceRolling");
       beginMatchMusic();
-      setActionsTurn((prev) => ({
-        ...prev,
+      const nextActions = {
+        ...actionsTurnRef.current,
         disabledDice: true,
         timerActivated: false,
-      }));
+      };
+      actionsTurnRef.current = nextActions;
+      setActionsTurn(nextActions);
       rollDice();
     },
-    [snapshot, isBusy, mySeat, rollDice]
+    [snapshot, isBusy, mySeat, rollDice, isActionInFlight]
   );
 
   const handleSelectedToken = useCallback(
@@ -792,10 +882,19 @@ const OnlineGame = ({
   const handleDoneDice = useCallback(() => {
     if (!snapshot) return;
     if (animatingRef.current) return;
+    rollingRef.current = false;
+
+    const actions = actionsTurnRef.current as IActionsTurn & { rollId?: string };
+    const rollId = buildRollDedupKey(
+      snapshot,
+      actions.diceRollNumber,
+      actions.diceValue as number
+    );
+    if (rollId && lastProcessedRollIdRef.current === rollId) return;
+    lastProcessedRollIdRef.current = rollId;
+
     // After dice spin, show selectable tokens for the current snap
-    const canMove =
-      snapshot.currentSeatIndex === mySeat &&
-      snapshot.phase === "AWAITING_MOVE";
+    const canMove = shouldEnableTokenSelection(snapshot, mySeat);
     const nextTokens = listTokensFromSnapshot(snapshot, mySeat, canMove);
     setListTokens(nextTokens);
     listTokensRef.current = nextTokens;

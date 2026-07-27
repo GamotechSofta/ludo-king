@@ -65,22 +65,35 @@ public class GameSocketController {
   @MessageMapping("/room/{roomId}/roll")
   public void roll(@DestinationVariable String roomId, @Payload ActionMessage msg) {
     ensureLocalSession(roomId);
-    GameSnapshot snap = gameEngineService.rollDice(roomId, msg.userId());
-    broadcast(roomId, snap);
-    maybeScheduleBot(roomId);
+    try {
+      GameSnapshot snap = gameEngineService.rollDice(roomId, msg.userId());
+      broadcast(roomId, snap);
+      maybeScheduleBot(roomId);
+    } catch (IllegalStateException | IllegalArgumentException e) {
+      // Duplicate roll / wrong turn — ignore; client already has authoritative state
+      if (gameEngineService.hasMatch(roomId)) {
+        syncState(roomId, gameEngineService.getSnapshot(roomId));
+      }
+    }
   }
 
   @MessageMapping("/room/{roomId}/move")
   public void move(@DestinationVariable String roomId, @Payload ActionMessage msg) {
     ensureLocalSession(roomId);
-    GameSnapshot snap = gameEngineService.moveToken(
-        roomId,
-        msg.userId(),
-        msg.tokenIndex() == null ? 0 : msg.tokenIndex(),
-        msg.diceIndex() == null ? 0 : msg.diceIndex()
-    );
-    broadcast(roomId, snap);
-    maybeScheduleBot(roomId);
+    try {
+      GameSnapshot snap = gameEngineService.moveToken(
+          roomId,
+          msg.userId(),
+          msg.tokenIndex() == null ? 0 : msg.tokenIndex(),
+          msg.diceIndex() == null ? 0 : msg.diceIndex()
+      );
+      broadcast(roomId, snap);
+      maybeScheduleBot(roomId);
+    } catch (IllegalStateException | IllegalArgumentException e) {
+      if (gameEngineService.hasMatch(roomId)) {
+        syncState(roomId, gameEngineService.getSnapshot(roomId));
+      }
+    }
   }
 
   /** Restore MatchRuntime from Redis/Mongo — never blank create. */

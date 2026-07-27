@@ -136,6 +136,7 @@ export function useGameSocket(
   const lastSeqRef = useRef(initialSnapshot?.actionSeq ?? 0);
   const lastWsAtRef = useRef(0);
   const inFlightActionRef = useRef(false);
+  const isActionInFlight = useCallback(() => inFlightActionRef.current, []);
   const fallbackTimerRef = useRef<number | null>(null);
 
   const applySnapshot = useCallback((snap: unknown, fromWs = false) => {
@@ -348,6 +349,7 @@ export function useGameSocket(
     loadError,
     rollDice,
     moveToken,
+    isActionInFlight,
     setSnapshot: (s: unknown) => applySnapshot(s, false),
   };
 }

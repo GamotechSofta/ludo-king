@@ -19,6 +19,7 @@ import {
 } from "../../utils/constants";
 import { getOneBotName } from "../../data/botNames";
 import type { IGameSnapshot } from "./types";
+import { onlineDiceDisabled } from "./diceTurnLogic";
 import { applyTokenCell, recomputeStacking } from "../game/rules";
 
 /**
@@ -320,7 +321,7 @@ export function actionsTurnFromSnapshot(
 
   return {
     timerActivated: awaitingRoll || awaitingMove,
-    disabledDice: !(isMyTurn && awaitingRoll),
+    disabledDice: onlineDiceDisabled(snapshot, mySeat),
     showDice: true,
     diceValue: resetDiceVisual
       ? 0

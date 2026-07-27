@@ -307,6 +307,24 @@ export const getRandomValueDice = (
 };
 
 /**
+ * Online: apply server dice value for animation only — never client RNG.
+ */
+export const applyServerDiceVisual = (
+  actionsTurn: IActionsTurn,
+  diceValue: TDicevalues
+): IActionsTurn => {
+  const copyActionsTurn = cloneDeep(actionsTurn);
+  copyActionsTurn.diceValue = diceValue;
+  copyActionsTurn.timerActivated = false;
+  copyActionsTurn.disabledDice = true;
+  const diceRollNumber = copyActionsTurn.diceRollNumber;
+  copyActionsTurn.diceRollNumber =
+    diceRollNumber + 1 >= 10 ? 1 : diceRollNumber + 1;
+  copyActionsTurn.rollId = undefined;
+  return copyActionsTurn;
+};
+
+/**
  * Función que genera la dada inicial de los tokens,
  * inicialmente inicia en la cárcel...
  * @param boardColor

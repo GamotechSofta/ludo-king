@@ -400,6 +400,9 @@ public class GameEngineService {
     if (!PHASE_ROLL.equals(rt.phase)) {
       throw new IllegalStateException("Cannot roll now — state is not AWAITING_ROLL");
     }
+    if (!rt.diceList.isEmpty()) {
+      throw new IllegalStateException("Dice already rolled this turn");
+    }
 
     // Cryptographically sound RNG; client never supplies this value
     int value = secureRandom.nextInt(6) + 1;
@@ -413,8 +416,9 @@ public class GameEngineService {
       rt.consecutiveSixes = 0;
     }
 
-    // Third consecutive six: voided — no move, turn passes
+    // Third consecutive six: voided — no move, turn passes, streak reset
     if (rt.consecutiveSixes >= MAX_CONSECUTIVE_SIXES) {
+      rt.consecutiveSixes = 0;
       clearDice(rt);
       nextTurn(rt);
       recordAction(rt, "PASS", seat, null, value);
@@ -595,15 +599,24 @@ public class GameEngineService {
     if (PHASE_FINISHED.equals(rt.phase)) {
       return;
     }
-    for (int i = 1; i <= rt.maxPlayers; i++) {
-      int seat = (rt.currentSeat + i) % rt.maxPlayers;
-      if (!rt.finished[seat]) {
-        rt.currentSeat = seat;
-        rt.phase = PHASE_ROLL;
-        clearDice(rt);
-        rt.consecutiveSixes = 0;
-        rt.turnStartedAt = Instant.now();
-        return;
+    LudoColor current = rt.colors[rt.currentSeat];
+    List<LudoColor> boardOrder = LudoColor.forPlayerCount(rt.maxPlayers);
+    int startIdx = boardOrder.indexOf(current);
+    if (startIdx < 0) {
+      startIdx = 0;
+    }
+    // Clockwise on the board: RED→GREEN→YELLOW→BLUE (2p/3p use subset)
+    for (int step = 1; step <= boardOrder.size(); step++) {
+      LudoColor nextColor = boardOrder.get((startIdx + step) % boardOrder.size());
+      for (int s = 0; s < rt.maxPlayers; s++) {
+        if (rt.colors[s] == nextColor && !rt.finished[s]) {
+          rt.currentSeat = s;
+          rt.phase = PHASE_ROLL;
+          clearDice(rt);
+          rt.consecutiveSixes = 0;
+          rt.turnStartedAt = Instant.now();
+          return;
+        }
       }
     }
     rt.phase = PHASE_FINISHED;
