@@ -44,6 +44,10 @@ import type { IGameSnapshot, IGuestUser, IResultEntry } from "./types";
 import Results from "./Results";
 import { fetchWalletBalance } from "../../api/ludoApi";
 import {
+  runReturnToJailAnimations,
+  type CaptureVictim,
+} from "./captureReturnAnim";
+import {
   runCellByCellSteps,
   nextFrame,
   rafDelay,
@@ -113,6 +117,8 @@ const OnlineGame = ({
     )
   );
   const [currentTurn, setCurrentTurn] = useState(0);
+  /** House color that should show the die (authoritative seat → color). */
+  const [turnColor, setTurnColor] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
   const [liveBalance, setLiveBalance] = useState<number | null>(
@@ -182,6 +188,8 @@ const OnlineGame = ({
   const lastProcessedRollIdRef = useRef("");
   /** Server seat that owns the dice UI until their turn fully ends. */
   const diceOwnerSeatRef = useRef(-1);
+  /** PASS roll-flash: keep die on roller until this time. */
+  const passFlashUntilRef = useRef(0);
   const lockedBoardColorRef = useRef<ReturnType<
     typeof boardColorForSnapshot
   > | null>(null);
@@ -194,10 +202,12 @@ const OnlineGame = ({
   useEffect(() => {
     lockedBoardColorRef.current = null;
     diceOwnerSeatRef.current = -1;
+    passFlashUntilRef.current = 0;
+    setTurnColor(null);
     clearDisplayNameCache(roomId);
   }, [roomId]);
 
-  /** Map dice-owner server seat → profile slot (BL/TL/TR/BR). */
+  /** Map dice-owner server seat → profile slot + house color for the die UI. */
   const applyDiceOwnerTurn = useCallback(
     (snap: IGameSnapshot, ownerSeat?: number) => {
       if (ownerSeat != null && ownerSeat >= 0) {
@@ -207,18 +217,51 @@ const OnlineGame = ({
         diceOwnerSeatRef.current >= 0
           ? diceOwnerSeatRef.current
           : snap.currentSeatIndex;
+      const colors = seatColorsFromSnapshot(snap);
+      const color =
+        seat >= 0 && seat < colors.length ? colors[seat] : null;
+      setTurnColor(color);
       setCurrentTurn(profileTurnIndex(snap, seat, mySeat));
     },
     [mySeat]
   );
 
-  useEffect(() => {
+  /**
+   * Hard sync: die profile always follows server current seat (or MOVE mover while hopping).
+   * Runs in layout so paint cannot show the previous player's die.
+   */
+  useLayoutEffect(() => {
     if (!snapshot || mySeat < 0) return;
-    if (diceOwnerSeatRef.current < 0) {
-      diceOwnerSeatRef.current = snapshot.currentSeatIndex;
-      applyDiceOwnerTurn(snapshot);
+    if (
+      animatingRef.current &&
+      snapshot.lastActionType === "MOVE" &&
+      snapshot.lastActionSeat != null
+    ) {
+      applyDiceOwnerTurn(snapshot, snapshot.lastActionSeat);
+      return;
     }
-  }, [snapshot, mySeat, applyDiceOwnerTurn]);
+    // Jail non-6 / timeout: keep die on roller for the flash window only
+    if (
+      isNoMovePassSnapshot(snapshot) &&
+      snapshot.lastActionSeat != null &&
+      snapshot.lastActionSeat !== snapshot.currentSeatIndex &&
+      performance.now() < passFlashUntilRef.current
+    ) {
+      applyDiceOwnerTurn(snapshot, snapshot.lastActionSeat);
+      return;
+    }
+    applyDiceOwnerTurn(snapshot, snapshot.currentSeatIndex);
+  }, [
+    snapshot,
+    mySeat,
+    applyDiceOwnerTurn,
+    snapshot?.actionSeq,
+    snapshot?.currentSeatIndex,
+    snapshot?.phase,
+    snapshot?.lastActionType,
+    snapshot?.lastActionSeat,
+    snapshot?.diceList,
+  ]);
 
   useEffect(() => {
     listTokensRef.current = listTokens;
@@ -287,7 +330,13 @@ const OnlineGame = ({
         const prev = prevSnapRef.current;
         setPlayers(playersForView(snap, mySeat, roomId));
         // Keep dice on the mover until hop finishes — do not jump to next seat yet
-        applyDiceOwnerTurn(snap);
+        const moverSeat =
+          snap.lastActionSeat != null
+            ? snap.lastActionSeat
+            : diceOwnerSeatRef.current >= 0
+            ? diceOwnerSeatRef.current
+            : snap.currentSeatIndex;
+        applyDiceOwnerTurn(snap, moverSeat);
         setActionsTurn((prevActions) =>
           actionsTurnFromSnapshot(
             snap,
@@ -319,7 +368,7 @@ const OnlineGame = ({
         lastProcessedRollIdRef.current = "";
         lastDiceSigRef.current = `${snap.currentSeatIndex}|${snap.phase}|`;
         diceOwnerSeatRef.current = snap.currentSeatIndex;
-        applyDiceOwnerTurn(snap);
+        applyDiceOwnerTurn(snap, snap.currentSeatIndex);
         setActionsTurn((prevActions) =>
           actionsTurnFromSnapshot(snap, mySeat, prevActions, prevSeat)
         );
@@ -344,14 +393,12 @@ const OnlineGame = ({
         prevSeat != null && prevSeat !== snap.currentSeatIndex;
       if (
         !animatingRef.current &&
-        turnPassed &&
-        snap.phase === "AWAITING_ROLL"
+        (turnPassed ||
+          diceOwnerSeatRef.current !== snap.currentSeatIndex)
       ) {
         diceOwnerSeatRef.current = snap.currentSeatIndex;
-      } else if (!animatingRef.current && turnPassed) {
-        diceOwnerSeatRef.current = snap.currentSeatIndex;
       }
-      applyDiceOwnerTurn(snap);
+      applyDiceOwnerTurn(snap, snap.currentSeatIndex);
       setActionsTurn((prevActions) => {
         const next = actionsTurnFromSnapshot(
           snap,
@@ -375,11 +422,10 @@ const OnlineGame = ({
     [mySeat, applyDiceOwnerTurn, roomId]
   );
 
-  /** Clear stuck dice when server turn already moved to the next seat. */
+  /** Die profile must match the seat that can actually play (fixes wrong-profile dice). */
   useEffect(() => {
     if (!snapshot || mySeat < 0) return;
     if (animatingRef.current) return;
-    if (rollingRef.current) return;
     if (isNoMovePassSnapshot(snapshot)) return;
     const owner = diceOwnerSeatRef.current;
     const diceFace = (actionsTurnRef.current.diceValue || 0) as number;
@@ -387,9 +433,15 @@ const OnlineGame = ({
       rollingRef.current = false;
       lastProcessedRollIdRef.current = "";
       diceOwnerSeatRef.current = snapshot.currentSeatIndex;
-      syncBoardFromSnapshot(snapshot);
+      applyDiceOwnerTurn(snapshot, snapshot.currentSeatIndex);
+      // Keep existing dice face / list — only move which profile shows the die
+      setActionsTurn((prev) => ({
+        ...actionsTurnFromSnapshot(snapshot, mySeat, prev),
+        diceValue: prev.diceValue,
+        diceRollNumber: prev.diceRollNumber,
+      }));
     }
-  }, [snapshot, mySeat, syncBoardFromSnapshot]);
+  }, [snapshot, mySeat, applyDiceOwnerTurn]);
 
   const animCancelRef = useRef<AnimCancel>({ cancelled: false });
 
@@ -636,7 +688,7 @@ const OnlineGame = ({
         }
         setPlayers(playersForView(snap, mySeat, roomId));
         diceOwnerSeatRef.current = snap.currentSeatIndex;
-        applyDiceOwnerTurn(snap);
+        applyDiceOwnerTurn(snap, snap.currentSeatIndex);
         setActionsTurn((prevActions) => {
           const base = actionsTurnFromSnapshot(
             snap,
@@ -724,11 +776,14 @@ const OnlineGame = ({
           );
         }
 
+        passFlashUntilRef.current = performance.now() + passDelayMs;
         await rafDelay(passDelayMs, animCancelRef.current);
         if (cancelled) return;
         rollingRef.current = false;
         pendingDiceRef.current = null;
+        passFlashUntilRef.current = 0;
         diceOwnerSeatRef.current = snap.currentSeatIndex;
+        applyDiceOwnerTurn(snap, snap.currentSeatIndex);
         syncBoardFromSnapshot(snap);
         const nextPass = pendingSnapRef.current.shift();
         if (nextPass) void apply(nextPass);
@@ -813,16 +868,9 @@ const OnlineGame = ({
         lastAnimatedMoveSeqRef.current = moveSeq;
         pendingDiceRef.current = null;
         suppressMoveAnimRef.current = false;
-        if (
-          snap.currentSeatIndex !== moved.seat &&
-          snap.phase === "AWAITING_ROLL"
-        ) {
-          await rafDelay(ONLINE_TURN_PASS_DELAY_MS, animCancelRef.current);
-          if (cancelled) return;
-        }
         if (ok && prev) {
           const colors = seatColorsFromSnapshot(snap);
-          let captured = false;
+          const captives: CaptureVictim[] = [];
           for (let s = 0; s < colors.length; s++) {
             if (s === moved.seat) continue;
             const color = colors[s];
@@ -830,13 +878,38 @@ const OnlineGame = ({
             const b = snap.tokenPositions?.[color] || [];
             for (let i = 0; i < 4; i++) {
               if ((a[i] ?? -1) >= 0 && (b[i] ?? -1) === -1) {
-                captured = true;
-                break;
+                captives.push({ playerIndex: s, tokenIndex: i });
               }
             }
-            if (captured) break;
           }
-          if (captured) playSound("capture");
+          if (captives.length) {
+            playSound("capture");
+            animatingRef.current = true;
+            setIsBusy(true);
+            await runReturnToJailAnimations(
+              listTokensRef.current,
+              captives,
+              (next) => {
+                listTokensRef.current = next;
+                setListTokens(next);
+              },
+              {
+                cancel: animCancelRef.current,
+                onStepSound: () => playSound("passingNext"),
+              }
+            );
+            if (cancelled) return;
+            if (seq !== applySeqRef.current) return;
+            animatingRef.current = false;
+            setIsBusy(false);
+          }
+        }
+        if (
+          snap.currentSeatIndex !== moved.seat &&
+          snap.phase === "AWAITING_ROLL"
+        ) {
+          await rafDelay(ONLINE_TURN_PASS_DELAY_MS, animCancelRef.current);
+          if (cancelled) return;
         }
         syncBoardFromSnapshot(snap, false, true);
         const next = pendingSnapRef.current.shift();
@@ -1059,6 +1132,7 @@ const OnlineGame = ({
     players: renderPlayers,
     totalPlayers,
     currentTurn,
+    turnColor,
     actionsTurn: {
       ...actionsTurn,
       timerActivated:

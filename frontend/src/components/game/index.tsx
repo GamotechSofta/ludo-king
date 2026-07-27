@@ -22,6 +22,7 @@ import {
   TOKEN_STEP_PAUSE_MS,
 } from "../../utils/constants";
 import { playSound, preloadGameSounds, stopBackgroundMusic } from "../../utils/sounds";
+import { runReturnToJailAnimations } from "../lobby/captureReturnAnim";
 import { runCellByCellSteps, nextFrame } from "../lobby/onlineAnimate";
 import { PageWrapper } from "../wrapper";
 import {
@@ -46,6 +47,7 @@ import {
   decideAfterDiceRoll,
   decideAfterMove,
   finalizeRankings,
+  findCaptureVictims,
   getNextTurnIndex,
   getPossibleMoves,
   isGameOver,
@@ -335,11 +337,28 @@ const Game = ({
           ),
         };
       });
+      setListTokens(working);
+      listTokensRef.current = working;
+
+      const captives = findCaptureVictims(working, turn, tokenIndex);
+      if (captives.length) {
+        playSound("capture");
+        working = await runReturnToJailAnimations(
+          working,
+          captives,
+          (next) => {
+            working = next;
+            setListTokens(next);
+            listTokensRef.current = next;
+          },
+          {
+            stepMs: TOKEN_MOVEMENT_INTERVAL_VALUE,
+            onStepSound: () => playSound("passingNext"),
+          }
+        );
+      }
 
       const landing = resolveLanding(working, currentPlayers, turn, tokenIndex);
-      if (landing.captured) {
-        playSound("capture");
-      }
       const remainingDice = actions.diceList.filter((_, i) => i !== diceIndex);
       const usedSix = dice.value === DICE_VALUE_GET_OUT_JAIL;
       const playerFinished = !!landing.players[turn]?.finished;

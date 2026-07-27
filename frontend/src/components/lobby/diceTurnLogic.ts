@@ -119,7 +119,7 @@ export function isTurnSeatHandoff(
   return true;
 }
 
-/** Client still shows a roll face but server turn already moved on. */
+/** Client dice UI pinned to a seat that is no longer the active server seat. */
 export function shouldClearStuckDice(
   snap: IGameSnapshot,
   diceOwnerSeat: number,
@@ -127,11 +127,18 @@ export function shouldClearStuckDice(
 ): boolean {
   if (diceOwnerSeat < 0) return false;
   if (snap.currentSeatIndex === diceOwnerSeat) return false;
+  // Active seat has dice to move — die must sit on that profile (not a prior player)
+  if (
+    snap.phase === "AWAITING_MOVE" &&
+    (snap.diceList?.length ?? 0) > 0
+  ) {
+    return true;
+  }
   if ((snap.diceList?.length ?? 0) > 0) return false;
   // Let isStableTurnPass show roll flash for jail non-6 / timeout PASS
   if (isNoMovePassSnapshot(snap)) return false;
-  if (snap.phase === "AWAITING_ROLL") return diceFace > 0;
-  return diceFace > 0 && snap.phase !== "AWAITING_MOVE";
+  if (snap.phase === "AWAITING_ROLL") return true;
+  return diceFace > 0;
 }
 
 /** Resolve hop count for MOVE animation when lastActionDice is missing on the event. */

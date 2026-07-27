@@ -74,7 +74,7 @@ public class TurnTimeoutScheduler {
             && snap.getIsBot()[snap.getCurrentSeatIndex()]
             && !GameEngineService.PHASE_FINISHED.equals(snap.getPhase())) {
 
-          BotDifficulty diff = BotDifficulty.MEDIUM;
+          BotDifficulty diff = BotDifficulty.HARD;
           Room room = roomService.getRoom(roomId).orElse(null);
           if (room != null) {
             RoomPlayer p = room.getPlayers().get(snap.getCurrentSeatIndex());

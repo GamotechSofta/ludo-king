@@ -5,6 +5,7 @@ import type {
   IProfileHandlers,
   TPositionProfile,
   IActionsTurn,
+  TColors,
 } from "../../../../interfaces";
 import { DEFAULT_VALUE_ACTION_TURN } from "../../../../utils/constants";
 import { Profile } from "./components";
@@ -20,6 +21,11 @@ export interface ProfileSectionProps {
   totalPlayers: TTotalPlayers;
   profileHandlers: IProfileHandlers;
   actionsTurn: IActionsTurn;
+  /**
+   * Online: when set, die/turn highlight follows this house color (server seat),
+   * not the fragile view-slot index. Fixes die showing on the wrong profile.
+   */
+  turnColor?: TColors | string | null;
 }
 
 /**
@@ -79,6 +85,7 @@ export const renderProfileComponent = (
     totalPlayers,
     profileHandlers,
     actionsTurn,
+    turnColor,
   } = props;
 
   /**
@@ -89,10 +96,14 @@ export const renderProfileComponent = (
     DISTRIBUTION_PROFILES[totalPlayers]?.[basePosition]?.[position] || 0;
 
   if (indexProfile !== 0 && players[indexProfile - 1]) {
+    const player = players[indexProfile - 1];
     /**
-     * Valida si el usuario tiene el turno, dependiendo del valor de currentTurn...
+     * Online: match house color to active seat color (authoritative).
+     * Offline: fall back to view-slot currentTurn index.
      */
-    const hasTurn = currentTurn === indexProfile - 1;
+    const hasTurn = turnColor
+      ? player.color === turnColor
+      : currentTurn === indexProfile - 1;
 
     /**
      * Si tiene el turno, pasa el valor de actionsTurn, si no enviará el valor por defecto,
@@ -112,6 +123,6 @@ export const renderProfileComponent = (
       ...profileHandlers,
     };
 
-    return <Profile {...extProps} player={players[indexProfile - 1]} />;
+    return <Profile {...extProps} player={player} />;
   }
 };

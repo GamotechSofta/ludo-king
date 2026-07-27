@@ -419,7 +419,7 @@ public class RoomService {
           true,
           seat
       );
-      bot.setBotDifficulty(BotDifficulty.MEDIUM);
+      bot.setBotDifficulty(BotDifficulty.HARD);
       bot.setReady(true);
       room.getPlayers().add(bot);
       broadcastPlayerJoined(room, bot);

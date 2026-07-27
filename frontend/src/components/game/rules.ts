@@ -127,6 +127,47 @@ export const buildMovePath = (
   return path;
 };
 
+/**
+ * Step-by-step path back to the yard after a capture.
+ * Walks reverse along exit column (if any), then counterclockwise on the
+ * shared path to the color start tile, then into JAIL.
+ */
+export const buildReturnToJailPath = (
+  token: IToken,
+  positionGame: TPositionGame
+): IMoveTarget[] => {
+  const { exitTileIndex, startTileIndex } = getBoard(positionGame);
+  const path: IMoveTarget[] = [];
+
+  if (token.typeTile === EtypeTile.JAIL || token.typeTile === EtypeTile.END) {
+    return path;
+  }
+
+  let typeTile: TtypeTile = token.typeTile;
+  let positionTile = token.positionTile;
+
+  if (typeTile === EtypeTile.EXIT) {
+    while (positionTile > 0) {
+      positionTile -= 1;
+      path.push({ typeTile: EtypeTile.EXIT, positionTile });
+    }
+    typeTile = EtypeTile.NORMAL;
+    positionTile = exitTileIndex;
+    path.push({ typeTile, positionTile });
+  }
+
+  if (typeTile === EtypeTile.NORMAL) {
+    let guard = 0;
+    while (positionTile !== startTileIndex && guard++ < TOTAL_TILES + 2) {
+      positionTile = (positionTile - 1 + TOTAL_TILES) % TOTAL_TILES;
+      path.push({ typeTile: EtypeTile.NORMAL, positionTile });
+    }
+  }
+
+  path.push({ typeTile: EtypeTile.JAIL, positionTile: token.index });
+  return path;
+};
+
 const getTokensOnCell = (
   listTokens: IListTokens[],
   typeTile: TtypeTile,
@@ -396,6 +437,44 @@ export const sendTokenToJail = (
   return applyTokenCell(token, positionGame, EtypeTile.JAIL, token.index, false);
 };
 
+/** Opponents that would be sent to jail if this mover lands (single pawn, unsafe). */
+export const findCaptureVictims = (
+  listTokens: IListTokens[],
+  playerIndex: number,
+  tokenIndex: number
+): Array<{ playerIndex: number; tokenIndex: number }> => {
+  const mover = listTokens[playerIndex]?.tokens[tokenIndex];
+  if (!mover || mover.typeTile !== EtypeTile.NORMAL) return [];
+
+  const onCell = getTokensOnCell(
+    listTokens,
+    mover.typeTile,
+    mover.positionTile
+  ).filter(
+    (t) => !(t.playerIndex === playerIndex && t.tokenIndex === tokenIndex)
+  );
+
+  if (isSafeCell(mover.typeTile, mover.positionTile, onCell)) return [];
+
+  const opponents = onCell.filter((t) => t.playerIndex !== playerIndex);
+  const byPlayer: Record<number, typeof opponents> = {};
+  opponents.forEach((o) => {
+    if (!byPlayer[o.playerIndex]) byPlayer[o.playerIndex] = [];
+    byPlayer[o.playerIndex].push(o);
+  });
+
+  const victims: Array<{ playerIndex: number; tokenIndex: number }> = [];
+  Object.values(byPlayer).forEach((tokens) => {
+    if (tokens.length === 1) {
+      victims.push({
+        playerIndex: tokens[0].playerIndex,
+        tokenIndex: tokens[0].tokenIndex,
+      });
+    }
+  });
+  return victims;
+};
+
 export const resolveLanding = (
   listTokens: IListTokens[],
   players: IPlayer[],
@@ -408,38 +487,15 @@ export const resolveLanding = (
   let captured = false;
   const reachedHome = mover.typeTile === EtypeTile.END;
 
-  if (mover.typeTile === EtypeTile.NORMAL) {
-    const onCell = getTokensOnCell(
-      copy,
-      mover.typeTile,
-      mover.positionTile
-    ).filter(
-      (t) => !(t.playerIndex === playerIndex && t.tokenIndex === tokenIndex)
+  const victims = findCaptureVictims(copy, playerIndex, tokenIndex);
+  victims.forEach((victim) => {
+    const victimPos = copy[victim.playerIndex].positionGame;
+    copy[victim.playerIndex].tokens[victim.tokenIndex] = sendTokenToJail(
+      copy[victim.playerIndex].tokens[victim.tokenIndex],
+      victimPos
     );
-
-    const safe = isSafeCell(mover.typeTile, mover.positionTile, onCell);
-
-    if (!safe) {
-      const opponents = onCell.filter((t) => t.playerIndex !== playerIndex);
-      const byPlayer: Record<number, typeof opponents> = {};
-      opponents.forEach((o) => {
-        if (!byPlayer[o.playerIndex]) byPlayer[o.playerIndex] = [];
-        byPlayer[o.playerIndex].push(o);
-      });
-
-      Object.values(byPlayer).forEach((tokens) => {
-        if (tokens.length === 1) {
-          const victim = tokens[0];
-          const victimPos = copy[victim.playerIndex].positionGame;
-          copy[victim.playerIndex].tokens[victim.tokenIndex] = sendTokenToJail(
-            copy[victim.playerIndex].tokens[victim.tokenIndex],
-            victimPos
-          );
-          captured = true;
-        }
-      });
-    }
-  }
+    captured = true;
+  });
 
   if (reachedHome) {
     const allHome = copy[playerIndex].tokens.every(

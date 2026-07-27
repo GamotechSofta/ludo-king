@@ -20,6 +20,7 @@ import {
   getRemainingDistance,
   resolveLanding,
   applyTokenCell,
+  buildReturnToJailPath,
 } from "./rules";
 
 const baseToken = (overrides: Partial<IToken> = {}): IToken => ({
@@ -256,6 +257,28 @@ describe("Ludo rules", () => {
     const result = resolveLanding(tokens, players, 0, 0);
     expect(result.captured).toBe(true);
     expect(result.listTokens[1].tokens[0].typeTile).toBe(EtypeTile.JAIL);
+  });
+
+  test("buildReturnToJailPath walks reverse to yard", () => {
+    const players = makePlayers(1);
+    const tokens = makeTokens(players);
+    const start = applyTokenCell(
+      tokens[0].tokens[0],
+      tokens[0].positionGame,
+      EtypeTile.NORMAL,
+      1
+    );
+    const path = buildReturnToJailPath(start, tokens[0].positionGame);
+    expect(path.length).toBeGreaterThan(0);
+    expect(path[path.length - 1]).toEqual({
+      typeTile: EtypeTile.JAIL,
+      positionTile: 0,
+    });
+    // First hop from tile 1 is reverse to tile 0 (red start) before jail
+    expect(path[0]).toEqual({
+      typeTile: EtypeTile.NORMAL,
+      positionTile: 0,
+    });
   });
 
   test("turn order cycles 0 → 1 → 0", () => {

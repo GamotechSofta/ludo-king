@@ -25,7 +25,7 @@ public class RoomPlayer {
     this.color = color;
     this.bot = bot;
     this.seatIndex = seatIndex;
-    this.botDifficulty = bot ? BotDifficulty.MEDIUM : null;
+    this.botDifficulty = bot ? BotDifficulty.HARD : null;
     this.ready = bot;
     this.avatar = bot ? "bot" : "default";
     this.rating = 1000;
