@@ -36,7 +36,7 @@ public class SecurityConfig {
   private final LudoProperties properties;
   private final UserService userService;
 
-  @Value("${ludo.platform.cors-allowed-origins:https://www.aakda.in,https://aakda.in,http://localhost:5173}")
+  @Value("${ludo.platform.cors-allowed-origins:https://www.aakda.in,https://aakda.in,http://localhost:5173,http://localhost:5174}")
   private String platformCorsOrigins;
 
   public SecurityConfig(LudoProperties properties, UserService userService) {
@@ -56,7 +56,7 @@ public class SecurityConfig {
         .headers(headers -> headers
             .frameOptions(frame -> frame.disable())
             .contentSecurityPolicy(csp -> csp.policyDirectives(
-                "frame-ancestors 'self' https://www.aakda.in https://aakda.in http://localhost:5173 http://localhost:3000 http://localhost:3043"
+                "frame-ancestors 'self' https://www.aakda.in https://aakda.in http://localhost:5173 http://localhost:5174 http://localhost:3000 http://localhost:3043"
             ))
         )
         .sessionManagement(session ->

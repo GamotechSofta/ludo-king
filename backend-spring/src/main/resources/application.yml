@@ -43,6 +43,11 @@ ludo:
     # 0 = winner-takes-pot. Or set WIN_PAYOUT / WIN_MULTIPLIER.
     win-multiplier: ${WIN_MULTIPLIER:0}
     win-payout: ${WIN_PAYOUT:0}
+  admin:
+    email: ${ADMIN_EMAIL:admin@ludo.local}
+    password: ${ADMIN_PASSWORD:admin123}
+    name: ${ADMIN_NAME:PotLudo Admin}
+    token-ttl-hours: ${ADMIN_TOKEN_TTL_HOURS:24}
 
 logging:
   level:
