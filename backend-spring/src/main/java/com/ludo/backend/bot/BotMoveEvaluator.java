@@ -22,8 +22,9 @@ import java.util.Map;
  * Experienced-player style move evaluation. Every legal move gets one comparable
  * score; higher always wins. Difficulty gates depth (lookahead, jail range, noise).
  *
- * <p>Priority bands (high → low): capture → home → smart jail exit → save threat
- * → safe star → future prediction → multi-pawn / progress.
+ * <p>Priority bands (high → low): HARD home-column finish → capture (significant) →
+ * home-column progress → home → smart jail exit → save threat → safe star → future
+ * prediction → multi-pawn / progress. EASY/MEDIUM unchanged.
  */
 final class BotMoveEvaluator {
 
@@ -33,8 +34,14 @@ final class BotMoveEvaluator {
   static final int JAIL_SETUP_NEAR_MAX = 12;
 
   // --- Lexicographic-style bands (must stay ordered) ---
+  /** HARD: pawn reaches center from home column — beats everything else. */
+  static final long BAND_HOME_COLUMN_FINISH = 600_000_000L;
   static final long BAND_CAPTURE = 500_000_000L;
+  /** HARD: advance inside home column — below capture, above jail/save. */
+  static final long BAND_HOME_COLUMN_PROGRESS = 400_000_000L;
   static final long BAND_HOME = 200_000_000L;
+  /** Victim this many steps from home → capture may interrupt home-column focus. */
+  static final int SIGNIFICANT_CAPTURE_REMAINING_MAX = HOME_STEPS + 10;
   static final long BAND_JAIL_SETUP_IMMEDIATE = 150_000_000L;
   static final long BAND_JAIL_SETUP_NEAR = 120_000_000L;
   static final long BAND_JAIL_MULTI_PAWN = 110_000_000L;
@@ -59,6 +66,10 @@ final class BotMoveEvaluator {
     final int activeCount;
     final int jailCount;
     final boolean hasAttackOpportunity;
+    /** Pawns currently on the colored home column (exit lane). HARD only. */
+    final int homeColumnPawnCount;
+    /** Min steps to HOME among home-column pawns; MAX_VALUE if none. */
+    final int closestHomeColumnSteps;
 
     Context(
         LudoColor color,
@@ -78,6 +89,22 @@ final class BotMoveEvaluator {
       this.jailCount = countJail(ownPositions);
       this.hasAttackOpportunity =
           hasAnyAttackOpportunity(color, seat, ownPositions, allPositions, seatColors);
+      int hcCount = 0;
+      int closestHc = Integer.MAX_VALUE;
+      if (ownPositions != null) {
+        for (Integer p : ownPositions) {
+          int pos = p == null ? JAIL : p;
+          if (isExit(pos)) {
+            hcCount++;
+            int steps = homeColumnStepsToFinish(pos);
+            if (steps < closestHc) {
+              closestHc = steps;
+            }
+          }
+        }
+      }
+      this.homeColumnPawnCount = hcCount;
+      this.closestHomeColumnSteps = closestHc;
     }
 
     boolean isEasy() {
@@ -130,11 +157,25 @@ final class BotMoveEvaluator {
 
     VictimInfo victim = findCaptureVictim(ctx.seat, to, ctx.allPositions, ctx.seatColors);
     if (victim != null) {
-      score += scoreCapture(ctx, from, to, victim);
+      long captureScore = scoreCapture(ctx, from, to, victim);
+      if (ctx.isHard()
+          && ctx.homeColumnPawnCount > 0
+          && !isExit(from)
+          && !isSignificantCapture(victim, to)) {
+        captureScore = Math.min(captureScore, BAND_HOME_COLUMN_PROGRESS - 100_000L);
+      }
+      score += captureScore;
     }
 
     if (isHome(to)) {
-      score += BAND_HOME;
+      if (ctx.isHard() && isExit(from)) {
+        score += BAND_HOME_COLUMN_FINISH;
+        score += Math.max(0, EXIT_LEN - homeColumnStepsToFinish(from)) * 1_000L;
+      } else {
+        score += BAND_HOME;
+      }
+    } else if (ctx.isHard() && isExit(from) && isExit(to)) {
+      score += scoreHomeColumnProgress(ctx, from, to);
     }
 
     if (isJail(from) && dice == 6) {
@@ -200,6 +241,41 @@ final class BotMoveEvaluator {
       score += 10L;
     }
 
+    return score;
+  }
+
+  /** Steps from an exit-lane cell to the center (HOME). */
+  static int homeColumnStepsToFinish(int pos) {
+    if (!isExit(pos)) {
+      return Integer.MAX_VALUE;
+    }
+    return EXIT_LEN - exitIndex(pos);
+  }
+
+  /**
+   * Opponent capture valuable enough to pull the bot off a home-column pawn
+   * (victim close to winning).
+   */
+  static boolean isSignificantCapture(VictimInfo victim, int landPos) {
+    int rem = remainingDistance(victim.color, landPos);
+    if (rem == Integer.MAX_VALUE) {
+      return false;
+    }
+    return rem <= SIGNIFICANT_CAPTURE_REMAINING_MAX;
+  }
+
+  /** HARD: reward advancing the pawn closest to HOME inside the exit lane. */
+  private static long scoreHomeColumnProgress(Context ctx, int from, int to) {
+    long score = BAND_HOME_COLUMN_PROGRESS;
+    int remAfter = homeColumnStepsToFinish(to);
+    score += Math.max(0, EXIT_LEN - remAfter + 1) * 10_000L;
+    if (homeColumnStepsToFinish(from) == ctx.closestHomeColumnSteps) {
+      score += 25_000L;
+    }
+    // Two-turn window: best case two sixes (12 pips)
+    if (remAfter <= 12) {
+      score += 30_000L;
+    }
     return score;
   }
 
