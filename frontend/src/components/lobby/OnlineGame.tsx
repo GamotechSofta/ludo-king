@@ -39,6 +39,7 @@ import {
   applyTokenCell,
   buildMovePath,
   clearDiceAvailable,
+  findCaptureVictims,
 } from "../game/rules";
 import { pickHumanAutoMoveFromSnapshot } from "../game/humanAutoMove";
 import type { IGameSnapshot, IGuestUser, IResultEntry } from "./types";
@@ -612,7 +613,9 @@ const OnlineGame = ({
       seat: number,
       tokenIndex: number,
       diceValue: TDicevalues,
-      startServerPos: number | null
+      startServerPos: number | null,
+      /** Keep animatingRef/isBusy locked for capture return after the hop. */
+      keepAnimLock = false
     ) => {
       // Lock display FIRST — blocks sync from painting destination
       animatingRef.current = true;
@@ -743,11 +746,41 @@ const OnlineGame = ({
       listTokensRef.current = working;
 
       onlinePerf.markRender(performance.now() - t0);
-      animatingRef.current = false;
-      setIsBusy(false);
+      if (!keepAnimLock) {
+        animatingRef.current = false;
+        setIsBusy(false);
+      }
       return true;
     },
     [mySeat]
+  );
+
+  /** Only the captured pawn walks back — never other pawns on the board. */
+  const runPostMoveCaptureReturn = useCallback(
+    async (moverSeat: number, moverToken: number): Promise<boolean> => {
+      const captives: CaptureVictim[] = findCaptureVictims(
+        listTokensRef.current,
+        moverSeat,
+        moverToken
+      );
+      if (!captives.length) {
+        return false;
+      }
+      playSound("capture");
+      animatingRef.current = true;
+      setIsBusy(true);
+      await runReturnToJailAnimations(
+        listTokensRef.current,
+        captives,
+        (next) => {
+          listTokensRef.current = next;
+          setListTokens(next);
+        },
+        { cancel: animCancelRef.current }
+      );
+      return true;
+    },
+    []
   );
 
   // Lock BEFORE browser paints MOVE destination into any derived UI
@@ -986,48 +1019,21 @@ const OnlineGame = ({
           moved.tokenIndex,
           diceValue as TDicevalues,
           // Already placed above — pass null to skip second snap
-          null
+          null,
+          true
         );
         if (cancelled) return;
         if (seq !== applySeqRef.current) return;
         lastAnimatedMoveSeqRef.current = moveSeq;
         pendingDiceRef.current = null;
         suppressMoveAnimRef.current = false;
-        if (ok && prev) {
-          const colors = seatColorsFromSnapshot(snap);
-          const captives: CaptureVictim[] = [];
-          for (let s = 0; s < colors.length; s++) {
-            if (s === moved.seat) continue;
-            const color = colors[s];
-            const a = prev.tokenPositions?.[color] || [];
-            const b = snap.tokenPositions?.[color] || [];
-            for (let i = 0; i < 4; i++) {
-              if ((a[i] ?? -1) >= 0 && (b[i] ?? -1) === -1) {
-                captives.push({ playerIndex: s, tokenIndex: i });
-              }
-            }
-          }
-          if (captives.length) {
-            playSound("capture");
-            animatingRef.current = true;
-            setIsBusy(true);
-            await runReturnToJailAnimations(
-              listTokensRef.current,
-              captives,
-              (next) => {
-                listTokensRef.current = next;
-                setListTokens(next);
-              },
-              {
-                cancel: animCancelRef.current,
-              }
-            );
-            if (cancelled) return;
-            if (seq !== applySeqRef.current) return;
-            animatingRef.current = false;
-            setIsBusy(false);
-          }
+        if (ok) {
+          await runPostMoveCaptureReturn(moved.seat, moved.tokenIndex);
+          if (cancelled) return;
+          if (seq !== applySeqRef.current) return;
         }
+        animatingRef.current = false;
+        setIsBusy(false);
         if (
           snap.currentSeatIndex !== moved.seat &&
           snap.phase === "AWAITING_ROLL"
@@ -1061,7 +1067,7 @@ const OnlineGame = ({
     return () => {
       cancelled = true;
     };
-  }, [snapshot, mySeat, syncBoardFromSnapshot, runMoveAnimation, beginDiceRollAnimation, waitForDiceRollAnimation]);
+  }, [snapshot, mySeat, syncBoardFromSnapshot, runMoveAnimation, runPostMoveCaptureReturn, beginDiceRollAnimation, waitForDiceRollAnimation]);
 
   const handleSelectDice = useCallback(
     (_diceValue?: TDicevalues) => {
@@ -1129,8 +1135,15 @@ const OnlineGame = ({
         mySeat,
         tokenIndex,
         diceValue,
-        startPos
+        startPos,
+        true
       );
+      if (ok) {
+        await runPostMoveCaptureReturn(mySeat, tokenIndex);
+      }
+      animatingRef.current = false;
+      isBusyRef.current = false;
+      setIsBusy(false);
       suppressMoveAnimRef.current = false;
       const queued = pendingSnapRef.current.splice(0);
       const latest = queued.length ? queued[queued.length - 1] : null;
@@ -1153,7 +1166,7 @@ const OnlineGame = ({
       }
       return true;
     },
-    [snapshot, mySeat, isActionInFlight, runMoveAnimation, moveToken, syncBoardFromSnapshot, waitForDiceRollAnimation]
+    [snapshot, mySeat, isActionInFlight, runMoveAnimation, runPostMoveCaptureReturn, moveToken, syncBoardFromSnapshot, waitForDiceRollAnimation]
   );
 
   const scheduleHumanAutoMove = useCallback(
