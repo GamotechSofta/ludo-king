@@ -244,27 +244,18 @@ final class BotMoveEvaluator {
             ctx.color, ctx.seat, ctx.allPositions, ctx.seatColors);
     int look = ctx.jailLookaheadMax();
 
+    // Mutually exclusive primary reasons so jail never stacks above HOME
     if (nearest >= 1 && nearest <= JAIL_SETUP_IMMEDIATE_MAX) {
       score += BAND_JAIL_SETUP_IMMEDIATE;
       score += (JAIL_SETUP_IMMEDIATE_MAX - nearest + 1) * 100L;
     } else if (nearest >= 1 && nearest <= look) {
       score += BAND_JAIL_SETUP_NEAR;
       score += (look - nearest + 1) * 50L;
-    }
-
-    // Need a second (or first) pawn for board control
-    if (ctx.activeCount <= 1 && ctx.jailCount >= 1) {
+    } else if (ctx.activeCount <= 1 && ctx.jailCount >= 1) {
+      // Board control: open a second pawn (or first when all jailed)
       score += BAND_JAIL_MULTI_PAWN;
-      if (ctx.activeCount == 0) {
-        score += 5_000L;
-      } else {
-        // Exactly one active — strongly prefer opening a second
-        score += 8_000L;
-      }
-    }
-
-    // No current attacking chances with pieces already out
-    if (ctx.activeCount >= 1 && !ctx.hasAttackOpportunity) {
+      score += ctx.activeCount == 0 ? 5_000L : 8_000L;
+    } else if (ctx.activeCount >= 1 && !ctx.hasAttackOpportunity) {
       score += BAND_JAIL_NO_ATTACK;
     }
 

@@ -285,6 +285,12 @@ export function useGameSocket(
             inFlightActionRef.current = false;
           });
       }, 2500);
+      // Absolute safety: never leave roll/move gated forever
+      window.setTimeout(() => {
+        if (inFlightActionRef.current && lastSeqRef.current <= seqAtSend) {
+          inFlightActionRef.current = false;
+        }
+      }, 8000);
     },
     [applySnapshot]
   );
