@@ -45,12 +45,15 @@ export default function SummaryCards({ summary }) {
     {
       label: "Operators",
       value: formatNumber(
-        pick(summary, ["totalOperators", "operatorsCount", "operators"], null) ??
-          (Array.isArray(summary?.operators)
-            ? summary.operators.length
-            : summary?.byOperator
-              ? Object.keys(summary.byOperator).length
-              : 0)
+        (() => {
+          const n = pick(summary, ["totalOperators", "operatorsCount"], null);
+          if (n != null && typeof n !== "object") return n;
+          if (Array.isArray(summary?.operators)) return summary.operators.length;
+          if (summary?.byOperator && typeof summary.byOperator === "object") {
+            return Object.keys(summary.byOperator).length;
+          }
+          return 0;
+        })()
       ),
     },
     {

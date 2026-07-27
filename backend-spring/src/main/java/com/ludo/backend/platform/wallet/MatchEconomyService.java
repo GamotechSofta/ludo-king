@@ -13,9 +13,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * Model A — entry fee / bet per match.
- *
- * Txn ids: LUDO_ENTRY_{matchId}_{userId}, LUDO_WIN_*, LUDO_REFUND_*
+ * Match ledger for admin P&amp;L + optional Aakda wallet.
+ * Always writes local {@code match_economy} rows for human seats (incl. FREE / wallet-off)
+ * so the admin dashboard is populated. Wallet debit/credit only when {@link #isLive()}.
  */
 @Service
 public class MatchEconomyService {
@@ -72,13 +72,10 @@ public class MatchEconomyService {
   }
 
   public void reserveEntry(String matchId, String userId, double amount) {
-    if (!isLive() || userId == null || userId.startsWith("bot-")) {
+    if (userId == null || userId.startsWith("bot-") || matchId == null) {
       return;
     }
-    double fee = WalletProperties.money(amount);
-    if (fee <= 0) {
-      return;
-    }
+    double fee = WalletProperties.money(Math.max(0, amount));
     var existing = repository.findByMatchIdAndUserId(matchId, userId);
     if (existing.isPresent()) {
       String st = existing.get().getStatus();
@@ -91,10 +88,12 @@ public class MatchEconomyService {
     }
 
     String txnId = "LUDO_ENTRY_" + matchId + "_" + userId;
-    AakdaWalletClient.WalletResult result =
-        wallet.debit(userId, fee, txnId, props.gameId(), matchId);
-    if (!result.success()) {
-      throw new ResponseStatusException(HttpStatus.PAYMENT_REQUIRED, "Insufficient balance");
+    if (isLive() && fee > 0) {
+      AakdaWalletClient.WalletResult result =
+          wallet.debit(userId, fee, txnId, props.gameId(), matchId);
+      if (!result.success()) {
+        throw new ResponseStatusException(HttpStatus.PAYMENT_REQUIRED, "Insufficient balance");
+      }
     }
 
     MatchEconomyEntry entry = existing.orElseGet(MatchEconomyEntry::new);
@@ -107,7 +106,13 @@ public class MatchEconomyService {
     entry.setCreatedAt(entry.getCreatedAt() == null ? Instant.now() : entry.getCreatedAt());
     entry.setUpdatedAt(Instant.now());
     repository.save(entry);
-    log.info("reserved entry matchId={} userId={} txn={} fee={}", matchId, userId, txnId, fee);
+    log.info(
+        "reserved entry matchId={} userId={} fee={} walletLive={}",
+        matchId,
+        userId,
+        fee,
+        isLive()
+    );
   }
 
   public void markPlaying(String matchId) {
@@ -121,7 +126,7 @@ public class MatchEconomyService {
   }
 
   public void refundEntry(String matchId, String userId) {
-    if (!isLive() || userId == null || userId.startsWith("bot-")) {
+    if (userId == null || userId.startsWith("bot-")) {
       return;
     }
     MatchEconomyEntry entry = repository.findByMatchIdAndUserId(matchId, userId).orElse(null);
@@ -133,24 +138,26 @@ public class MatchEconomyService {
       return;
     }
     String refundTxn = "LUDO_REFUND_" + matchId + "_" + userId;
-    AakdaWalletClient.WalletResult result = wallet.rollback(
-        userId, entry.getEntryTxnId(), entry.getEntryAmount(), props.gameId(), matchId);
-    if (!result.success()) {
-      result = wallet.credit(userId, entry.getEntryAmount(), refundTxn, props.gameId(), matchId);
-    }
-    if (result.success()) {
-      entry.setStatus(MatchEconomyEntry.REFUNDED);
+    if (isLive() && entry.getEntryAmount() > 0) {
+      AakdaWalletClient.WalletResult result = wallet.rollback(
+          userId, entry.getEntryTxnId(), entry.getEntryAmount(), props.gameId(), matchId);
+      if (!result.success()) {
+        result = wallet.credit(userId, entry.getEntryAmount(), refundTxn, props.gameId(), matchId);
+      }
+      if (!result.success()) {
+        log.error("refund FAILED matchId={} userId={} status={}", matchId, userId, result.status());
+        return;
+      }
       entry.setSettleTxnId(result.transactionId() != null ? result.transactionId() : refundTxn);
-      entry.setUpdatedAt(Instant.now());
-      repository.save(entry);
-      log.info("refunded entry matchId={} userId={}", matchId, userId);
-    } else {
-      log.error("refund FAILED matchId={} userId={} status={}", matchId, userId, result.status());
     }
+    entry.setStatus(MatchEconomyEntry.REFUNDED);
+    entry.setUpdatedAt(Instant.now());
+    repository.save(entry);
+    log.info("refunded entry matchId={} userId={}", matchId, userId);
   }
 
   public void refundAllHumans(Room room) {
-    if (!isLive() || room == null) {
+    if (room == null) {
       return;
     }
     for (RoomPlayer p : room.getPlayers()) {
@@ -161,20 +168,18 @@ public class MatchEconomyService {
   }
 
   public void settleMatch(Room room, GameSnapshot snap) {
-    if (!isLive() || room == null || snap == null) {
+    if (room == null || snap == null) {
       return;
     }
     if (!GameEngineService.PHASE_FINISHED.equals(snap.getPhase())) {
       return;
     }
+
+    ensureHumanLedgerRows(room);
+
     Integer winnerSeat = snap.getWinnerSeat();
     if (winnerSeat == null || winnerSeat < 0 || winnerSeat >= room.getPlayers().size()) {
       log.warn("settleMatch no winnerSeat matchId={}", room.getId());
-      return;
-    }
-    RoomPlayer winner = room.getPlayers().get(winnerSeat);
-    if (winner.isBot()) {
-      log.info("settleMatch bot won matchId={} — no human credit", room.getId());
       for (MatchEconomyEntry e : repository.findByMatchId(room.getId())) {
         if (MatchEconomyEntry.PLAYING.equals(e.getStatus())
             || MatchEconomyEntry.RESERVED.equals(e.getStatus())) {
@@ -186,9 +191,19 @@ public class MatchEconomyService {
       return;
     }
 
+    RoomPlayer winner = room.getPlayers().get(winnerSeat);
     MatchEconomyEntry winEntry =
         repository.findByMatchIdAndUserId(room.getId(), winner.getUserId()).orElse(null);
     if (winEntry != null && MatchEconomyEntry.SETTLED.equals(winEntry.getStatus())) {
+      // Still mark any leftover RESERVED/PLAYING siblings
+      for (MatchEconomyEntry e : repository.findByMatchId(room.getId())) {
+        if (MatchEconomyEntry.PLAYING.equals(e.getStatus())
+            || MatchEconomyEntry.RESERVED.equals(e.getStatus())) {
+          e.setStatus(MatchEconomyEntry.SETTLED);
+          e.setUpdatedAt(Instant.now());
+          repository.save(e);
+        }
+      }
       return;
     }
 
@@ -197,7 +212,9 @@ public class MatchEconomyService {
         .mapToDouble(MatchEconomyEntry::getEntryAmount)
         .sum();
     double payout;
-    if (props.winPayout() > 0) {
+    if (winner.isBot()) {
+      payout = 0;
+    } else if (props.winPayout() > 0) {
       payout = WalletProperties.money(props.winPayout());
     } else if (props.winMultiplier() > 0) {
       payout = WalletProperties.money(
@@ -207,11 +224,15 @@ public class MatchEconomyService {
     }
 
     String winTxn = "LUDO_WIN_" + room.getId() + "_" + winner.getUserId();
-    AakdaWalletClient.WalletResult result =
-        wallet.credit(winner.getUserId(), payout, winTxn, props.gameId(), room.getId());
-    if (!result.success()) {
-      log.error("settle credit FAILED matchId={} userId={}", room.getId(), winner.getUserId());
-      return;
+    if (isLive() && !winner.isBot() && payout > 0) {
+      AakdaWalletClient.WalletResult result =
+          wallet.credit(winner.getUserId(), payout, winTxn, props.gameId(), room.getId());
+      if (!result.success()) {
+        log.error("settle credit FAILED matchId={} userId={}", room.getId(), winner.getUserId());
+        winTxn = "LUDO_WIN_LOCAL_" + room.getId() + "_" + winner.getUserId();
+      }
+    } else {
+      winTxn = "LUDO_WIN_LOCAL_" + room.getId() + "_" + winner.getUserId();
     }
 
     for (MatchEconomyEntry e : repository.findByMatchId(room.getId())) {
@@ -220,12 +241,42 @@ public class MatchEconomyService {
       }
       e.setStatus(MatchEconomyEntry.SETTLED);
       e.setUpdatedAt(Instant.now());
-      if (e.getUserId().equals(winner.getUserId())) {
+      if (!winner.isBot() && e.getUserId().equals(winner.getUserId())) {
         e.setSettleTxnId(winTxn);
         e.setSettleAmount(payout);
       }
       repository.save(e);
     }
-    log.info("settled matchId={} winner={} payout={}", room.getId(), winner.getUserId(), payout);
+    log.info(
+        "settled matchId={} winner={} payout={} walletLive={}",
+        room.getId(),
+        winner.getUserId(),
+        payout,
+        isLive()
+    );
+  }
+
+  private void ensureHumanLedgerRows(Room room) {
+    double fee = room.getEntryFee() > 0
+        ? WalletProperties.money(room.getEntryFee())
+        : 0;
+    for (RoomPlayer p : room.getPlayers()) {
+      if (p.isBot() || p.getUserId() == null) {
+        continue;
+      }
+      if (repository.findByMatchIdAndUserId(room.getId(), p.getUserId()).isPresent()) {
+        continue;
+      }
+      MatchEconomyEntry entry = new MatchEconomyEntry();
+      entry.setId(MatchEconomyEntry.idFor(room.getId(), p.getUserId()));
+      entry.setMatchId(room.getId());
+      entry.setUserId(p.getUserId());
+      entry.setEntryTxnId("LUDO_ENTRY_LOCAL_" + room.getId() + "_" + p.getUserId());
+      entry.setEntryAmount(fee);
+      entry.setStatus(MatchEconomyEntry.PLAYING);
+      entry.setCreatedAt(Instant.now());
+      entry.setUpdatedAt(Instant.now());
+      repository.save(entry);
+    }
   }
 }
