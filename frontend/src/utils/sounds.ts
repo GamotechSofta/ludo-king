@@ -62,7 +62,7 @@ export const playSound = (name: TGameSound, volume?: number) => {
   }
 };
 
-/** Looping BGM once actual gameplay starts (first roll / move), not on board load. */
+/** Looping BGM once a pawn actually moves (first hop), not on dice roll alone. */
 let matchMusicStarted = false;
 
 export const beginMatchMusic = (volume = BG_MUSIC_VOLUME) => {

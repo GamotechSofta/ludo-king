@@ -318,7 +318,6 @@ const OnlineGame = ({
       if (turnHandoff) {
         lastProcessedRollIdRef.current = "";
         lastDiceSigRef.current = `${snap.currentSeatIndex}|${snap.phase}|`;
-        playSound("passingNext");
         diceOwnerSeatRef.current = snap.currentSeatIndex;
         applyDiceOwnerTurn(snap);
         setActionsTurn((prevActions) =>
@@ -348,7 +347,6 @@ const OnlineGame = ({
         turnPassed &&
         snap.phase === "AWAITING_ROLL"
       ) {
-        playSound("passingNext");
         diceOwnerSeatRef.current = snap.currentSeatIndex;
       } else if (!animatingRef.current && turnPassed) {
         diceOwnerSeatRef.current = snap.currentSeatIndex;
@@ -519,6 +517,8 @@ const OnlineGame = ({
         return false;
       }
 
+      beginMatchMusic();
+
       setActionsTurn((prev) => ({
         ...prev,
         isDisabledUI: true,
@@ -636,7 +636,6 @@ const OnlineGame = ({
         if (snap.currentSeatIndex !== mySeat) {
           playSound("diceRolling");
         }
-        beginMatchMusic();
         setPlayers(playersForView(snap, mySeat, roomId));
         diceOwnerSeatRef.current = snap.currentSeatIndex;
         applyDiceOwnerTurn(snap);
@@ -885,7 +884,6 @@ const OnlineGame = ({
       }
       rollingRef.current = true;
       playSound("diceRolling");
-      beginMatchMusic();
       const nextActions = {
         ...actionsTurnRef.current,
         disabledDice: true,

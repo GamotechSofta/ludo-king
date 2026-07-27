@@ -232,6 +232,8 @@ const Game = ({
         return;
       }
 
+      beginMatchMusic();
+
       setActionsTurn((prev) => {
         const next = {
           ...prev,
@@ -401,7 +403,6 @@ const Game = ({
 
       // Sync ref immediately so rollDone can read diceValue without waiting for React
       playSound("diceRolling");
-      beginMatchMusic();
       setActionsTurn((current) => {
         const next = getRandomValueDice(current, diceValue);
         rollSeqRef.current += 1;
