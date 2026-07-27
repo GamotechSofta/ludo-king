@@ -34,6 +34,7 @@ export interface IGameEvent {
   turnStartedAt?: string;
   turnSecondsRemaining?: number;
   consecutiveSixes?: number;
+  consecutiveTimeouts?: number[];
   legalTokenIndexes?: number[];
   legalMoves?: Array<{ tokenIndex: number; diceIndex: number }>;
   finished?: boolean[];
@@ -88,6 +89,7 @@ function eventToSnapshot(raw: unknown): IGameSnapshot | null {
       turnStartedAt: ev.turnStartedAt,
       turnSecondsRemaining: ev.turnSecondsRemaining,
       consecutiveSixes: ev.consecutiveSixes,
+      consecutiveTimeouts: ev.consecutiveTimeouts,
       lastActionType: ev.lastActionType || ev.type || null,
       lastActionSeat: ev.seat,
       lastActionTokenIndex: ev.tokenIndex,

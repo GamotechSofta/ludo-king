@@ -74,6 +74,8 @@ export interface IGameSnapshot {
   turnTimeoutSeconds?: number;
   turnSecondsRemaining?: number;
   consecutiveSixes?: number;
+  /** Per-seat streak of consecutive turn timeouts (AFK warning). */
+  consecutiveTimeouts?: number[];
   bonusRoll?: boolean;
   lastActionType?: string | null;
   lastActionSeat?: number | null;

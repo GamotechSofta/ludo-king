@@ -17,6 +17,7 @@ public class GameEvent {
   public static final String TURN_CHANGE = "TURN_CHANGE";
   public static final String PASS = "PASS";
   public static final String TIMEOUT = "TIMEOUT";
+  public static final String ELIMINATED = "ELIMINATED";
   public static final String FINISHED = "FINISHED";
   public static final String STATE = "STATE";
   public static final String PLAYER_JOIN = "PLAYER_JOIN";
@@ -92,6 +93,7 @@ public class GameEvent {
       case "MOVE" -> MOVE;
       case "PASS" -> PASS;
       case "TIMEOUT" -> TIMEOUT;
+      case "ELIMINATED" -> ELIMINATED;
       default -> STATE;
     };
   }

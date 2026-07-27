@@ -24,6 +24,7 @@ public class GameSnapshot {
   private int turnTimeoutSeconds = 20;
   private int turnSecondsRemaining = 20;
   private int consecutiveSixes;
+  private List<Integer> consecutiveTimeouts = new ArrayList<>();
   private boolean[] finished;
   private boolean[] isBot;
   private List<String> userIds = new ArrayList<>();
@@ -164,6 +165,14 @@ public class GameSnapshot {
 
   public void setConsecutiveSixes(int consecutiveSixes) {
     this.consecutiveSixes = consecutiveSixes;
+  }
+
+  public List<Integer> getConsecutiveTimeouts() {
+    return consecutiveTimeouts;
+  }
+
+  public void setConsecutiveTimeouts(List<Integer> consecutiveTimeouts) {
+    this.consecutiveTimeouts = consecutiveTimeouts;
   }
 
   public boolean[] getFinished() {

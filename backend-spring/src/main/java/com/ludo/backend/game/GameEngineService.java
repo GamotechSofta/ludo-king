@@ -39,6 +39,7 @@ import org.springframework.stereotype.Service;
  *   <li>Own stack max 2 (block); third token cannot join</li>
  *   <li>Opponent blocks: can pass through; cannot land on / capture</li>
  *   <li>AFK timeout 20s: turn is passed to the next player</li>
+ *   <li>5 consecutive timeouts → AFK eliminated (skipped, tokens removed)</li>
  *   <li>Multi-winner rankings continue until ≤1 unfinished</li>
  *   <li>Team mode: not implemented</li>
  * </ul>
@@ -53,6 +54,7 @@ public class GameEngineService {
   public static final String PHASE_FINISHED = "FINISHED";
 
   public static final int TURN_TIMEOUT_SECONDS = 20;
+  public static final int MAX_CONSECUTIVE_TIMEOUTS = 5;
   private static final int MAX_CONSECUTIVE_SIXES = 3;
 
   private final ConcurrentHashMap<String, MatchRuntime> matches = new ConcurrentHashMap<>();
@@ -82,6 +84,7 @@ public class GameEngineService {
     final int[][] tokens;
     final boolean[] finished;
     final int[] ranking;
+    final int[] consecutiveTimeouts;
     final List<Integer> diceList = new ArrayList<>();
     final ReentrantLock lock = new ReentrantLock();
     int currentSeat;
@@ -109,6 +112,7 @@ public class GameEngineService {
       this.tokens = new int[maxPlayers][4];
       this.finished = new boolean[maxPlayers];
       this.ranking = new int[maxPlayers];
+      this.consecutiveTimeouts = new int[maxPlayers];
       this.lastActionType = null;
       this.lastActionSeat = null;
       this.lastActionTokenIndex = null;
@@ -189,6 +193,11 @@ public class GameEngineService {
         maxRank = Math.max(maxRank, rt.ranking[i]);
       }
       rt.nextRank = maxRank + 1;
+    }
+    if (snap.getConsecutiveTimeouts() != null) {
+      for (int i = 0; i < rt.maxPlayers && i < snap.getConsecutiveTimeouts().size(); i++) {
+        rt.consecutiveTimeouts[i] = snap.getConsecutiveTimeouts().get(i);
+      }
     }
 
     for (int s = 0; s < rt.maxPlayers; s++) {
@@ -369,9 +378,22 @@ public class GameEngineService {
       }
 
       int seat = rt.currentSeat;
+      if (rt.finished[seat]) {
+        nextTurn(rt);
+        return snapshot(rt);
+      }
       clearDice(rt);
+      rt.consecutiveTimeouts[seat] += 1;
+      boolean eliminated = rt.consecutiveTimeouts[seat] >= MAX_CONSECUTIVE_TIMEOUTS;
+      if (eliminated) {
+        eliminateAfk(rt, seat);
+      }
       nextTurn(rt);
-      recordAction(rt, "TIMEOUT", seat, null, null);
+      if (eliminated) {
+        recordAction(rt, "ELIMINATED", seat, null, null);
+      } else {
+        recordAction(rt, "TIMEOUT", seat, null, null);
+      }
       return snapshot(rt);
     } finally {
       rt.lock.unlock();
@@ -403,6 +425,8 @@ public class GameEngineService {
     if (!rt.diceList.isEmpty()) {
       throw new IllegalStateException("Dice already rolled this turn");
     }
+
+    resetTimeoutStreak(rt, seat);
 
     // Cryptographically sound RNG; client never supplies this value
     int value = secureRandom.nextInt(6) + 1;
@@ -461,6 +485,8 @@ public class GameEngineService {
     if (!canUseDice(rt, seat, tokenIndex, dice)) {
       throw new IllegalStateException("Illegal move");
     }
+
+    resetTimeoutStreak(rt, seat);
 
     boolean usedSix = dice == 6;
     int from = rt.tokens[seat][tokenIndex];
@@ -540,6 +566,47 @@ public class GameEngineService {
     rt.lastRollWasSix = false;
   }
 
+  private void resetTimeoutStreak(MatchRuntime rt, int seat) {
+    if (seat >= 0 && seat < rt.maxPlayers) {
+      rt.consecutiveTimeouts[seat] = 0;
+    }
+  }
+
+  /** 5 consecutive turn timeouts → remove player from the match. */
+  private void eliminateAfk(MatchRuntime rt, int seat) {
+    if (rt.finished[seat]) {
+      return;
+    }
+    rt.finished[seat] = true;
+    int rankedCount = 0;
+    for (int i = 0; i < rt.maxPlayers; i++) {
+      if (i != seat && rt.finished[i] && rt.ranking[i] > 0) {
+        rankedCount++;
+      }
+    }
+    rt.ranking[seat] = rt.maxPlayers - rankedCount;
+    Arrays.fill(rt.tokens[seat], JAIL);
+    sealLastPlaceIfNeeded(rt);
+  }
+
+  private void sealLastPlaceIfNeeded(MatchRuntime rt) {
+    int unfinished = 0;
+    int last = -1;
+    for (int i = 0; i < rt.maxPlayers; i++) {
+      if (!rt.finished[i]) {
+        unfinished++;
+        last = i;
+      }
+    }
+    if (unfinished <= 1) {
+      if (last >= 0 && !rt.finished[last]) {
+        rt.finished[last] = true;
+        rt.ranking[last] = rt.nextRank++;
+      }
+      rt.phase = PHASE_FINISHED;
+    }
+  }
+
   private void checkFinished(MatchRuntime rt, int seat) {
     for (int t = 0; t < 4; t++) {
       if (!isHome(rt.tokens[seat][t])) {
@@ -551,20 +618,14 @@ public class GameEngineService {
       rt.ranking[seat] = rt.nextRank++;
     }
     int unfinished = 0;
-    int last = -1;
     for (int i = 0; i < rt.maxPlayers; i++) {
       if (!rt.finished[i]) {
         unfinished++;
-        last = i;
       }
     }
     // Continue for rankings until ≤1 unfinished, then seal last place
     if (unfinished <= 1) {
-      if (last >= 0 && !rt.finished[last]) {
-        rt.finished[last] = true;
-        rt.ranking[last] = rt.nextRank++;
-      }
-      rt.phase = PHASE_FINISHED;
+      sealLastPlaceIfNeeded(rt);
     }
   }
 
@@ -788,6 +849,11 @@ public class GameEngineService {
         Math.max(0, (int) (TURN_TIMEOUT_SECONDS - elapsed))
     );
     snap.setConsecutiveSixes(rt.consecutiveSixes);
+    List<Integer> timeoutStreak = new ArrayList<>(rt.maxPlayers);
+    for (int s = 0; s < rt.maxPlayers; s++) {
+      timeoutStreak.add(rt.consecutiveTimeouts[s]);
+    }
+    snap.setConsecutiveTimeouts(timeoutStreak);
     // Same seat still rolling after a MOVE = bonus (six / capture / home)
     boolean bonusAfterMove =
         PHASE_ROLL.equals(rt.phase)

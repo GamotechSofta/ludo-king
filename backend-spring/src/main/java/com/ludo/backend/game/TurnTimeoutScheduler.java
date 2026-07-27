@@ -53,6 +53,11 @@ public class TurnTimeoutScheduler {
           continue;
         }
         gameEventBus.publishSnapshot(roomId, after);
+        if (GameEngineService.PHASE_FINISHED.equals(after.getPhase())) {
+          roomService.getRoom(roomId).ifPresent(
+              room -> roomService.settleIfFinished(room, after)
+          );
+        }
         maybeScheduleBot(roomId);
       } catch (Exception ignored) {
         // room may have ended mid-tick
