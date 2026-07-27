@@ -21,6 +21,10 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
 /**
@@ -42,10 +46,13 @@ public class RoomService {
   private final MatchEconomyService matchEconomy;
   private final MatchmakingEventPublisher events;
   private final ObjectMapper objectMapper;
+  private final MongoTemplate mongoTemplate;
   private final SecureRandom random = new SecureRandom();
 
   private final ConcurrentHashMap<String, ConcurrentLinkedQueue<QueueEntry>> queues =
       new ConcurrentHashMap<>();
+  /** Per matchmaking bucket lock so concurrent 2P joins share one WAITING room. */
+  private final ConcurrentHashMap<String, Object> joinLocks = new ConcurrentHashMap<>();
 
   public RoomService(
       RoomRepository roomRepository,
@@ -53,7 +60,8 @@ public class RoomService {
       @Autowired(required = false) RedisMatchQueue redisMatchQueue,
       MatchEconomyService matchEconomy,
       MatchmakingEventPublisher events,
-      ObjectMapper objectMapper
+      ObjectMapper objectMapper,
+      MongoTemplate mongoTemplate
   ) {
     this.roomRepository = roomRepository;
     this.gameEngineService = gameEngineService;
@@ -61,6 +69,7 @@ public class RoomService {
     this.matchEconomy = matchEconomy;
     this.events = events;
     this.objectMapper = objectMapper;
+    this.mongoTemplate = mongoTemplate;
   }
 
   public record QueueEntry(String userId, String username, Instant enqueuedAt) {
@@ -83,7 +92,10 @@ public class RoomService {
       throw new IllegalArgumentException("Invalid bet amount");
     }
 
-    // One player → one room (ignore duplicate JOIN_QUEUE)
+    // Free finished / dead rooms before matching so rematch always gets a fresh room
+    releaseStaleRoomsForUser(userId);
+
+    // One player → one room (ignore duplicate JOIN_QUEUE). Finished / left matches are ignored.
     Optional<Room> existing = findActiveRoomForUser(userId);
     if (existing.isPresent()) {
       Room room = existing.get();
@@ -105,58 +117,71 @@ public class RoomService {
         "joinedAt", Instant.now().toString()
     ));
 
-    List<Room> waiting = roomRepository
-        .findByStatusAndMaxPlayersAndStakeTier(RoomStatus.WAITING, maxPlayers, tier)
-        .stream()
-        .filter(r -> r.getPlayers().size() < r.getMaxPlayers())
-        .filter(r -> r.getPlayers().stream().noneMatch(p -> userId.equals(p.getUserId())))
-        .toList();
+    // Serialize joins per bucket so two 2P players don't each open a solo room.
+    String bucket = maxPlayers + "|" + tier;
+    Object joinLock = joinLocks.computeIfAbsent(bucket, k -> new Object());
+    synchronized (joinLock) {
+      List<Room> waiting = roomRepository
+          .findByStatusAndMaxPlayersAndStakeTier(RoomStatus.WAITING, maxPlayers, tier)
+          .stream()
+          .filter(r -> r.getPlayers().size() < r.getMaxPlayers())
+          .filter(r -> r.getPlayers().stream().noneMatch(p -> userId.equals(p.getUserId())))
+          .toList();
 
-    if (!waiting.isEmpty()) {
-      Room room = waiting.get(0);
+      if (!waiting.isEmpty()) {
+        Room room = waiting.get(0);
+        // Re-load under lock to reduce seat overwrite races
+        room = roomRepository.findById(room.getId()).orElse(room);
+        if (room.getStatus() != RoomStatus.WAITING
+            || room.getPlayers().size() >= room.getMaxPlayers()
+            || room.getPlayers().stream().anyMatch(p -> userId.equals(p.getUserId()))) {
+          // Fall through to create a new room
+        } else {
+          List<LudoColor> colors = LudoColor.forPlayerCount(maxPlayers);
+          int seat = room.getPlayers().size();
+          RoomPlayer joined = new RoomPlayer(userId, username, colors.get(seat).name(), false, seat);
+          room.getPlayers().add(joined);
+          room = roomRepository.save(room);
+          try {
+            double fee = room.getEntryFee() > 0 ? room.getEntryFee() : bet;
+            matchEconomy.reserveEntry(room.getId(), userId, fee);
+          } catch (RuntimeException e) {
+            room.getPlayers().removeIf(p -> userId.equals(p.getUserId()));
+            roomRepository.save(room);
+            throw e;
+          }
+          broadcastPlayerJoined(room, joined);
+          if (room.getPlayers().size() == room.getMaxPlayers()) {
+            room = enterReadyPhase(room);
+            return new QueueResponse("MATCHED", room.getId(), room.getRoomCode(), room);
+          }
+          return new QueueResponse("WAITING", room.getId(), room.getRoomCode(), room);
+        }
+      }
+
+      Room room = newEmptyRoom(maxPlayers, tier);
+      if (bet > 0) {
+        room.setEntryFee(Math.round(bet));
+      }
       List<LudoColor> colors = LudoColor.forPlayerCount(maxPlayers);
-      int seat = room.getPlayers().size();
-      RoomPlayer joined = new RoomPlayer(userId, username, colors.get(seat).name(), false, seat);
-      room.getPlayers().add(joined);
+      RoomPlayer host = new RoomPlayer(userId, username, colors.get(0).name(), false, 0);
+      room.getPlayers().add(host);
+      room.setFillDeadlineAt(Instant.now().plus(FILL_SECONDS, ChronoUnit.SECONDS));
       room = roomRepository.save(room);
       try {
-        double fee = room.getEntryFee() > 0 ? room.getEntryFee() : bet;
-        matchEconomy.reserveEntry(room.getId(), userId, fee);
+        matchEconomy.reserveEntry(room.getId(), userId, bet);
       } catch (RuntimeException e) {
-        room.getPlayers().removeIf(p -> userId.equals(p.getUserId()));
-        roomRepository.save(room);
+        roomRepository.delete(room);
         throw e;
       }
-      broadcastPlayerJoined(room, joined);
-      if (room.getPlayers().size() == room.getMaxPlayers()) {
-        room = enterReadyPhase(room);
-        return new QueueResponse("MATCHED", room.getId(), room.getRoomCode(), room);
+      if (redisMatchQueue != null) {
+        redisMatchQueue.enqueue(maxPlayers, tier, userId, username);
       }
+      events.toUser(userId, MatchmakingEventPublisher.EVENT_ROOM_CREATED, roomPayload(room));
+      events.toRoom(room.getId(), MatchmakingEventPublisher.EVENT_ROOM_CREATED, roomPayload(room));
+      broadcastPlayerJoined(room, host);
       return new QueueResponse("WAITING", room.getId(), room.getRoomCode(), room);
     }
-
-    Room room = newEmptyRoom(maxPlayers, tier);
-    if (bet > 0) {
-      room.setEntryFee(Math.round(bet));
-    }
-    List<LudoColor> colors = LudoColor.forPlayerCount(maxPlayers);
-    RoomPlayer host = new RoomPlayer(userId, username, colors.get(0).name(), false, 0);
-    room.getPlayers().add(host);
-    room.setFillDeadlineAt(Instant.now().plus(FILL_SECONDS, ChronoUnit.SECONDS));
-    room = roomRepository.save(room);
-    try {
-      matchEconomy.reserveEntry(room.getId(), userId, bet);
-    } catch (RuntimeException e) {
-      roomRepository.delete(room);
-      throw e;
-    }
-    if (redisMatchQueue != null) {
-      redisMatchQueue.enqueue(maxPlayers, tier, userId, username);
-    }
-    events.toUser(userId, MatchmakingEventPublisher.EVENT_ROOM_CREATED, roomPayload(room));
-    events.toRoom(room.getId(), MatchmakingEventPublisher.EVENT_ROOM_CREATED, roomPayload(room));
-    broadcastPlayerJoined(room, host);
-    return new QueueResponse("WAITING", room.getId(), room.getRoomCode(), room);
   }
 
   public void cancelQueue(String userId) {
@@ -177,10 +202,18 @@ public class RoomService {
       return;
     }
 
-    // After game starts → mark disconnected (seat reserved)
+    // Match already over — free player for a new queue (status may still be IN_PROGRESS briefly)
     if (room.getStatus() == RoomStatus.IN_PROGRESS
         || room.getStatus() == RoomStatus.WAITING_RECONNECT) {
+      if (trySettleFinishedRoom(room)) {
+        return;
+      }
+      // Intentional leave mid-match: disconnect so enqueue won't reuse this room
       markDisconnected(roomId, userId);
+      return;
+    }
+
+    if (room.getStatus() == RoomStatus.COMPLETED) {
       return;
     }
 
@@ -226,6 +259,7 @@ public class RoomService {
   }
 
   public Room createPrivateRoom(String userId, String username, int maxPlayers) {
+    releaseStaleRoomsForUser(userId);
     Optional<Room> existing = findActiveRoomForUser(userId);
     if (existing.isPresent()) {
       return existing.get();
@@ -246,6 +280,7 @@ public class RoomService {
   }
 
   public Room joinByCode(String roomCode, String userId, String username) {
+    releaseStaleRoomsForUser(userId);
     Optional<Room> existing = findActiveRoomForUser(userId);
     if (existing.isPresent()) {
       return existing.get();
@@ -360,13 +395,28 @@ public class RoomService {
     if (gameEngineService.hasMatch(room.getId())) {
       return gameEngineService.getSnapshot(room.getId());
     }
+    if (room.getStatus() == RoomStatus.COMPLETED) {
+      throw new IllegalStateException("Match finished — start a new game");
+    }
     GameSnapshot persisted = readPersistedSnapshot(room);
     if (persisted == null) {
+      // Render / JVM restart wiped RAM and this room never got a Mongo snapshot
+      abandonUnrestorableRoom(room);
       throw new IllegalStateException(
-          "Cannot restore match — no persisted snapshot for room " + room.getId());
+          "Match expired — server restarted without a saved board. Start a new game.");
     }
     persisted.setRoomId(room.getId());
     return gameEngineService.restoreFromSnapshot(persisted);
+  }
+
+  /** Mark stuck IN_PROGRESS rooms COMPLETED so rematch/queue is not blocked. */
+  private void abandonUnrestorableRoom(Room room) {
+    if (room.getStatus() == RoomStatus.COMPLETED) {
+      return;
+    }
+    room.setStatus(RoomStatus.COMPLETED);
+    room.setEndedAt(Instant.now());
+    roomRepository.save(room);
   }
 
   public void persistLiveSnapshot(String roomId, GameSnapshot snap) {
@@ -375,12 +425,14 @@ public class RoomService {
     }
     try {
       String json = objectMapper.writeValueAsString(snap);
-      roomRepository.findById(roomId).ifPresent(room -> {
-        room.setLiveSnapshotJson(json);
-        roomRepository.save(room);
-      });
+      // Atomic field update — avoids full-document saves wiping the snapshot
+      mongoTemplate.updateFirst(
+          Query.query(Criteria.where("id").is(roomId)),
+          new Update().set("liveSnapshotJson", json),
+          Room.class
+      );
     } catch (Exception ignored) {
-      // persistence is best-effort; Redis is primary hot cache
+      // persistence is best-effort; Redis is primary hot cache when available
     }
   }
 
@@ -469,16 +521,66 @@ public class RoomService {
   }
 
   public void settleIfFinished(Room room, GameSnapshot snap) {
-    if (room.getStatus() == RoomStatus.COMPLETED) {
+    if (room == null || snap == null) {
       return;
     }
     if (!GameEngineService.PHASE_FINISHED.equals(snap.getPhase())) {
       return;
     }
-    room.setStatus(RoomStatus.COMPLETED);
-    room.setEndedAt(Instant.now());
-    roomRepository.save(room);
+    // Mark COMPLETED first so rematch / re-queue is never blocked by async wallet settle
+    if (room.getStatus() != RoomStatus.COMPLETED) {
+      room.setStatus(RoomStatus.COMPLETED);
+      room.setEndedAt(Instant.now());
+      roomRepository.save(room);
+    }
     matchEconomy.settleMatch(room, snap);
+  }
+
+  /** @return true if the room was (or is) finished / dead and marked COMPLETED. */
+  private boolean trySettleFinishedRoom(Room room) {
+    if (room.getStatus() == RoomStatus.COMPLETED) {
+      return true;
+    }
+
+    // Live engine says finished
+    if (gameEngineService.hasMatch(room.getId())) {
+      try {
+        GameSnapshot snap = gameEngineService.getSnapshot(room.getId());
+        if (snap != null && GameEngineService.PHASE_FINISHED.equals(snap.getPhase())) {
+          settleIfFinished(room, snap);
+          return true;
+        }
+      } catch (RuntimeException ignored) {
+        // fall through
+      }
+    }
+
+    // Mongo snapshot says finished (engine already gone after restart)
+    GameSnapshot persisted = readPersistedSnapshot(room);
+    if (persisted != null
+        && GameEngineService.PHASE_FINISHED.equals(persisted.getPhase())) {
+      settleIfFinished(room, persisted);
+      return true;
+    }
+
+    // Stuck IN_PROGRESS with nothing to restore → free the player for a new match
+    if ((room.getStatus() == RoomStatus.IN_PROGRESS
+            || room.getStatus() == RoomStatus.WAITING_RECONNECT)
+        && !gameEngineService.hasMatch(room.getId())
+        && persisted == null) {
+      abandonUnrestorableRoom(room);
+      return true;
+    }
+
+    // Extremely stale rooms
+    if (room.getEndedAt() != null
+        || (room.getStartedAt() != null
+            && room.getStartedAt().isBefore(Instant.now().minus(2, ChronoUnit.HOURS)))) {
+      abandonUnrestorableRoom(room);
+      return true;
+    }
+
+    return false;
   }
 
   public void processExpiredFills() {
@@ -693,7 +795,34 @@ public class RoomService {
     if (rooms == null || rooms.isEmpty()) {
       return Optional.empty();
     }
-    return Optional.of(rooms.get(0));
+    for (Room room : rooms) {
+      if (room.getStatus() == RoomStatus.IN_PROGRESS
+          || room.getStatus() == RoomStatus.WAITING_RECONNECT) {
+        if (trySettleFinishedRoom(room)) {
+          continue;
+        }
+        // Player already left / disconnected → allow a fresh queue instead of rejoining
+        boolean left = room.getPlayers().stream()
+            .anyMatch(p -> userId.equals(p.getUserId())
+                && p.getConnectionStatus() == ConnectionStatus.DISCONNECTED);
+        if (left) {
+          continue;
+        }
+      }
+      return Optional.of(room);
+    }
+    return Optional.empty();
+  }
+
+  /** Close finished / unrestorable rooms so the same userId can queue a new match. */
+  private void releaseStaleRoomsForUser(String userId) {
+    List<Room> rooms = roomRepository.findActiveRoomsForUser(userId);
+    if (rooms == null) {
+      return;
+    }
+    for (Room room : rooms) {
+      trySettleFinishedRoom(room);
+    }
   }
 
   private Room tryFormRoom(String key, int maxPlayers, String tier) {

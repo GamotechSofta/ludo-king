@@ -22,6 +22,7 @@ import PlatformLaunch, {
 import Results from "./components/lobby/Results";
 import type { IUser, TTotalPlayers } from "./interfaces";
 import { ETypeGame } from "./utils/constants";
+import { leaveRoom } from "./api/ludoApi";
 
 type HistoryState = { screen: TLobbyScreen };
 
@@ -112,6 +113,22 @@ const App = () => {
       "<p>You can close this screen and go back to the Aakda app.</p></div>";
   }, [platformReturnUrl]);
 
+  /** Release server room so the same userId can queue a fresh match. */
+  const releaseOnlineRoom = useCallback(async () => {
+    const roomId = onlineRoomId;
+    const userId = guest?.id;
+    if (roomId && userId) {
+      try {
+        await leaveRoom(roomId, userId);
+      } catch {
+        /* room may already be completed */
+      }
+    }
+    setOnlineRoomId(null);
+    setOnlineRoomCode("");
+    setOnlineSnapshot(null);
+  }, [onlineRoomId, guest]);
+
   const applyScreen = useCallback((next: TLobbyScreen) => {
     if (next === "home") {
       setGameConfig(null);
@@ -145,15 +162,15 @@ const App = () => {
 
   const goHome = useCallback(() => {
     if (platformReturnUrl || platformQuery) {
-      exitToPlatform();
+      void releaseOnlineRoom().then(() => exitToPlatform());
       return;
     }
     goTo("home", true);
-  }, [goTo, platformReturnUrl, platformQuery, exitToPlatform]);
+  }, [goTo, platformReturnUrl, platformQuery, exitToPlatform, releaseOnlineRoom]);
 
   const goBack = useCallback(() => {
     if (platformReturnUrl || platformQuery) {
-      exitToPlatform();
+      void releaseOnlineRoom().then(() => exitToPlatform());
       return;
     }
     if (window.history.state?.screen) {
@@ -161,7 +178,7 @@ const App = () => {
       return;
     }
     goHome();
-  }, [goHome, platformReturnUrl, platformQuery, exitToPlatform]);
+  }, [goHome, platformReturnUrl, platformQuery, exitToPlatform, releaseOnlineRoom]);
 
   useEffect(() => {
     if (platformQuery || platformError) return;
@@ -171,7 +188,7 @@ const App = () => {
   useEffect(() => {
     const onPopState = (event: PopStateEvent) => {
       if (platformReturnUrl || platformQuery) {
-        exitToPlatform();
+        void releaseOnlineRoom().then(() => exitToPlatform());
         return;
       }
       const next = (event.state as HistoryState | null)?.screen ?? "home";
@@ -179,7 +196,7 @@ const App = () => {
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, [applyScreen, platformReturnUrl, platformQuery, exitToPlatform]);
+  }, [applyScreen, platformReturnUrl, platformQuery, exitToPlatform, releaseOnlineRoom]);
 
   const handleSelectMode = (_nextMode: TPlayMode) => {
     // Online button → server matchmaking, then smooth Computer Game play
@@ -201,17 +218,25 @@ const App = () => {
     [goTo]
   );
 
-  const handlePlayAgain = () => {
+  const handlePlayAgain = async () => {
+    await releaseOnlineRoom();
     setResultEntries([]);
-    setOnlineSnapshot(null);
+    setGameConfig(null);
     if (platformReturnUrl || platformQuery) {
       exitToPlatform();
       return;
     }
-    setOnlineRoomId(null);
-    setGameConfig(null);
     goTo("onlineSetup", true);
   };
+
+  const handleOnlineExit = useCallback(async () => {
+    await releaseOnlineRoom();
+    if (platformReturnUrl || platformQuery) {
+      exitToPlatform();
+      return;
+    }
+    goTo("onlineSetup", true);
+  }, [releaseOnlineRoom, platformReturnUrl, platformQuery, exitToPlatform, goTo]);
 
   const handleOnlineQueued = useCallback(
     (g: IGuestUser, roomId: string, roomCode: string) => {
@@ -308,7 +333,7 @@ const App = () => {
           roomId={onlineRoomId}
           initialSnapshot={onlineSnapshot}
           walletBalance={walletBalance}
-          onExit={goBack}
+          onExit={handleOnlineExit}
           onPlayAgain={handlePlayAgain}
         />
       </AppWrapper>

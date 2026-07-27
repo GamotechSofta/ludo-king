@@ -42,7 +42,7 @@ import {
 } from "../game/rules";
 import type { IGameSnapshot, IGuestUser, IResultEntry } from "./types";
 import Results from "./Results";
-import { fetchWalletBalance } from "../../api/ludoApi";
+import { fetchWalletBalance, leaveRoom } from "../../api/ludoApi";
 import {
   runReturnToJailAnimations,
   type CaptureVictim,
@@ -78,6 +78,16 @@ import {
   shouldClearStuckDice,
   shouldEnableTokenSelection,
 } from "./diceTurnLogic";
+
+/** flushSync outside React commit/effects — avoids lifecycle flushSync warning. */
+function flushSyncAfterRender(update: () => void): Promise<void> {
+  return new Promise((resolve) => {
+    queueMicrotask(() => {
+      flushSync(update);
+      resolve();
+    });
+  });
+}
 
 interface OnlineGameProps {
   guest: IGuestUser;
@@ -147,8 +157,10 @@ const OnlineGame = ({
   useEffect(() => {
     if (snapshot?.phase === "FINISHED") {
       void refreshBalance();
+      // Settle room as COMPLETED while results show — next queue gets a fresh match
+      void leaveRoom(roomId, guest.id).catch(() => undefined);
     }
-  }, [snapshot?.phase, refreshBalance]);
+  }, [snapshot?.phase, refreshBalance, roomId, guest.id]);
 
   const mySeat = useMemo(() => {
     if (!snapshot) return -1;
@@ -574,7 +586,7 @@ const OnlineGame = ({
           snapForLanding
         );
         listTokensRef.current = working;
-        flushSync(() => {
+        await flushSyncAfterRender(() => {
           setListTokens(working);
         });
         await nextFrame();
@@ -611,7 +623,7 @@ const OnlineGame = ({
       }));
       token = working[seat].tokens[tokenIndex];
       listTokensRef.current = working;
-      flushSync(() => {
+      await flushSyncAfterRender(() => {
         setListTokens(working);
       });
       await nextFrame();
@@ -905,7 +917,7 @@ const OnlineGame = ({
             snap
           );
           listTokensRef.current = placed;
-          flushSync(() => setListTokens(placed));
+          await flushSyncAfterRender(() => setListTokens(placed));
         }
 
         const ok = await runMoveAnimation(
@@ -1246,7 +1258,15 @@ const OnlineGame = ({
           </div>
         )}
         <p className="lobby-sub" style={{ marginTop: 80, textAlign: "center" }}>
-          {connected ? "Loading board…" : "Connecting…"}
+          {loadError
+            ? /expired|finished|persisted snapshot|Cannot restore/i.test(loadError)
+              ? "This match is no longer available"
+              : connected
+                ? "Loading board…"
+                : "Connecting…"
+            : connected
+              ? "Loading board…"
+              : "Connecting…"}
         </p>
         {loadError && (
           <p
@@ -1256,6 +1276,18 @@ const OnlineGame = ({
             {loadError}
           </p>
         )}
+        {loadError &&
+          /expired|finished|persisted snapshot|Cannot restore/i.test(loadError) && (
+            <div style={{ textAlign: "center", marginTop: 20 }}>
+              <button
+                type="button"
+                className="lobby-btn primary"
+                onClick={onPlayAgain}
+              >
+                Start new game
+              </button>
+            </div>
+          )}
         <p className="lobby-footer-note" style={{ textAlign: "center" }}>
           API: {process.env.REACT_APP_API_URL || "http://localhost:3000"}
         </p>

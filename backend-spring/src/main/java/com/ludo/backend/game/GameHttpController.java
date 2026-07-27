@@ -106,6 +106,9 @@ public class GameHttpController {
         || room.getStatus() == com.ludo.backend.room.RoomStatus.READY) {
       throw new IllegalStateException("Match not started yet — waiting for ready/countdown");
     }
+    if (room.getStatus() == com.ludo.backend.room.RoomStatus.COMPLETED) {
+      throw new IllegalStateException("Match finished — start a new game");
+    }
 
     GameSnapshot cached = gameEventBus.loadCachedSnapshot(roomId).orElse(null);
     if (cached != null) {
@@ -126,12 +129,9 @@ public class GameHttpController {
   }
 
   private void broadcast(String roomId, GameSnapshot snap) {
-    // Broadcast validated state first; persist settlement off the hot path
     gameEventBus.publishSnapshot(roomId, snap);
     if (GameEngineService.PHASE_FINISHED.equals(snap.getPhase())) {
-      botExecutor.execute(() ->
-          roomService.getRoom(roomId).ifPresent(room -> roomService.settleIfFinished(room, snap))
-      );
+      roomService.getRoom(roomId).ifPresent(room -> roomService.settleIfFinished(room, snap));
     }
   }
 

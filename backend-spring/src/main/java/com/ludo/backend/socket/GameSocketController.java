@@ -125,12 +125,10 @@ public class GameSocketController {
   }
 
   private void broadcast(String roomId, GameSnapshot snap) {
-    // Broadcast first; Mongo settlement is async so move latency stays low
     gameEventBus.publishSnapshotAndMeta(roomId, snap);
+    // Complete room status on the request path so rematch is never blocked by async settle
     if (GameEngineService.PHASE_FINISHED.equals(snap.getPhase())) {
-      botExecutor.execute(() ->
-          roomService.getRoom(roomId).ifPresent(room -> roomService.settleIfFinished(room, snap))
-      );
+      roomService.getRoom(roomId).ifPresent(room -> roomService.settleIfFinished(room, snap));
     }
   }
 

@@ -45,6 +45,13 @@ const OnlineLobby = ({
         const state = await getRoomState(roomId);
         if (!alive) return;
         setRoom(state.room);
+        if (
+          state.room.status === "COMPLETED" ||
+          state.displayStatus === "FINISHED"
+        ) {
+          setError("Previous match ended — go back and start a new one.");
+          return;
+        }
         if (typeof state.countdown === "number") {
           setCountdown(state.countdown <= 0 ? "GO" : state.countdown);
         } else if (state.room.countdownValue != null) {
@@ -57,6 +64,10 @@ const OnlineLobby = ({
             state.displayStatus === "PLAYING") &&
           !started
         ) {
+          if (!state.game) {
+            setError("Match expired — go back and start a new game.");
+            return;
+          }
           started = true;
           onStart(state.room, state.game ?? null);
         }
