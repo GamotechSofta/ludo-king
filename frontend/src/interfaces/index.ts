@@ -139,6 +139,8 @@ export interface IToken {
   animated: boolean;
   /** Instant reposition without CSS transition (animation start cell). */
   snapPlace?: boolean;
+  /** Fast cell-by-cell return to yard after capture. */
+  isReturning?: boolean;
 }
 
 export interface IListTokens {

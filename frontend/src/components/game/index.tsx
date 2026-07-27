@@ -350,10 +350,6 @@ const Game = ({
             working = next;
             setListTokens(next);
             listTokensRef.current = next;
-          },
-          {
-            stepMs: TOKEN_MOVEMENT_INTERVAL_VALUE,
-            onStepSound: () => playSound("passingNext"),
           }
         );
       }

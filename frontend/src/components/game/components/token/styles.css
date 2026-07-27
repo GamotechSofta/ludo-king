@@ -25,10 +25,22 @@
   pointer-events: none;
 }
 
+/* Capture return: rapid reverse hops into the yard */
+.game-token.moving.returning {
+  transition:
+    left 45ms linear,
+    top 45ms linear;
+}
+
 .game-token.moving .game-token-piece {
   filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.45)) brightness(1.12);
   transform: scale(1.12);
   transform-origin: center bottom;
+}
+
+.game-token.moving.returning .game-token-piece {
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.4)) brightness(1.05);
+  transform: scale(1.06);
 }
 
 @keyframes pinPulse {

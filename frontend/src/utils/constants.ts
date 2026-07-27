@@ -157,6 +157,13 @@ export const ONLINE_TOKEN_MOVEMENT_INTERVAL_VALUE = 240;
 export const TOKEN_STEP_PAUSE_MS = 20;
 
 /**
+ * Captured pawn return-to-yard: still cell-by-cell, much faster than a normal move.
+ * Keep ≤ CSS `.game-token.moving.returning` duration so hops don't overlap.
+ */
+export const CAPTURE_RETURN_STEP_MS = 55;
+export const CAPTURE_RETURN_PAUSE_MS = 0;
+
+/**
  * Dice spin duration (seconds) for react-dice-complete.
  * Classic-like roll feel (~0.65s).
  */

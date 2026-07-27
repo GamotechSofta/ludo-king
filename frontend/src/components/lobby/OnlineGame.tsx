@@ -895,7 +895,6 @@ const OnlineGame = ({
               },
               {
                 cancel: animCancelRef.current,
-                onStepSound: () => playSound("passingNext"),
               }
             );
             if (cancelled) return;

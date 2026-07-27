@@ -1,18 +1,10 @@
 package com.ludo.backend.bot;
 
-import static com.ludo.backend.game.BoardConstants.EXIT_LEN;
-import static com.ludo.backend.game.BoardConstants.HOME;
-import static com.ludo.backend.game.BoardConstants.HOME_STEPS;
 import static com.ludo.backend.game.BoardConstants.JAIL;
-import static com.ludo.backend.game.BoardConstants.TOTAL_TILES;
-import static com.ludo.backend.game.BoardConstants.exitIndex;
-import static com.ludo.backend.game.BoardConstants.isExit;
 import static com.ludo.backend.game.BoardConstants.isHome;
 import static com.ludo.backend.game.BoardConstants.isJail;
-import static com.ludo.backend.game.BoardConstants.isMain;
-import static com.ludo.backend.game.BoardConstants.isSafe;
-import static com.ludo.backend.game.BoardConstants.toExit;
 
+import com.ludo.backend.bot.BotMoveEvaluator.Context;
 import com.ludo.backend.game.GameEngineService;
 import com.ludo.backend.game.GameSnapshot;
 import com.ludo.backend.game.LudoColor;
@@ -27,24 +19,23 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
- * Smart bot move selection — evaluates every legal move with strict priority bands
- * so a stronger option always beats a weaker one. Tuned to win more often.
+ * Bot turn loop + move selection. Scoring is delegated to {@link BotMoveEvaluator}
+ * so every legal move (jail exit, capture, progress, …) is compared on one scale.
+ *
+ * <p>Difficulty: EASY occasionally ignores the best move; MEDIUM uses core
+ * tactics; HARD adds future prediction and stronger danger avoidance.
  */
 @Service
 public class BotService {
 
   private static final Logger log = LoggerFactory.getLogger(BotService.class);
 
-  /** Lexicographic bands for non-capture moves. */
-  private static final int SCORE_REACH_HOME = 100_000_000;
-  private static final int SCORE_EXIT_JAIL = 1_000_000;
-  private static final int SCORE_AVOID_THREAT = 100_000;
-  private static final int SCORE_SAFE_CELL = 10_000;
-  private static final int SCORE_CREATE_BLOCK = 1_000;
-  private static final int SCORE_KEEP_BLOCK = 100;
-  private static final int SCORE_NEAREST_HOME_MAX = 99;
-  private static final int SCORE_LEAVE_DANGER = 5_000;
-  private static final int SCORE_ENTER_EXIT_LANE = 50_000;
+  /** EASY: chance to ignore the best move. */
+  private static final int EASY_MISTAKE_PCT = 30;
+  /** MEDIUM: smaller strategic mistakes. */
+  private static final int MEDIUM_MISTAKE_PCT = 12;
+  /** HARD: rare blunders only. */
+  private static final int HARD_MISTAKE_PCT = 3;
 
   private final GameEngineService gameEngineService;
 
@@ -142,9 +133,9 @@ public class BotService {
   }
 
   /**
-   * Capture-first selection, then existing smart scoring.
-   * When any capture exists: always capture (no randomness).
-   * EASY noise only applies when no capture is available.
+   * Evaluates every legal move with {@link BotMoveEvaluator}, then picks the
+   * highest score (random among ties). Sole-active-pawn shortcut only when that
+   * pawn is the unique legal choice (no competing jail exit).
    */
   private int[] chooseMove(
       String roomId,
@@ -166,108 +157,142 @@ public class BotService {
     Map<String, List<Integer>> allPositions = snap.getTokenPositions();
     List<String> seatColors = snap.getSeatColors();
 
-    // 1) Absolute priority: capture if any legal capture exists
-    List<CaptureCandidate> captures =
-        collectCaptureMoves(
-            moves,
-            snap,
-            color,
-            seat,
-            ownPositions,
-            allPositions,
-            seatColors
-        );
-    if (!captures.isEmpty()) {
-      return selectBestCapture(captures).move;
+    // Only one active pawn AND no jail-exit alternative → play it immediately
+    List<int[]> soleMoves = soleActivePawnOnlyMoves(moves, ownPositions);
+    if (soleMoves != null) {
+      return pickBestScored(soleMoves, snap, color, seat, ownPositions, allPositions, seatColors, difficulty);
     }
 
-    // 2) No capture — EASY may play a weaker random legal move
-    if (difficulty == BotDifficulty.EASY
-        && ThreadLocalRandom.current().nextInt(100) < 25) {
-      return moves.get(ThreadLocalRandom.current().nextInt(moves.size()));
-    }
+    return pickBestScored(moves, snap, color, seat, ownPositions, allPositions, seatColors, difficulty);
+  }
 
-    boolean hard =
-        difficulty == BotDifficulty.HARD || difficulty == BotDifficulty.MEDIUM;
+  private int[] pickBestScored(
+      List<int[]> moves,
+      GameSnapshot snap,
+      LudoColor color,
+      int seat,
+      List<Integer> ownPositions,
+      Map<String, List<Integer>> allPositions,
+      List<String> seatColors,
+      BotDifficulty difficulty
+  ) {
+    Context ctx =
+        new Context(color, seat, ownPositions, allPositions, seatColors, difficulty);
 
-    List<int[]> bestMoves = new ArrayList<>();
-    int bestScore = Integer.MIN_VALUE;
-
+    List<ScoredMove> scored = new ArrayList<>(moves.size());
     for (int[] m : moves) {
-      MoveEval eval = evaluateMove(m, snap, color, seat, ownPositions);
+      MoveEval eval = evaluateMove(m, snap, color, ownPositions);
       if (eval == null) {
         continue;
       }
-      int score =
-          scoreNonCaptureMove(
-              color,
-              seat,
-              eval.token,
-              eval.from,
-              eval.to,
-              eval.dice,
-              ownPositions,
-              allPositions,
-              seatColors,
-              hard
-          );
-
-      if (score > bestScore) {
-        bestScore = score;
-        bestMoves.clear();
-        bestMoves.add(m);
-      } else if (score == bestScore) {
-        bestMoves.add(m);
-      }
+      long value =
+          BotMoveEvaluator.scoreMove(
+              ctx, eval.token, eval.from, eval.to, eval.dice);
+      scored.add(new ScoredMove(m, value));
     }
 
-    if (bestMoves.isEmpty()) {
+    if (scored.isEmpty()) {
       return moves.get(0);
     }
-    return bestMoves.get(ThreadLocalRandom.current().nextInt(bestMoves.size()));
+
+    scored.sort((a, b) -> Long.compare(b.score, a.score));
+    long best = scored.get(0).score;
+
+    // Difficulty mistakes: occasionally pick a weaker move
+    int mistakePct = mistakePercent(difficulty);
+    if (mistakePct > 0
+        && scored.size() > 1
+        && ThreadLocalRandom.current().nextInt(100) < mistakePct) {
+      int pick = 1 + ThreadLocalRandom.current().nextInt(Math.min(3, scored.size() - 1));
+      return scored.get(pick).move;
+    }
+
+    List<int[]> ties = new ArrayList<>();
+    for (ScoredMove s : scored) {
+      if (s.score == best) {
+        ties.add(s.move);
+      } else {
+        break;
+      }
+    }
+    return ties.get(ThreadLocalRandom.current().nextInt(ties.size()));
+  }
+
+  private static int mistakePercent(BotDifficulty difficulty) {
+    if (difficulty == BotDifficulty.EASY) {
+      return EASY_MISTAKE_PCT;
+    }
+    if (difficulty == BotDifficulty.MEDIUM) {
+      return MEDIUM_MISTAKE_PCT;
+    }
+    if (difficulty == BotDifficulty.HARD) {
+      return HARD_MISTAKE_PCT;
+    }
+    return 0;
+  }
+
+  /**
+   * When exactly one pawn is on the board (not jail, not home) and every legal
+   * move belongs to that pawn, return those moves. If a 6 also opens a jail
+   * exit, returns null so full evaluation can prefer releasing a second pawn.
+   */
+  private static List<int[]> soleActivePawnOnlyMoves(
+      List<int[]> moves,
+      List<Integer> ownPositions
+  ) {
+    if (moves == null || moves.isEmpty() || ownPositions == null) {
+      return null;
+    }
+
+    int soleToken = -1;
+    int activeCount = 0;
+    for (int i = 0; i < ownPositions.size(); i++) {
+      Integer posObj = ownPositions.get(i);
+      int pos = posObj == null ? JAIL : posObj;
+      if (isJail(pos) || isHome(pos)) {
+        continue;
+      }
+      activeCount++;
+      soleToken = i;
+    }
+    if (activeCount != 1 || soleToken < 0) {
+      return null;
+    }
+
+    List<int[]> soleMoves = new ArrayList<>();
+    for (int[] m : moves) {
+      if (m == null || m.length < 2) {
+        continue;
+      }
+      if (m[0] != soleToken) {
+        return null;
+      }
+      soleMoves.add(m);
+    }
+    return soleMoves.isEmpty() ? null : soleMoves;
+  }
+
+  private static final class ScoredMove {
+    final int[] move;
+    final long score;
+
+    ScoredMove(int[] move, long score) {
+      this.move = move;
+      this.score = score;
+    }
   }
 
   private static final class MoveEval {
     final int token;
-    final int diceIndex;
     final int dice;
     final int from;
     final int to;
 
-    MoveEval(int token, int diceIndex, int dice, int from, int to) {
+    MoveEval(int token, int dice, int from, int to) {
       this.token = token;
-      this.diceIndex = diceIndex;
       this.dice = dice;
       this.from = from;
       this.to = to;
-    }
-  }
-
-  private static final class CaptureCandidate {
-    final int[] move;
-    final int token;
-    final int diceIndex;
-    /** Victim remaining steps to HOME (lower = closer to home). */
-    final int victimRemaining;
-    /** Victim journey progress (higher = farther along). */
-    final int victimProgress;
-    /** How much this move advances the bot pawn (higher better). */
-    final int botAdvance;
-
-    CaptureCandidate(
-        int[] move,
-        int token,
-        int diceIndex,
-        int victimRemaining,
-        int victimProgress,
-        int botAdvance
-    ) {
-      this.move = move;
-      this.token = token;
-      this.diceIndex = diceIndex;
-      this.victimRemaining = victimRemaining;
-      this.victimProgress = victimProgress;
-      this.botAdvance = botAdvance;
     }
   }
 
@@ -275,7 +300,6 @@ public class BotService {
       int[] m,
       GameSnapshot snap,
       LudoColor color,
-      int seat,
       List<Integer> ownPositions
   ) {
     if (m == null || m.length < 2) {
@@ -292,218 +316,8 @@ public class BotService {
     Integer fromObj = ownPositions.get(token);
     int from = fromObj == null ? JAIL : fromObj;
     int dice = snap.getDiceList().get(diceIndex);
-    int to = applySteps(color, from, dice);
-    return new MoveEval(token, diceIndex, dice, from, to);
-  }
-
-  /** All legal moves that would capture an unprotected single opponent. */
-  private List<CaptureCandidate> collectCaptureMoves(
-      List<int[]> moves,
-      GameSnapshot snap,
-      LudoColor color,
-      int seat,
-      List<Integer> ownPositions,
-      Map<String, List<Integer>> allPositions,
-      List<String> seatColors
-  ) {
-    List<CaptureCandidate> out = new ArrayList<>();
-    for (int[] m : moves) {
-      MoveEval eval = evaluateMove(m, snap, color, seat, ownPositions);
-      if (eval == null) {
-        continue;
-      }
-      VictimInfo victim =
-          findCaptureVictim(seat, eval.to, allPositions, seatColors);
-      if (victim == null) {
-        continue;
-      }
-      int victimRemaining = remainingDistance(victim.color, eval.to);
-      if (victimRemaining == Integer.MAX_VALUE) {
-        victimRemaining = TOTAL_TILES + HOME_STEPS;
-      }
-      int victimProgress =
-          Math.max(0, TOTAL_TILES + HOME_STEPS - victimRemaining);
-      int botFromRem = remainingDistance(color, eval.from);
-      int botToRem = remainingDistance(color, eval.to);
-      int botAdvance = 0;
-      if (botFromRem != Integer.MAX_VALUE && botToRem != Integer.MAX_VALUE) {
-        botAdvance = Math.max(0, botFromRem - botToRem);
-      } else if (isJail(eval.from)) {
-        botAdvance = eval.dice;
-      } else {
-        botAdvance = eval.dice;
-      }
-      out.add(
-          new CaptureCandidate(
-              m,
-              eval.token,
-              eval.diceIndex,
-              victimRemaining,
-              victimProgress,
-              botAdvance
-          )
-      );
-    }
-    return out;
-  }
-
-  /**
-   * Among captures: closest victim to HOME, then highest victim progress,
-   * then most bot advance. Fully deterministic — no random.
-   */
-  private static CaptureCandidate selectBestCapture(List<CaptureCandidate> captures) {
-    CaptureCandidate best = captures.get(0);
-    for (int i = 1; i < captures.size(); i++) {
-      CaptureCandidate c = captures.get(i);
-      int cmp = compareCaptures(c, best);
-      if (cmp > 0) {
-        best = c;
-      }
-    }
-    return best;
-  }
-
-  /** Positive if a is better than b. */
-  private static int compareCaptures(CaptureCandidate a, CaptureCandidate b) {
-    // 1) Capture pawn closest to Home (smaller remaining)
-    if (a.victimRemaining != b.victimRemaining) {
-      return Integer.compare(b.victimRemaining, a.victimRemaining);
-    }
-    // 2) Highest victim progress
-    if (a.victimProgress != b.victimProgress) {
-      return Integer.compare(a.victimProgress, b.victimProgress);
-    }
-    // 3) Bot pawn advances the most
-    if (a.botAdvance != b.botAdvance) {
-      return Integer.compare(a.botAdvance, b.botAdvance);
-    }
-    // Stable tie-break: lower token index, then lower dice index
-    if (a.token != b.token) {
-      return Integer.compare(b.token, a.token);
-    }
-    return Integer.compare(b.diceIndex, a.diceIndex);
-  }
-
-  private static final class VictimInfo {
-    final LudoColor color;
-
-    VictimInfo(LudoColor color) {
-      this.color = color;
-    }
-  }
-
-  /** Single unprotected opponent on {@code landPos}; if several, closest to HOME. */
-  private static VictimInfo findCaptureVictim(
-      int moverSeat,
-      int landPos,
-      Map<String, List<Integer>> allPositions,
-      List<String> seatColors
-  ) {
-    if (!isMain(landPos) || isSafe(landPos) || allPositions == null || seatColors == null) {
-      return null;
-    }
-    VictimInfo best = null;
-    int bestRemaining = Integer.MAX_VALUE;
-    for (int s = 0; s < seatColors.size(); s++) {
-      if (s == moverSeat) {
-        continue;
-      }
-      String c = seatColors.get(s);
-      List<Integer> positions = allPositions.get(c);
-      if (positions == null) {
-        continue;
-      }
-      int n = 0;
-      for (Integer p : positions) {
-        if (p != null && p == landPos) {
-          n++;
-        }
-      }
-      if (n != 1) {
-        continue;
-      }
-      LudoColor victimColor;
-      try {
-        victimColor = LudoColor.valueOf(c);
-      } catch (RuntimeException ignored) {
-        continue;
-      }
-      int rem = remainingDistance(victimColor, landPos);
-      if (rem == Integer.MAX_VALUE) {
-        rem = TOTAL_TILES + HOME_STEPS;
-      }
-      if (best == null || rem < bestRemaining) {
-        best = new VictimInfo(victimColor);
-        bestRemaining = rem;
-      }
-    }
-    return best;
-  }
-
-  /** Existing non-capture priorities (HOME, jail, safe, progress, …). */
-  private int scoreNonCaptureMove(
-      LudoColor color,
-      int seat,
-      int token,
-      int from,
-      int to,
-      int dice,
-      List<Integer> ownPositions,
-      Map<String, List<Integer>> allPositions,
-      List<String> seatColors,
-      boolean hard
-  ) {
-    int score = 0;
-
-    // Reach HOME
-    if (isHome(to)) {
-      score += SCORE_REACH_HOME;
-    }
-
-    // Exit jail on six
-    if (isJail(from) && dice == 6) {
-      score += SCORE_EXIT_JAIL;
-    }
-
-    // Enter private exit column
-    if (isMain(from) && isExit(to)) {
-      score += SCORE_ENTER_EXIT_LANE;
-    }
-
-    // Avoid threatened landing
-    if (!isPositionThreatened(seat, to, allPositions, seatColors)) {
-      score += SCORE_AVOID_THREAT;
-    }
-
-    if (hard
-        && isMain(from)
-        && isPositionThreatened(seat, from, allPositions, seatColors)
-        && !isPositionThreatened(seat, to, allPositions, seatColors)) {
-      score += SCORE_LEAVE_DANGER;
-    }
-
-    // Prefer safe / exit / HOME (safe star)
-    if (isSafe(to) || isHome(to) || isExit(to)) {
-      score += SCORE_SAFE_CELL;
-    }
-
-    int ownOnDest = countOwnOnCell(ownPositions, token, to);
-    if (isMain(to) && ownOnDest >= 1) {
-      score += SCORE_CREATE_BLOCK;
-    }
-
-    int ownOnFrom = countOwnOnCell(ownPositions, -1, from);
-    if (!(isMain(from) && ownOnFrom >= 2)) {
-      score += SCORE_KEEP_BLOCK;
-    }
-
-    int remainingAfter = remainingDistance(color, to);
-    if (remainingAfter != Integer.MAX_VALUE) {
-      int progress = Math.max(0, TOTAL_TILES + HOME_STEPS - remainingAfter);
-      score += Math.min(SCORE_NEAREST_HOME_MAX, progress);
-    }
-
-    return score;
+    int to = BotMoveEvaluator.applySteps(color, from, dice);
+    return new MoveEval(token, dice, from, to);
   }
 
   private static String resolveSeatColor(GameSnapshot snap, int seat) {
@@ -512,98 +326,6 @@ public class BotService {
       return seatColors.get(seat);
     }
     return snap.getCurrentColor();
-  }
-
-  private static int countOwnOnCell(List<Integer> ownPositions, int excludeToken, int cell) {
-    if (ownPositions == null || isJail(cell) || isHome(cell)) {
-      return 0;
-    }
-    int count = 0;
-    for (int i = 0; i < ownPositions.size(); i++) {
-      if (i == excludeToken) {
-        continue;
-      }
-      Integer p = ownPositions.get(i);
-      if (p != null && p == cell) {
-        count++;
-      }
-    }
-    return count;
-  }
-
-  private static boolean isPositionThreatened(
-      int defenderSeat,
-      int pos,
-      Map<String, List<Integer>> allPositions,
-      List<String> seatColors
-  ) {
-    if (!isMain(pos) || isSafe(pos) || allPositions == null || seatColors == null) {
-      return false;
-    }
-    for (int s = 0; s < seatColors.size(); s++) {
-      if (s == defenderSeat) {
-        continue;
-      }
-      String name = seatColors.get(s);
-      LudoColor attacker;
-      try {
-        attacker = LudoColor.valueOf(name);
-      } catch (RuntimeException ignored) {
-        continue;
-      }
-      List<Integer> positions = allPositions.get(name);
-      if (positions == null) {
-        continue;
-      }
-      for (Integer from : positions) {
-        if (from == null || !isMain(from)) {
-          continue;
-        }
-        for (int d = 1; d <= 6; d++) {
-          if (applySteps(attacker, from, d) == pos) {
-            return true;
-          }
-        }
-      }
-    }
-    return false;
-  }
-
-  private static int remainingDistance(LudoColor color, int pos) {
-    if (isJail(pos) || isHome(pos)) {
-      return Integer.MAX_VALUE;
-    }
-    if (isExit(pos)) {
-      return HOME_STEPS - 1 - exitIndex(pos);
-    }
-    int toExit = (color.exitTile() - pos + TOTAL_TILES) % TOTAL_TILES;
-    return toExit + HOME_STEPS;
-  }
-
-  private static int applySteps(LudoColor color, int from, int steps) {
-    if (isJail(from)) {
-      return color.startTile();
-    }
-    int pos = from;
-    for (int i = 0; i < steps; i++) {
-      if (isMain(pos)) {
-        if (pos == color.exitTile()) {
-          pos = toExit(0);
-        } else {
-          pos = (pos + 1) % TOTAL_TILES;
-        }
-      } else if (isExit(pos)) {
-        int idx = exitIndex(pos);
-        if (idx >= EXIT_LEN - 1) {
-          pos = HOME;
-        } else {
-          pos = toExit(idx + 1);
-        }
-      } else {
-        break;
-      }
-    }
-    return pos;
   }
 
   private void sleepBeforeDiceRoll() {

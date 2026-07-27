@@ -1,22 +1,22 @@
 /**
- * Animate captured pawns walking back to their yard (JAIL), cell by cell.
+ * Animate captured pawns walking back to their yard (JAIL), cell by cell — fast.
  */
 
 import type { IListTokens } from "../../interfaces";
 import {
-  ONLINE_TOKEN_MOVEMENT_INTERVAL_VALUE,
-  TOKEN_STEP_PAUSE_MS,
+  CAPTURE_RETURN_PAUSE_MS,
+  CAPTURE_RETURN_STEP_MS,
 } from "../../utils/constants";
 import { applyTokenCell, buildReturnToJailPath } from "../game/rules";
 import { nextFrame, runCellByCellSteps, type AnimCancel } from "./onlineAnimate";
 
 export type CaptureVictim = { playerIndex: number; tokenIndex: number };
 
-function setVictimMoving(
+function setVictimReturning(
   list: IListTokens[],
   playerIndex: number,
   tokenIndex: number,
-  isMoving: boolean
+  active: boolean
 ): IListTokens[] {
   return list.map((group, pIdx) => {
     if (pIdx !== playerIndex) return group;
@@ -24,7 +24,13 @@ function setVictimMoving(
       ...group,
       tokens: group.tokens.map((t, tIdx) =>
         tIdx === tokenIndex
-          ? { ...t, isMoving, animated: isMoving, snapPlace: false }
+          ? {
+              ...t,
+              isMoving: active,
+              animated: active,
+              isReturning: active,
+              snapPlace: false,
+            }
           : t
       ),
     };
@@ -32,7 +38,7 @@ function setVictimMoving(
 }
 
 /**
- * Walk each captive reverse along the board into JAIL.
+ * Walk each captive reverse along the board into JAIL at high speed.
  * Mutates visually via `apply`; returns the final token list.
  */
 export async function runReturnToJailAnimations(
@@ -48,8 +54,8 @@ export async function runReturnToJailAnimations(
 ): Promise<IListTokens[]> {
   if (!victims.length) return listTokens;
 
-  const stepMs = options?.stepMs ?? ONLINE_TOKEN_MOVEMENT_INTERVAL_VALUE;
-  const pauseMs = options?.pauseMs ?? TOKEN_STEP_PAUSE_MS;
+  const stepMs = options?.stepMs ?? CAPTURE_RETURN_STEP_MS;
+  const pauseMs = options?.pauseMs ?? CAPTURE_RETURN_PAUSE_MS;
   let working = listTokens;
 
   for (const victim of victims) {
@@ -63,7 +69,7 @@ export async function runReturnToJailAnimations(
     const path = buildReturnToJailPath(token, group.positionGame);
     if (!path.length) continue;
 
-    working = setVictimMoving(
+    working = setVictimReturning(
       working,
       victim.playerIndex,
       victim.tokenIndex,
@@ -90,6 +96,7 @@ export async function runReturnToJailAnimations(
         const nextTokens = g.tokens.slice();
         nextTokens[victim.tokenIndex] = {
           ...nextToken,
+          isReturning: true,
           snapPlace: false,
         };
         working = working.slice();
@@ -100,7 +107,7 @@ export async function runReturnToJailAnimations(
       pauseMs
     );
 
-    working = setVictimMoving(
+    working = setVictimReturning(
       working,
       victim.playerIndex,
       victim.tokenIndex,
