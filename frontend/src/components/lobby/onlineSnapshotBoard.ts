@@ -56,9 +56,6 @@ const SCHEME_BY_OFFSET: TBoardColors[] = [
   EBoardColors.BRGY,
 ];
 
-/** Backend seat order (`LudoColor.forPlayerCount`). */
-const SEAT_COLOR_ORDER = ["RED", "GREEN", "YELLOW", "BLUE"] as const;
-
 const CELLS_PER_ARM = 13;
 const TOTAL_CELLS = 52;
 
@@ -89,13 +86,32 @@ export function displayPlayerName(
   return fresh;
 }
 
+/**
+ * Seat → color in server seat order (must match userIds[i] / lastActionSeat).
+ * Never re-sort by fixed RGYB — colors are shuffled onto seats at match start.
+ */
 export function seatColorsFromSnapshot(snapshot: IGameSnapshot): TColors[] {
+  const seats = snapshot.userIds?.length || 0;
+  if (
+    snapshot.seatColors?.length &&
+    (seats === 0 || snapshot.seatColors.length === seats)
+  ) {
+    return snapshot.seatColors as TColors[];
+  }
+  // Fallback: LinkedHashMap insertion order from snapshot JSON
   const positions = snapshot.tokenPositions || {};
-  const ordered = SEAT_COLOR_ORDER.filter((c) =>
-    Object.prototype.hasOwnProperty.call(positions, c)
-  ) as TColors[];
-  if (ordered.length > 0) return ordered;
   return Object.keys(positions) as TColors[];
+}
+
+/** Map a server absolute token position into view tile coords. */
+export function viewTileFromServerPos(
+  serverPos: number,
+  tokenIndex: number,
+  snapshot: IGameSnapshot,
+  mySeat: number
+): { typeTile: TtypeTile; positionTile: number } {
+  const k = cornerOffsetForSeat(snapshot, mySeat);
+  return decodeServerPos(serverPos, tokenIndex, k);
 }
 
 /** Rotation offset so the local player's house lands bottom-left. */

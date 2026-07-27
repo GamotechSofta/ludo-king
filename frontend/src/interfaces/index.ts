@@ -137,6 +137,8 @@ export interface IToken {
   enableTooltip: boolean;
   isMoving: boolean;
   animated: boolean;
+  /** Instant reposition without CSS transition (animation start cell). */
+  snapPlace?: boolean;
 }
 
 export interface IListTokens {

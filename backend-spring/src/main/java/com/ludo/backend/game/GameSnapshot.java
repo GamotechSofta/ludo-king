@@ -14,6 +14,8 @@ public class GameSnapshot {
   private int diceValue;
   private List<Integer> diceList = new ArrayList<>();
   private Map<String, List<Integer>> tokenPositions = new LinkedHashMap<>();
+  /** Color name per seat index (authoritative after shuffle). */
+  private List<String> seatColors = new ArrayList<>();
   private List<Integer> legalTokenIndexes = new ArrayList<>();
   private boolean bonusRoll;
   private Integer winnerSeat;
@@ -90,6 +92,14 @@ public class GameSnapshot {
 
   public void setTokenPositions(Map<String, List<Integer>> tokenPositions) {
     this.tokenPositions = tokenPositions;
+  }
+
+  public List<String> getSeatColors() {
+    return seatColors;
+  }
+
+  public void setSeatColors(List<String> seatColors) {
+    this.seatColors = seatColors;
   }
 
   public List<Integer> getLegalTokenIndexes() {

@@ -60,6 +60,8 @@ export interface IGameSnapshot {
   diceValue: number;
   diceList: number[];
   tokenPositions: Record<string, number[]>;
+  /** Color per seat index (server order after shuffle). Prefer over Object.keys. */
+  seatColors?: string[];
   legalTokenIndexes: number[];
   legalMoves?: Array<{ tokenIndex: number; diceIndex: number }>;
   userIds?: string[];

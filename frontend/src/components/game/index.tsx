@@ -19,8 +19,10 @@ import {
   DICE_VALUE_GET_OUT_JAIL,
   EtypeTile,
   TOKEN_MOVEMENT_INTERVAL_VALUE,
+  TOKEN_STEP_PAUSE_MS,
 } from "../../utils/constants";
 import { playSound, preloadGameSounds, beginMatchMusic, stopBackgroundMusic } from "../../utils/sounds";
+import { runCellByCellSteps, nextFrame } from "../lobby/onlineAnimate";
 import { PageWrapper } from "../wrapper";
 import {
   Board,
@@ -66,8 +68,6 @@ interface GameProps {
   onExit?: () => void;
   onGameOver?: (entries: IResultEntry[]) => void;
 }
-
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const Game = ({
   totalPlayers = 2,
@@ -246,35 +246,85 @@ const Game = ({
 
       let working = listTokensRef.current;
 
-      for (let i = 0; i < path.length; i++) {
-        const step = path[i];
-        playSound("passingNext");
-        working = working.map((group, pIdx) => {
-          if (pIdx !== turn) return group;
+      // Arm CSS transition on the mover at its current cell before hopping
+      working = working.map((group, pIdx) => {
+        if (pIdx !== turn) {
           return {
             ...group,
-            tokens: group.tokens.map((t, tIdx) => {
-              if (tIdx !== tokenIndex) {
-                return { ...t, diceAvailable: [], animated: false };
-              }
-              return applyTokenCell(
-                t,
-                positionGame,
-                step.typeTile,
-                step.positionTile,
-                true
-              );
-            }),
+            tokens: group.tokens.map((t) =>
+              t.animated || t.diceAvailable?.length || t.isMoving
+                ? {
+                    ...t,
+                    diceAvailable: [],
+                    animated: false,
+                    isMoving: false,
+                    canSelectToken: false,
+                  }
+                : t
+            ),
           };
-        });
-        setListTokens(working);
-        listTokensRef.current = working;
-        await delay(TOKEN_MOVEMENT_INTERVAL_VALUE);
-
-        if (step.typeTile === EtypeTile.END) {
-          playSound("inside");
         }
-      }
+        return {
+          ...group,
+          tokens: group.tokens.map((t, tIdx) =>
+            tIdx === tokenIndex
+              ? {
+                  ...t,
+                  diceAvailable: [],
+                  animated: false,
+                  canSelectToken: false,
+                  isMoving: true,
+                }
+              : {
+                  ...t,
+                  diceAvailable: [],
+                  animated: false,
+                  canSelectToken: false,
+                  isMoving: false,
+                }
+          ),
+        };
+      });
+      setListTokens(working);
+      listTokensRef.current = working;
+      // Paint isMoving at start cell so CSS transition applies to every hop
+      await nextFrame();
+      await nextFrame();
+
+      await runCellByCellSteps(
+        path.length,
+        TOKEN_MOVEMENT_INTERVAL_VALUE,
+        (stepIndex) => {
+          const step = path[stepIndex];
+          playSound("passingNext");
+          working = working.map((group, pIdx) => {
+            if (pIdx !== turn) return group;
+            return {
+              ...group,
+              tokens: group.tokens.map((t, tIdx) => {
+                if (tIdx !== tokenIndex) {
+                  return { ...t, diceAvailable: [], animated: false };
+                }
+                return applyTokenCell(
+                  t,
+                  positionGame,
+                  step.typeTile,
+                  step.positionTile,
+                  true
+                );
+              }),
+            };
+          });
+          setListTokens(working);
+          listTokensRef.current = working;
+
+          if (step.typeTile === EtypeTile.END) {
+            playSound("inside");
+          }
+        },
+        undefined,
+        TOKEN_STEP_PAUSE_MS
+      );
 
       working = working.map((group, pIdx) => {
         if (pIdx !== turn) return group;
@@ -293,8 +343,13 @@ const Game = ({
       const remainingDice = actions.diceList.filter((_, i) => i !== diceIndex);
       const usedSix = dice.value === DICE_VALUE_GET_OUT_JAIL;
       const playerFinished = !!landing.players[turn]?.finished;
+      // Product rules: bonus only after used 6 or capture (not home alone)
       const bonusRoll = !playerFinished && (usedSix || landing.captured);
-      const consecutiveSixes = usedSix ? actions.consecutiveSixes ?? 0 : 0;
+      // decideAfterDiceRoll already increments the streak on roll; keep it for
+      // bonus turns. If missing (edge path), treat a spent 6 as streak 1.
+      const consecutiveSixes = usedSix
+        ? Math.max(1, actions.consecutiveSixes ?? 0)
+        : 0;
 
       const decision = decideAfterMove(
         landing.listTokens,

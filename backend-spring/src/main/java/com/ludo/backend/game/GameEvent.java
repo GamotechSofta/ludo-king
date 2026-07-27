@@ -39,6 +39,7 @@ public class GameEvent {
   private Integer turnSecondsRemaining;
   private Integer consecutiveSixes;
   private Map<String, List<Integer>> tokenPositions = new LinkedHashMap<>();
+  private List<String> seatColors = new ArrayList<>();
   private List<Integer> legalTokenIndexes = new ArrayList<>();
   private List<Map<String, Integer>> legalMoves = new ArrayList<>();
   private boolean[] finished;
@@ -61,6 +62,7 @@ public class GameEvent {
     e.turnSecondsRemaining = snap.getTurnSecondsRemaining();
     e.consecutiveSixes = snap.getConsecutiveSixes();
     e.tokenPositions = snap.getTokenPositions();
+    e.seatColors = snap.getSeatColors();
     e.legalTokenIndexes = snap.getLegalTokenIndexes();
     e.legalMoves = snap.getLegalMoves();
     e.finished = snap.getFinished();
@@ -220,6 +222,14 @@ public class GameEvent {
 
   public void setTokenPositions(Map<String, List<Integer>> tokenPositions) {
     this.tokenPositions = tokenPositions;
+  }
+
+  public List<String> getSeatColors() {
+    return seatColors;
+  }
+
+  public void setSeatColors(List<String> seatColors) {
+    this.seatColors = seatColors;
   }
 
   public List<Integer> getLegalTokenIndexes() {

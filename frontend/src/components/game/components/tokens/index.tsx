@@ -15,9 +15,8 @@ interface TokensProps {
 }
 
 /**
- * Componente que renderiza el listado de tokens en el bpard...
- * @param param0
- * @returns
+ * Renders all pawns. Keys are color+index so React never cross-wires
+ * player-1 / player-2 tokens when the list is rebuilt.
  */
 const Tokens = ({
   listTokens,
@@ -27,20 +26,18 @@ const Tokens = ({
   handleSelectedToken,
 }: TokensProps) => (
   <React.Fragment>
-    {listTokens.map(({ index, tokens }) => (
-      <React.Fragment key={index}>
-        {tokens.map((token) => (
-          <Token
-            {...token}
-            diceList={diceList}
-            debug={debug}
-            isDisabledUI={isDisabledUI}
-            key={token.index}
-            handleSelectedToken={handleSelectedToken}
-          />
-        ))}
-      </React.Fragment>
-    ))}
+    {listTokens.map((group) =>
+      group.tokens.map((token) => (
+        <Token
+          {...token}
+          diceList={diceList}
+          debug={debug}
+          isDisabledUI={isDisabledUI}
+          key={`${token.color}-${token.index}`}
+          handleSelectedToken={handleSelectedToken}
+        />
+      ))
+    )}
   </React.Fragment>
 );
 

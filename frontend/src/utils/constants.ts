@@ -145,18 +145,22 @@ export const MAXIMUM_VISIBLE_TOKENS_PER_CELL = 4;
 export const TIME_INTERVAL_CHRONOMETER = 50; // org (50), debug: 10,5,0.5
 
 /**
- * Valor que se usará para el intervalo de movimiento de un
- * token en milisegundos..
+ * Interval between pawn cell steps (ms).
+ * One box at a time — slow enough to clearly see each cell.
  */
-export const TOKEN_MOVEMENT_INTERVAL_VALUE = 200; // org (200), debug 100,50,0.5
+export const TOKEN_MOVEMENT_INTERVAL_VALUE = 620;
 
-/** Delay between online path steps — matched to .game-token.moving CSS (~180ms). */
-export const ONLINE_TOKEN_MOVEMENT_INTERVAL_VALUE = 180;
+/** Online: same cell-by-cell cadence as offline. */
+export const ONLINE_TOKEN_MOVEMENT_INTERVAL_VALUE = 620;
+
+/** Extra pause on each cell after the hop lands (ms). */
+export const TOKEN_STEP_PAUSE_MS = 80;
 
 /**
- * Tiempo de giro del dado...
+ * Dice spin duration (seconds) for react-dice-complete.
+ * Classic-like roll feel (~0.65s).
  */
-export const ROLL_TIME_VALUE = 0.45; // slightly snappier for online feel (was 0.6)
+export const ROLL_TIME_VALUE = 0.65;
 
 /**
  * Valor para el delay que se aplica antes de enviar la confirmación al socket

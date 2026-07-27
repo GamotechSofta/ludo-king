@@ -159,6 +159,20 @@ describe("Ludo rules", () => {
     expect(decision.actionsTurn.consecutiveSixes).toBe(1);
   });
 
+  test("resolveLanding sets reachedHome on END", () => {
+    const players = makePlayers(2);
+    const tokens = makeTokens(players);
+    tokens[0].tokens[0] = applyTokenCell(
+      tokens[0].tokens[0],
+      tokens[0].positionGame,
+      EtypeTile.END,
+      0
+    );
+    const result = resolveLanding(tokens, players, 0, 0);
+    expect(result.reachedHome).toBe(true);
+    expect(result.players[0].finished).toBe(false);
+  });
+
   test("turn order is clockwise and skips finished", () => {
     const players = makePlayers(4);
     players[1].finished = true;

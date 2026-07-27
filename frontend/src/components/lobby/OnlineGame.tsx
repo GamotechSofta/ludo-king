@@ -1,4 +1,12 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { flushSync } from "react-dom";
 import { useGameSocket } from "../../hooks/useGameSocket";
 import type {
   IActionsTurn,
@@ -13,6 +21,7 @@ import {
   EPositionProfiles,
   EtypeTile,
   ONLINE_TOKEN_MOVEMENT_INTERVAL_VALUE,
+  TOKEN_STEP_PAUSE_MS,
 } from "../../utils/constants";
 import { playSound, preloadGameSounds, beginMatchMusic, stopBackgroundMusic } from "../../utils/sounds";
 import { PageWrapper } from "../wrapper";
@@ -33,7 +42,7 @@ import {
 import type { IGameSnapshot, IGuestUser, IResultEntry } from "./types";
 import Results from "./Results";
 import { fetchWalletBalance } from "../../api/ludoApi";
-import { runRafSteps, type AnimCancel } from "./onlineAnimate";
+import { runCellByCellSteps, nextFrame, type AnimCancel } from "./onlineAnimate";
 import { onlinePerf } from "../../utils/onlinePerf";
 import {
   actionsTurnFromSnapshot,
@@ -45,6 +54,7 @@ import {
   profileTurnIndex,
   seatColorsFromSnapshot,
   snapshotTokenPositionsEqual,
+  viewTileFromServerPos,
 } from "./onlineSnapshotBoard";
 
 interface OnlineGameProps {
@@ -151,6 +161,8 @@ const OnlineGame = ({
   const suppressMoveAnimRef = useRef(false);
   const pendingSnapRef = useRef<IGameSnapshot[]>([]);
   const applySeqRef = useRef(0);
+  /** actionSeq of MOVE we already finished animating — prevents double-play */
+  const lastAnimatedMoveSeqRef = useRef(0);
   const lockedBoardColorRef = useRef<ReturnType<
     typeof boardColorForSnapshot
   > | null>(null);
@@ -207,7 +219,43 @@ const OnlineGame = ({
   ]);
 
   const syncBoardFromSnapshot = useCallback(
-    (snap: IGameSnapshot, keepDiceVisual = false) => {
+    (
+      snap: IGameSnapshot,
+      keepDiceVisual = false,
+      /** After hop finished — allowed to paint MOVE destination tokens */
+      forceTokens = false
+    ) => {
+      // Hard lock: while hopping, never rebuild pawns from server (destination leak)
+      if (animatingRef.current && !forceTokens) {
+        return;
+      }
+
+      // MOVE snapshots carry destination tokenPositions — never paint those
+      // until forceTokens (animation finished). Chrome/UI-only update instead.
+      const isMoveSnap = snap.lastActionType === "MOVE";
+      if (isMoveSnap && !forceTokens) {
+        const prev = prevSnapRef.current;
+        setPlayers(playersForView(snap, mySeat));
+        setCurrentTurn(profileTurnIndex(snap, snap.currentSeatIndex, mySeat));
+        setActionsTurn((prevActions) =>
+          actionsTurnFromSnapshot(
+            snap,
+            mySeat,
+            prevActions,
+            prev?.currentSeatIndex
+          )
+        );
+        // Keep prior tokenPositions as display source of truth
+        prevSnapRef.current = {
+          ...snap,
+          tokenPositions:
+            prev?.tokenPositions && Object.keys(prev.tokenPositions).length
+              ? prev.tokenPositions
+              : snap.tokenPositions,
+        };
+        return;
+      }
+
       const prev = prevSnapRef.current;
       const prevSeat = prev?.currentSeatIndex;
       const turnHandoff =
@@ -263,25 +311,130 @@ const OnlineGame = ({
 
   const animCancelRef = useRef<AnimCancel>({ cancelled: false });
 
+  /** Put one pawn on a server cell instantly (no CSS slide). */
+  const placePawnInstant = (
+    working: IListTokens[],
+    seat: number,
+    tokenIndex: number,
+    serverPos: number,
+    snap: IGameSnapshot
+  ): IListTokens[] => {
+    const positionGame = working[seat].positionGame;
+    const { typeTile, positionTile } = viewTileFromServerPos(
+      serverPos,
+      tokenIndex,
+      snap,
+      mySeat
+    );
+    return working.map((group, pIdx) => {
+      if (pIdx !== seat) return group;
+      return {
+        ...group,
+        tokens: group.tokens.map((t, tIdx) => {
+          if (tIdx !== tokenIndex) return t;
+          const next = applyTokenCell(
+            t,
+            positionGame,
+            typeTile,
+            positionTile,
+            false
+          );
+          return {
+            ...next,
+            snapPlace: true,
+            isMoving: false,
+            animated: false,
+            diceAvailable: [],
+            canSelectToken: false,
+            enableTooltip: false,
+          };
+        }),
+      };
+    });
+  };
+
   const runMoveAnimation = useCallback(
     async (
       snapForLanding: IGameSnapshot,
       seat: number,
       tokenIndex: number,
-      diceValue: TDicevalues
+      diceValue: TDicevalues,
+      startServerPos: number | null
     ) => {
-      const tokens = listTokensRef.current;
-      if (!tokens[seat]) return false;
-
-      const positionGame = tokens[seat].positionGame;
-      const token = tokens[seat].tokens[tokenIndex];
-      if (!token) return false;
-      const path = buildMovePath(token, positionGame, diceValue);
-      if (!path.length) return false;
-
-      animCancelRef.current = { cancelled: false };
+      // Lock display FIRST — blocks sync from painting destination
       animatingRef.current = true;
       setIsBusy(true);
+      animCancelRef.current = { cancelled: false };
+
+      let working = listTokensRef.current;
+      if (!working[seat]?.tokens[tokenIndex]) {
+        animatingRef.current = false;
+        setIsBusy(false);
+        return false;
+      }
+
+      const positionGame = working[seat].positionGame;
+
+      // ALWAYS sit on start cell before hopping (never start from destination)
+      if (startServerPos != null) {
+        working = placePawnInstant(
+          working,
+          seat,
+          tokenIndex,
+          startServerPos,
+          snapForLanding
+        );
+        listTokensRef.current = working;
+        flushSync(() => {
+          setListTokens(working);
+        });
+        await nextFrame();
+        await nextFrame();
+      }
+
+      let token = working[seat].tokens[tokenIndex];
+      // Clear snap flag, arm movement transition on the START cell
+      working = working.map((group) => ({
+        ...group,
+        tokens: group.tokens.map((t, tIdx) => {
+          const isMover = group.index === seat && tIdx === tokenIndex;
+          if (isMover) {
+            return {
+              ...t,
+              snapPlace: false,
+              isMoving: true,
+              animated: false,
+              diceAvailable: [],
+              canSelectToken: false,
+              enableTooltip: false,
+            };
+          }
+          return {
+            ...t,
+            snapPlace: false,
+            isMoving: false,
+            animated: false,
+            diceAvailable: [],
+            canSelectToken: false,
+            enableTooltip: false,
+          };
+        }),
+      }));
+      token = working[seat].tokens[tokenIndex];
+      listTokensRef.current = working;
+      flushSync(() => {
+        setListTokens(working);
+      });
+      await nextFrame();
+      await nextFrame();
+
+      const path = buildMovePath(token, positionGame, diceValue);
+      if (!path.length) {
+        animatingRef.current = false;
+        setIsBusy(false);
+        return false;
+      }
+
       setActionsTurn((prev) => ({
         ...prev,
         isDisabledUI: true,
@@ -290,42 +443,36 @@ const OnlineGame = ({
       }));
 
       const t0 = performance.now();
-      let working = tokens;
 
-      await runRafSteps(
+      await runCellByCellSteps(
         path.length,
         ONLINE_TOKEN_MOVEMENT_INTERVAL_VALUE,
         (stepIndex) => {
           const step = path[stepIndex];
           playSound("passingNext");
-          // Structural share: only clone the moving seat / pawn
-          working = working.map((group, pIdx) => {
-            if (pIdx !== seat) return group;
-            return {
-              ...group,
-              tokens: group.tokens.map((t, tIdx) => {
-                if (tIdx !== tokenIndex) {
-                  return t.diceAvailable?.length || t.animated
-                    ? { ...t, diceAvailable: [], animated: false }
-                    : t;
-                }
-                return applyTokenCell(
-                  t,
-                  positionGame,
-                  step.typeTile,
-                  step.positionTile,
-                  true
-                );
-              }),
-            };
-          });
+          const group = working[seat];
+          const nextToken = {
+            ...applyTokenCell(
+              group.tokens[tokenIndex],
+              positionGame,
+              step.typeTile,
+              step.positionTile,
+              true
+            ),
+            snapPlace: false,
+          };
+          const nextTokens = group.tokens.slice();
+          nextTokens[tokenIndex] = nextToken;
+          working = working.slice();
+          working[seat] = { ...group, tokens: nextTokens };
           listTokensRef.current = working;
           setListTokens(working);
           if (step.typeTile === EtypeTile.END) {
             playSound("inside");
           }
         },
-        animCancelRef.current
+        animCancelRef.current,
+        TOKEN_STEP_PAUSE_MS
       );
 
       working = working.map((group, pIdx) => {
@@ -334,7 +481,7 @@ const OnlineGame = ({
           ...group,
           tokens: group.tokens.map((t, tIdx) =>
             tIdx === tokenIndex
-              ? { ...t, isMoving: false, animated: false }
+              ? { ...t, isMoving: false, animated: false, snapPlace: false }
               : t
           ),
         };
@@ -350,8 +497,20 @@ const OnlineGame = ({
       );
       if (landing.captured) {
         playSound("capture");
-        setListTokens(landing.listTokens);
-        listTokensRef.current = landing.listTokens;
+        const cleaned = landing.listTokens.map((group) => ({
+          ...group,
+          tokens: group.tokens.map((t) => ({
+            ...t,
+            isMoving: false,
+            animated: false,
+            snapPlace: false,
+            diceAvailable: [],
+            canSelectToken: false,
+            enableTooltip: false,
+          })),
+        }));
+        setListTokens(cleaned);
+        listTokensRef.current = cleaned;
       }
 
       onlinePerf.markRender(performance.now() - t0);
@@ -359,16 +518,42 @@ const OnlineGame = ({
       setIsBusy(false);
       return true;
     },
-    []
+    [mySeat]
   );
+
+  // Lock BEFORE browser paints MOVE destination into any derived UI
+  useLayoutEffect(() => {
+    if (!snapshot) return;
+    const seq = snapshot.actionSeq || 0;
+    if (
+      snapshot.lastActionType === "MOVE" &&
+      snapshot.lastActionSeat != null &&
+      snapshot.lastActionDice != null &&
+      !suppressMoveAnimRef.current &&
+      seq !== lastAnimatedMoveSeqRef.current
+    ) {
+      animatingRef.current = true;
+    }
+  }, [snapshot]);
 
   // Apply snapshot → board (dice + opponent/bot move animations)
   useEffect(() => {
     if (!snapshot || mySeat < 0) return;
+    let cancelled = false;
 
     const apply = async (snap: IGameSnapshot) => {
-      if (animatingRef.current) {
-        // FIFO queue — never drop intermediate rolls/moves; skip exact seq dupes
+      if (cancelled) return;
+
+      const moveSeq = snap.actionSeq || 0;
+      const isRemoteMove =
+        !suppressMoveAnimRef.current &&
+        snap.lastActionType === "MOVE" &&
+        snap.lastActionSeat != null &&
+        snap.lastActionTokenIndex != null &&
+        snap.lastActionDice != null &&
+        moveSeq !== lastAnimatedMoveSeqRef.current;
+
+      if (animatingRef.current && !isRemoteMove) {
         const q = pendingSnapRef.current;
         const last = q[q.length - 1];
         if (!last || (last.actionSeq || 0) !== (snap.actionSeq || 0)) {
@@ -426,6 +611,9 @@ const OnlineGame = ({
             diceList: snap.diceList,
             turnStartedAt: snap.turnStartedAt,
             turnSecondsRemaining: snap.turnSecondsRemaining,
+            actionSeq: snap.actionSeq ?? prev.actionSeq,
+            // Keep pre-move pawn cells — never copy destination here
+            tokenPositions: prev.tokenPositions,
           };
         }
         return;
@@ -461,28 +649,65 @@ const OnlineGame = ({
       }
 
       if (moved && diceValue >= 1 && diceValue <= 6) {
+        if (moveSeq > 0 && moveSeq === lastAnimatedMoveSeqRef.current) {
+          animatingRef.current = false;
+          syncBoardFromSnapshot(snap, true, true);
+          return;
+        }
+        // Freeze board BEFORE any paint of destination positions
+        animatingRef.current = true;
         lastDiceSigRef.current = diceSig;
+        const colors = seatColorsFromSnapshot(snap);
+        const startPos =
+          snap.lastActionFrom != null
+            ? snap.lastActionFrom
+            : prev?.tokenPositions?.[colors[moved.seat]]?.[moved.tokenIndex] ??
+              null;
+
+        // Instant start cell NOW (sync), before any await — kills destination flash
+        if (startPos != null && listTokensRef.current[moved.seat]) {
+          const placed = placePawnInstant(
+            listTokensRef.current,
+            moved.seat,
+            moved.tokenIndex,
+            startPos,
+            snap
+          );
+          listTokensRef.current = placed;
+          flushSync(() => setListTokens(placed));
+        }
+
         const ok = await runMoveAnimation(
           snap,
           moved.seat,
           moved.tokenIndex,
-          diceValue as TDicevalues
+          diceValue as TDicevalues,
+          // Already placed above — pass null to skip second snap
+          null
         );
+        if (cancelled) return;
         if (seq !== applySeqRef.current) return;
+        lastAnimatedMoveSeqRef.current = moveSeq;
         pendingDiceRef.current = null;
+        suppressMoveAnimRef.current = false;
         if (ok) {
-          syncBoardFromSnapshot(snap, true);
+          syncBoardFromSnapshot(snap, true, true);
         } else {
-          syncBoardFromSnapshot(snap);
+          syncBoardFromSnapshot(snap, false, true);
         }
         const next = pendingSnapRef.current.shift();
         if (next) void apply(next);
         return;
       }
 
-      if (suppressMoveAnimRef.current) {
-        suppressMoveAnimRef.current = false;
-        pendingDiceRef.current = null;
+      // Local player already animating this move — never paint destination early
+      if (suppressMoveAnimRef.current || animatingRef.current) {
+        const q = pendingSnapRef.current;
+        const last = q[q.length - 1];
+        if (!last || (last.actionSeq || 0) !== (snap.actionSeq || 0)) {
+          q.push(snap);
+        }
+        return;
       }
 
       lastDiceSigRef.current = diceSig;
@@ -492,6 +717,9 @@ const OnlineGame = ({
     };
 
     void apply(snapshot);
+    return () => {
+      cancelled = true;
+    };
   }, [snapshot, mySeat, syncBoardFromSnapshot, runMoveAnimation]);
 
   const handleSelectDice = useCallback(
@@ -522,21 +750,48 @@ const OnlineGame = ({
       const diceValue = (snapshot.diceList || [])[diceIndex] as TDicevalues;
       if (!diceValue) return;
 
-      // Broadcast validated move ASAP so opponents start animating in parallel.
-      // Local path is computed client-side from the same dice — no per-cell WS.
+      // Lock BEFORE moveToken so the MOVE snapshot cannot paint destination first
+      animatingRef.current = true;
+      setIsBusy(true);
       suppressMoveAnimRef.current = true;
       pendingDiceRef.current = {
         seat: mySeat,
         diceList: [...(snapshot.diceList || [])],
       };
+      // Pre-move snapshot still has the start cell — never use post-move positions
+      const colors = seatColorsFromSnapshot(snapshot);
+      const startPos =
+        snapshot.tokenPositions?.[colors[mySeat]]?.[tokenIndex] ?? null;
       moveToken(tokenIndex, diceIndex);
-      await runMoveAnimation(snapshot, mySeat, tokenIndex, diceValue);
+      const ok = await runMoveAnimation(
+        snapshot,
+        mySeat,
+        tokenIndex,
+        diceValue,
+        startPos
+      );
+      suppressMoveAnimRef.current = false;
+      // Apply any snapshots that arrived during the hop (sync only, no re-anim)
+      const queued = pendingSnapRef.current.splice(0);
+      const latest = queued.length ? queued[queued.length - 1] : null;
+      if (latest) {
+        if (latest.actionSeq) {
+          lastAnimatedMoveSeqRef.current = latest.actionSeq;
+        }
+        syncBoardFromSnapshot(latest, true, true);
+      } else if (ok && snapshot) {
+        prevSnapRef.current = {
+          ...(prevSnapRef.current || snapshot),
+          actionSeq: (prevSnapRef.current?.actionSeq || 0) + 1,
+        };
+      }
     },
-    [snapshot, isBusy, mySeat, runMoveAnimation, moveToken]
+    [snapshot, isBusy, mySeat, runMoveAnimation, moveToken, syncBoardFromSnapshot]
   );
 
   const handleDoneDice = useCallback(() => {
     if (!snapshot) return;
+    if (animatingRef.current) return;
     // After dice spin, show selectable tokens for the current snap
     const canMove =
       snapshot.currentSeatIndex === mySeat &&

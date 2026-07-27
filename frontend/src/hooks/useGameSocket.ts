@@ -28,6 +28,7 @@ export interface IGameEvent {
   currentSeatIndex?: number;
   diceList?: number[];
   tokenPositions?: Record<string, number[]>;
+  seatColors?: string[];
   state?: IGameSnapshot;
   lastActionType?: string | null;
   turnStartedAt?: string;
@@ -56,7 +57,18 @@ function eventToSnapshot(raw: unknown): IGameSnapshot | null {
   if (!raw || typeof raw !== "object") return null;
   const ev = raw as IGameEvent;
   if (ev.state) {
-    return normalizeSnapshot(ev.state);
+    const state = normalizeSnapshot(ev.state);
+    if (!state) return null;
+    // Ensure from/to survive even if nested state omitted them
+    return {
+      ...state,
+      lastActionFrom: state.lastActionFrom ?? ev.from ?? null,
+      lastActionTo: state.lastActionTo ?? ev.to ?? null,
+      lastActionType: state.lastActionType || ev.lastActionType || ev.type || null,
+      lastActionSeat: state.lastActionSeat ?? ev.seat ?? null,
+      lastActionTokenIndex: state.lastActionTokenIndex ?? ev.tokenIndex ?? null,
+      lastActionDice: state.lastActionDice ?? ev.dice ?? null,
+    };
   }
   // Bare snapshot (legacy) or compact event with tokenPositions
   if (ev.tokenPositions && Object.keys(ev.tokenPositions).length > 0) {
@@ -68,6 +80,7 @@ function eventToSnapshot(raw: unknown): IGameSnapshot | null {
       diceValue: ev.dice ?? 0,
       diceList: ev.diceList || [],
       tokenPositions: ev.tokenPositions,
+      seatColors: ev.seatColors,
       legalTokenIndexes: ev.legalTokenIndexes || [],
       legalMoves: ev.legalMoves,
       finished: ev.finished,
@@ -79,6 +92,8 @@ function eventToSnapshot(raw: unknown): IGameSnapshot | null {
       lastActionSeat: ev.seat,
       lastActionTokenIndex: ev.tokenIndex,
       lastActionDice: ev.dice,
+      lastActionFrom: ev.from ?? null,
+      lastActionTo: ev.to ?? null,
       actionSeq: ev.actionSeq,
     };
     return normalizeSnapshot(snap);

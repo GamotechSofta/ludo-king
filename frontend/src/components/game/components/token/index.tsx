@@ -40,6 +40,7 @@ const Token = ({
   enableTooltip = false,
   isMoving = false,
   animated = false,
+  snapPlace = false,
   canSelectToken = true,
   diceList = [],
   isDisabledUI = false,
@@ -139,7 +140,8 @@ const Token = ({
 
   const isMovingClass = isMoving ? "moving" : "";
   const isAnimatedClass = animated ? "animated" : "";
-  const className = `game-token ${isAnimatedClass} ${isMovingClass}`;
+  const isSnapClass = snapPlace ? "snap" : "";
+  const className = `game-token ${isAnimatedClass} ${isMovingClass} ${isSnapClass}`;
   const stylePiece = getTokenSyle({ ...calculateTokenStyles, typeTile });
 
   const showButton =
@@ -176,6 +178,7 @@ export default React.memo(Token, (prev, next) => {
     prev.coordinate?.y === next.coordinate?.y &&
     prev.isMoving === next.isMoving &&
     prev.animated === next.animated &&
+    prev.snapPlace === next.snapPlace &&
     prev.canSelectToken === next.canSelectToken &&
     prev.totalTokens === next.totalTokens &&
     prev.position === next.position &&

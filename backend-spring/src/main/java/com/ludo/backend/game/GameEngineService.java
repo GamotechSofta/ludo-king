@@ -128,7 +128,10 @@ public class GameEngineService {
 
     /** Rebuild runtime from a persisted snapshot (reconnect / cross-instance). */
     static MatchRuntime fromSnapshot(GameSnapshot snap) {
-      List<String> colorKeys = new ArrayList<>(snap.getTokenPositions().keySet());
+      List<String> colorKeys =
+          snap.getSeatColors() != null && !snap.getSeatColors().isEmpty()
+              ? new ArrayList<>(snap.getSeatColors())
+              : new ArrayList<>(snap.getTokenPositions().keySet());
       int n = colorKeys.size();
       if (snap.getUserIds() != null && snap.getUserIds().size() > 0) {
         n = snap.getUserIds().size();
@@ -480,12 +483,13 @@ public class GameEngineService {
       return snapshot(rt);
     }
 
-    // Extra turn: (1) six was used for a move, or (2) capture bonus (separate from six-streak)
+    // Extra turn: (1) six used for a move, or (2) capture bonus
+    // Home finish alone does NOT grant a bonus (product rules)
     boolean extraFromSix = usedSix && rt.consecutiveSixes < MAX_CONSECUTIVE_SIXES;
     boolean extraFromCapture = captured;
     if (extraFromSix || extraFromCapture) {
       if (!usedSix) {
-        // Capture after non-six: streak already 0; keep it
+        // Capture after non-six: six-streak does not continue
         rt.consecutiveSixes = 0;
       }
       rt.phase = PHASE_ROLL;
@@ -771,21 +775,31 @@ public class GameEngineService {
         Math.max(0, (int) (TURN_TIMEOUT_SECONDS - elapsed))
     );
     snap.setConsecutiveSixes(rt.consecutiveSixes);
-    snap.setBonusRoll(PHASE_ROLL.equals(rt.phase) && rt.consecutiveSixes > 0);
+    // Same seat still rolling after a MOVE = bonus (six / capture / home)
+    boolean bonusAfterMove =
+        PHASE_ROLL.equals(rt.phase)
+            && "MOVE".equals(rt.lastActionType)
+            && rt.lastActionSeat != null
+            && rt.lastActionSeat == rt.currentSeat;
+    snap.setBonusRoll(bonusAfterMove);
     snap.setFinished(Arrays.copyOf(rt.finished, rt.finished.length));
     snap.setIsBot(Arrays.copyOf(rt.isBot, rt.isBot.length));
     snap.setUserIds(Arrays.asList(rt.userIds.clone()));
     snap.setUsernames(Arrays.asList(rt.usernames.clone()));
 
     Map<String, List<Integer>> positions = new LinkedHashMap<>();
+    List<String> seatColors = new ArrayList<>(rt.maxPlayers);
     for (int s = 0; s < rt.maxPlayers; s++) {
       List<Integer> list = new ArrayList<>(4);
       for (int t = 0; t < 4; t++) {
         list.add(rt.tokens[s][t]);
       }
-      positions.put(rt.colors[s].name(), list);
+      String colorName = rt.colors[s].name();
+      positions.put(colorName, list);
+      seatColors.add(colorName);
     }
     snap.setTokenPositions(positions);
+    snap.setSeatColors(seatColors);
 
     List<Integer> legalTokens = new ArrayList<>();
     List<Map<String, Integer>> legalMoves = new ArrayList<>();

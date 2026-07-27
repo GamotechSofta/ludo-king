@@ -10,6 +10,14 @@ export type TGameSound = keyof typeof SOUND_FILES;
 const BG_MUSIC_SRC = "/sounds/ludo_king.mp3";
 const BG_MUSIC_VOLUME = 0.28;
 
+/** Default volumes tuned for Classic-like clarity. */
+const DEFAULT_VOLUME: Record<TGameSound, number> = {
+  diceRolling: 0.72,
+  passingNext: 0.38,
+  inside: 0.62,
+  capture: 0.85,
+};
+
 const cache = new Map<TGameSound, HTMLAudioElement>();
 let bgMusic: HTMLAudioElement | null = null;
 
@@ -34,14 +42,17 @@ const getBgMusic = () => {
 };
 
 /** Play a short SFX; clones overlapping plays for step / capture sounds. */
-export const playSound = (name: TGameSound, volume = 0.55) => {
+export const playSound = (name: TGameSound, volume?: number) => {
   try {
     const base = getAudio(name);
     const audio =
       name === "passingNext" || name === "capture"
         ? (base.cloneNode(true) as HTMLAudioElement)
         : base;
-    audio.volume = name === "capture" ? Math.min(1, volume + 0.15) : volume;
+    audio.volume = Math.min(
+      1,
+      volume ?? DEFAULT_VOLUME[name] ?? 0.55
+    );
     audio.currentTime = 0;
     void audio.play().catch(() => {
       // Autoplay may be blocked until user gesture; ignore

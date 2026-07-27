@@ -3,24 +3,32 @@
   overflow: visible;
 }
 
+/* Selectable pulse only — never transition left/top (avoids glitching idle pawns). */
 .game-token.animated {
-  transition:
-    left 100ms ease,
-    top 100ms ease;
+  animation: pinPulse 1.1s ease-in-out infinite;
 }
 
+/* Instant place at start cell — no CSS slide (prevents teleport flicker) */
+.game-token.snap {
+  transition: none !important;
+}
+
+/*
+ * One-cell hop. Duration must be ≤ JS step wait so hops don't overlap.
+ */
 .game-token.moving {
   transition:
-    left 165ms cubic-bezier(0.25, 0.46, 0.45, 0.94),
-    top 165ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
-  z-index: 80;
+    left 520ms cubic-bezier(0.22, 0.12, 0.28, 1),
+    top 520ms cubic-bezier(0.22, 0.12, 0.28, 1);
+  z-index: 200 !important;
   will-change: left, top;
-  contain: layout style;
+  pointer-events: none;
 }
 
 .game-token.moving .game-token-piece {
-  animation: none;
-  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.35));
+  filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.45)) brightness(1.12);
+  transform: scale(1.12);
+  transform-origin: center bottom;
 }
 
 @keyframes pinPulse {
