@@ -28,6 +28,7 @@ const RenderDice = ({
   const refDice = useRef<ReactDiceRef>(null);
   const handleDoneDiceRef = useRef(handleDoneDice);
   const valueRef = useRef(value);
+  const lastAnimatedRollRef = useRef("");
 
   useEffect(() => {
     handleDoneDiceRef.current = handleDoneDice;
@@ -41,9 +42,11 @@ const RenderDice = ({
 
   useEffect(() => {
     if (!hasTurn) return;
-    if (value !== 0 && diceRollNumber !== 0) {
-      refDice.current?.rollAll([value]);
-    }
+    if (value === 0 || diceRollNumber === 0) return;
+    const rollKey = `${diceRollNumber}:${value}`;
+    if (lastAnimatedRollRef.current === rollKey) return;
+    lastAnimatedRollRef.current = rollKey;
+    refDice.current?.rollAll([value]);
   }, [hasTurn, value, diceRollNumber]);
 
   if (!showDice) return null;
@@ -62,27 +65,29 @@ const RenderDice = ({
         onClick={handleSelectDice}
         aria-label={hasTurn ? "Roll dice" : "Waiting for turn"}
       />
-      {hasTurn && (
-        <div className="game-profile-dice-face">
-          <ReactDice
-            ref={refDice}
-            disableIndividual
-            defaultRoll={1}
-            dieSize={36}
-            dotColor="#111111"
-            faceColor="#ffffff"
-            numDice={1}
-            outline
-            rollTime={rollTime}
-            rollDone={() => {
-              if (valueRef.current !== 0) {
-                handleDoneDiceRef.current();
-              }
-            }}
-            outlineColor="#c8c8c8"
-          />
-        </div>
-      )}
+      <div
+        className={`game-profile-dice-face${
+          hasTurn ? "" : " game-profile-dice-face-hidden"
+        }`}
+      >
+        <ReactDice
+          ref={refDice}
+          disableIndividual
+          defaultRoll={1}
+          dieSize={36}
+          dotColor="#111111"
+          faceColor="#ffffff"
+          numDice={1}
+          outline
+          rollTime={rollTime}
+          rollDone={() => {
+            if (valueRef.current !== 0) {
+              handleDoneDiceRef.current();
+            }
+          }}
+          outlineColor="#c8c8c8"
+        />
+      </div>
     </div>
   );
 };

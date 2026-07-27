@@ -69,6 +69,10 @@
   pointer-events: none;
 }
 
+.game-profile-dice-face-hidden {
+  visibility: hidden;
+}
+
 .game-profile-dice-face .dice {
   margin: 0 !important;
 }

@@ -423,25 +423,38 @@ const OnlineGame = ({
       ) {
         diceOwnerSeatRef.current = snap.currentSeatIndex;
       }
-      applyDiceOwnerTurn(snap, snap.currentSeatIndex);
-      setActionsTurn((prevActions) => {
-        const next = actionsTurnFromSnapshot(
-          snap,
-          mySeat,
-          prevActions,
-          prevSeat
-        );
-        // Never carry a rolled face onto the next player — that retriggers spin.
-        if (
-          keepDiceVisual &&
-          !turnPassed &&
-          (prevActions.diceValue || prevActions.diceRollNumber)
-        ) {
-          next.diceValue = prevActions.diceValue;
-          next.diceRollNumber = prevActions.diceRollNumber;
-        }
-        return next;
-      });
+      const idleTurnPass =
+        turnPassed &&
+        snap.phase === "AWAITING_ROLL" &&
+        (snap.diceList?.length ?? 0) === 0;
+      if (idleTurnPass) {
+        flushSync(() => {
+          setActionsTurn((prevActions) =>
+            actionsTurnFromSnapshot(snap, mySeat, prevActions, prevSeat)
+          );
+          applyDiceOwnerTurn(snap, snap.currentSeatIndex);
+        });
+      } else {
+        applyDiceOwnerTurn(snap, snap.currentSeatIndex);
+        setActionsTurn((prevActions) => {
+          const next = actionsTurnFromSnapshot(
+            snap,
+            mySeat,
+            prevActions,
+            prevSeat
+          );
+          // Never carry a rolled face onto the next player — that retriggers spin.
+          if (
+            keepDiceVisual &&
+            !turnPassed &&
+            (prevActions.diceValue || prevActions.diceRollNumber)
+          ) {
+            next.diceValue = prevActions.diceValue;
+            next.diceRollNumber = prevActions.diceRollNumber;
+          }
+          return next;
+        });
+      }
       prevSnapRef.current = snap;
     },
     [mySeat, applyDiceOwnerTurn, roomId]
@@ -457,14 +470,31 @@ const OnlineGame = ({
     if (shouldClearStuckDice(snapshot, owner, diceFace)) {
       rollingRef.current = false;
       lastProcessedRollIdRef.current = "";
+      const prevOwner = owner;
+      const idleHandoff =
+        snapshot.phase === "AWAITING_ROLL" &&
+        (snapshot.diceList?.length ?? 0) === 0;
       diceOwnerSeatRef.current = snapshot.currentSeatIndex;
-      applyDiceOwnerTurn(snapshot, snapshot.currentSeatIndex);
-      // Keep existing dice face / list — only move which profile shows the die
-      setActionsTurn((prev) => ({
-        ...actionsTurnFromSnapshot(snapshot, mySeat, prev),
-        diceValue: prev.diceValue,
-        diceRollNumber: prev.diceRollNumber,
-      }));
+      if (idleHandoff) {
+        flushSync(() => {
+          setActionsTurn((prev) =>
+            actionsTurnFromSnapshot(
+              snapshot,
+              mySeat,
+              prev,
+              prevOwner >= 0 ? prevOwner : undefined
+            )
+          );
+          applyDiceOwnerTurn(snapshot, snapshot.currentSeatIndex);
+        });
+      } else {
+        applyDiceOwnerTurn(snapshot, snapshot.currentSeatIndex);
+        setActionsTurn((prev) => ({
+          ...actionsTurnFromSnapshot(snapshot, mySeat, prev),
+          diceValue: prev.diceValue,
+          diceRollNumber: prev.diceRollNumber,
+        }));
+      }
     }
   }, [snapshot, mySeat, applyDiceOwnerTurn]);
 
