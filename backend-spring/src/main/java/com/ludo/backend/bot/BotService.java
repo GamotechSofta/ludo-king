@@ -43,7 +43,7 @@ public class BotService {
 
   public BotService(
       GameEngineService gameEngineService,
-      @Value("${ludo.bot.smart-kill-dice-assist:false}") boolean smartKillDiceAssist
+      @Value("${ludo.bot.smart-kill-dice-assist:true}") boolean smartKillDiceAssist
   ) {
     this.gameEngineService = gameEngineService;
     this.smartKillDiceAssist = smartKillDiceAssist;
@@ -89,9 +89,9 @@ public class BotService {
         if (GameEngineService.PHASE_ROLL.equals(snap.getPhase())) {
           sleepBeforeDiceRoll();
           Integer assistDice = null;
-          if (smartKillDiceAssist) {
+          if (smartKillDiceAssist && diff == BotDifficulty.HARD) {
             assistDice =
-                BotKillDiceAssist.pickCaptureDice(
+                BotKillDiceAssist.maybePickCaptureDice(
                     snap,
                     seat,
                     (token, dice) ->

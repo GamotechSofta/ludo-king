@@ -9,23 +9,27 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import org.junit.jupiter.api.Test;
 
 class BotKillDiceAssistTest {
 
   @Test
   void returnsExactDiceWhenOpponentIsReachable() {
-    // GREEN at 13, YELLOW alone at 16 → 3 steps ahead
     GameSnapshot snap =
         snapshot(
             0,
             new boolean[] {true, false},
-            Map.of("GREEN", Arrays.asList(13, JAIL, JAIL, JAIL), "YELLOW", Arrays.asList(16, JAIL, JAIL, JAIL)),
+            Map.of(
+                "GREEN",
+                Arrays.asList(13, JAIL, JAIL, JAIL),
+                "YELLOW",
+                Arrays.asList(16, JAIL, JAIL, JAIL)),
             List.of("GREEN", "YELLOW"));
 
     Integer dice =
-        BotKillDiceAssist.pickCaptureDice(
-            snap, 0, (token, d) -> token == 0 && d == 3);
+        BotKillDiceAssist.pickBestCaptureDice(
+            snap, 0, (token, d) -> token == 0 && d == 3, new Random(1));
 
     assertEquals(3, dice);
   }
@@ -36,11 +40,15 @@ class BotKillDiceAssistTest {
         snapshot(
             0,
             new boolean[] {true, false},
-            Map.of("GREEN", Arrays.asList(13, JAIL, JAIL, JAIL), "YELLOW", Arrays.asList(30, JAIL, JAIL, JAIL)),
+            Map.of(
+                "GREEN",
+                Arrays.asList(13, JAIL, JAIL, JAIL),
+                "YELLOW",
+                Arrays.asList(30, JAIL, JAIL, JAIL)),
             List.of("GREEN", "YELLOW"));
 
     assertNull(
-        BotKillDiceAssist.pickCaptureDice(snap, 0, (token, d) -> false));
+        BotKillDiceAssist.pickBestCaptureDice(snap, 0, (token, d) -> false, new Random(1)));
   }
 
   @Test
@@ -49,16 +57,19 @@ class BotKillDiceAssistTest {
         snapshot(
             0,
             new boolean[] {false, false},
-            Map.of("GREEN", Arrays.asList(13, JAIL, JAIL, JAIL), "YELLOW", Arrays.asList(16, JAIL, JAIL, JAIL)),
+            Map.of(
+                "GREEN",
+                Arrays.asList(13, JAIL, JAIL, JAIL),
+                "YELLOW",
+                Arrays.asList(16, JAIL, JAIL, JAIL)),
             List.of("GREEN", "YELLOW"));
 
     assertNull(
-        BotKillDiceAssist.pickCaptureDice(snap, 0, (token, d) -> true));
+        BotKillDiceAssist.pickBestCaptureDice(snap, 0, (token, d) -> true, new Random(1)));
   }
 
   @Test
   void prefersVictimClosestToHome() {
-    // Two captures: dice 2 for far victim, dice 1 for victim closer to home
     GameSnapshot snap =
         snapshot(
             0,
@@ -71,13 +82,66 @@ class BotKillDiceAssistTest {
             List.of("GREEN", "YELLOW"));
 
     Integer dice =
-        BotKillDiceAssist.pickCaptureDice(
+        BotKillDiceAssist.pickBestCaptureDice(
             snap,
             0,
-            (token, d) ->
-                (token == 0 && d == 1) || (token == 1 && d == 1));
+            (token, d) -> (token == 0 && d == 1) || (token == 1 && d == 1),
+            new Random(1));
 
     assertEquals(1, dice);
+  }
+
+  @Test
+  void maybePickUsesExactDiceOnAssistRoll() {
+    GameSnapshot snap =
+        snapshot(
+            0,
+            new boolean[] {true, false},
+            Map.of(
+                "GREEN",
+                Arrays.asList(13, JAIL, JAIL, JAIL),
+                "YELLOW",
+                Arrays.asList(16, JAIL, JAIL, JAIL)),
+            List.of("GREEN", "YELLOW"));
+
+    // nextInt(100) = 10 → assist (< 80)
+    Random assistRng = new Random() {
+      @Override
+      public int nextInt(int bound) {
+        return bound == 100 ? 10 : 0;
+      }
+    };
+
+    assertEquals(
+        3,
+        BotKillDiceAssist.maybePickCaptureDice(
+            snap, 0, (token, d) -> token == 0 && d == 3, assistRng));
+  }
+
+  @Test
+  void maybePickFallsBackToRandomOnMissRoll() {
+    GameSnapshot snap =
+        snapshot(
+            0,
+            new boolean[] {true, false},
+            Map.of(
+                "GREEN",
+                Arrays.asList(13, JAIL, JAIL, JAIL),
+                "YELLOW",
+                Arrays.asList(16, JAIL, JAIL, JAIL)),
+            List.of("GREEN", "YELLOW"));
+
+    // nextInt(100) = 85 → random branch (>= 80)
+    Random missRng = new Random() {
+      @Override
+      public int nextInt(int bound) {
+        return bound == 100 ? 85 : 0;
+      }
+    };
+
+    assertNull(
+        BotKillDiceAssist.maybePickCaptureDice(
+            snap, 0, (token, d) -> token == 0 && d == 3, missRng));
   }
 
   private static GameSnapshot snapshot(

@@ -13,13 +13,18 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
- * Optional bot dice assist: when enabled, rolls the exact value (1–6) needed for
- * the highest-priority legal capture. Humans and random rolls are unaffected when
- * no capture is reachable or assist is disabled.
+ * Hard-bot kill dice assist: scans legal capture opportunities within 1–6 pips
+ * and usually rolls the exact value needed. Safe stars / blocks are ignored via
+ * {@link BotMoveEvaluator#findCaptureVictim}.
  */
 final class BotKillDiceAssist {
+
+  /** Chance (0–100) to roll the exact capture die when a kill is reachable. */
+  static final int CAPTURE_ASSIST_CHANCE_PCT = 80;
 
   private BotKillDiceAssist() {}
 
@@ -60,12 +65,49 @@ final class BotKillDiceAssist {
   }
 
   /**
-   * @return dice value 1–6 for the best capture, or {@code null} for random roll
+   * @return dice 1–6 for the best capture, or {@code null} for a normal random roll
    */
-  static Integer pickCaptureDice(
+  static Integer maybePickCaptureDice(
       GameSnapshot snap,
       int botSeat,
       MoveLegality legality
+  ) {
+    return maybePickCaptureDice(snap, botSeat, legality, ThreadLocalRandom.current());
+  }
+
+  /**
+   * Same as {@link #maybePickCaptureDice(GameSnapshot, int, MoveLegality)} with injectable RNG.
+   */
+  static Integer maybePickCaptureDice(
+      GameSnapshot snap,
+      int botSeat,
+      MoveLegality legality,
+      Random rng
+  ) {
+    Integer best = pickBestCaptureDice(snap, botSeat, legality, rng);
+    if (best == null || rng == null) {
+      return best;
+    }
+    if (rng.nextInt(100) >= CAPTURE_ASSIST_CHANCE_PCT) {
+      return null;
+    }
+    return best;
+  }
+
+  /** Always picks the highest-priority capture die when one exists. */
+  static Integer pickBestCaptureDice(
+      GameSnapshot snap,
+      int botSeat,
+      MoveLegality legality
+  ) {
+    return pickBestCaptureDice(snap, botSeat, legality, ThreadLocalRandom.current());
+  }
+
+  static Integer pickBestCaptureDice(
+      GameSnapshot snap,
+      int botSeat,
+      MoveLegality legality,
+      Random rng
   ) {
     if (snap == null || legality == null || botSeat < 0) {
       return null;
@@ -142,7 +184,26 @@ final class BotKillDiceAssist {
     }
 
     opportunities.sort(priorityComparator());
-    return opportunities.get(0).dice;
+    CaptureOpportunity best = opportunities.get(0);
+    List<CaptureOpportunity> ties = new ArrayList<>();
+    for (CaptureOpportunity o : opportunities) {
+      if (priorityComparator().compare(o, best) == 0) {
+        ties.add(o);
+      }
+    }
+    Random pickRng = rng != null ? rng : ThreadLocalRandom.current();
+    CaptureOpportunity chosen = ties.get(pickRng.nextInt(ties.size()));
+    return chosen.dice;
+  }
+
+  /** @deprecated use {@link #pickBestCaptureDice} or {@link #maybePickCaptureDice} */
+  @Deprecated
+  static Integer pickCaptureDice(
+      GameSnapshot snap,
+      int botSeat,
+      MoveLegality legality
+  ) {
+    return pickBestCaptureDice(snap, botSeat, legality);
   }
 
   private static Comparator<CaptureOpportunity> priorityComparator() {
@@ -152,9 +213,7 @@ final class BotKillDiceAssist {
         // Then greatest victim progress on the board
         .thenComparing(Comparator.comparingInt((CaptureOpportunity o) -> o.victimProgress).reversed())
         // Prefer landing safe after the capture
-        .thenComparing((CaptureOpportunity o) -> !o.safeAfterCapture)
-        // Then prefer the move that advances the bot the most
-        .thenComparing(Comparator.comparingInt((CaptureOpportunity o) -> o.botAdvance).reversed());
+        .thenComparing((CaptureOpportunity o) -> !o.safeAfterCapture);
   }
 
   private static String seatColor(GameSnapshot snap, int seat) {
