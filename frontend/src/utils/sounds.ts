@@ -22,7 +22,11 @@ const DEFAULT_VOLUME: Record<TGameSound, number> = {
 
 const cache = new Map<TGameSound, HTMLAudioElement>();
 let bgMusic: HTMLAudioElement | null = null;
+<<<<<<< Updated upstream
 let matchSearchLoop: HTMLAudioElement | null = null;
+=======
+let bgMusicStarted = false;
+>>>>>>> Stashed changes
 
 const getAudio = (name: TGameSound) => {
   let audio = cache.get(name);
@@ -65,6 +69,7 @@ export const playSound = (name: TGameSound, volume?: number) => {
   }
 };
 
+<<<<<<< Updated upstream
 /** Loop counting ding during online match search (10s window). */
 export const startMatchSearchLoop = (volume = 0.55) => {
   try {
@@ -103,6 +108,8 @@ export const beginMatchMusic = (volume = BG_MUSIC_VOLUME) => {
   startBackgroundMusic(volume);
 };
 
+=======
+>>>>>>> Stashed changes
 /** Looping BGM for an active match. */
 export const startBackgroundMusic = (volume = BG_MUSIC_VOLUME) => {
   try {
@@ -119,12 +126,20 @@ export const startBackgroundMusic = (volume = BG_MUSIC_VOLUME) => {
   }
 };
 
+/** Start BGM once — on first dice roll / gameplay, not on game load. */
+export const ensureBackgroundMusic = (volume = BG_MUSIC_VOLUME) => {
+  if (bgMusicStarted) return;
+  bgMusicStarted = true;
+  startBackgroundMusic(volume);
+};
+
 export const stopBackgroundMusic = () => {
   matchMusicStarted = false;
   try {
     if (!bgMusic) return;
     bgMusic.pause();
     bgMusic.currentTime = 0;
+    bgMusicStarted = false;
   } catch {
     // ignore
   }
