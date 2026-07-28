@@ -1141,8 +1141,9 @@ const OnlineGame = ({
 
   const handleSelectDice = useCallback(
     (_diceValue?: TDicevalues) => {
+      const live = snapshotRef.current ?? snapshot;
       if (
-        !canRequestOnlineRoll(snapshot, {
+        !canRequestOnlineRoll(live, {
           mySeat,
           isBusy,
           isAnimating: animatingRef.current,

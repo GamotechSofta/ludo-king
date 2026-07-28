@@ -1,14 +1,10 @@
 package com.ludo.backend.game;
 
-import com.ludo.backend.bot.BotService;
+import com.ludo.backend.bot.BotTurnCoordinator;
 import com.ludo.backend.realtime.GameEventBus;
-import com.ludo.backend.room.BotDifficulty;
 import com.ludo.backend.room.Room;
-import com.ludo.backend.room.RoomPlayer;
 import com.ludo.backend.room.RoomService;
 import java.util.Map;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -28,20 +24,19 @@ public class GameHttpController {
 
   private final GameEngineService gameEngineService;
   private final RoomService roomService;
-  private final BotService botService;
   private final GameEventBus gameEventBus;
-  private final ExecutorService botExecutor = Executors.newCachedThreadPool();
+  private final BotTurnCoordinator botTurnCoordinator;
 
   public GameHttpController(
       GameEngineService gameEngineService,
       RoomService roomService,
-      BotService botService,
-      GameEventBus gameEventBus
+      GameEventBus gameEventBus,
+      BotTurnCoordinator botTurnCoordinator
   ) {
     this.gameEngineService = gameEngineService;
     this.roomService = roomService;
-    this.botService = botService;
     this.gameEventBus = gameEventBus;
+    this.botTurnCoordinator = botTurnCoordinator;
   }
 
   public record ActionRequest(String userId, Integer tokenIndex, Integer diceIndex) {
@@ -68,7 +63,7 @@ public class GameHttpController {
     ensureMatch(roomId);
     GameSnapshot snap = gameEngineService.rollDice(roomId, req.userId());
     broadcast(roomId, snap);
-    maybeScheduleBot(roomId);
+    botTurnCoordinator.schedule(roomId);
     return snap;
   }
 
@@ -85,7 +80,7 @@ public class GameHttpController {
         req.diceIndex() == null ? 0 : req.diceIndex()
     );
     broadcast(roomId, snap);
-    maybeScheduleBot(roomId);
+    botTurnCoordinator.schedule(roomId);
     return snap;
   }
 
@@ -133,34 +128,5 @@ public class GameHttpController {
     if (GameEngineService.PHASE_FINISHED.equals(snap.getPhase())) {
       roomService.getRoom(roomId).ifPresent(room -> roomService.settleIfFinished(room, snap));
     }
-  }
-
-  private void maybeScheduleBot(String roomId) {
-    botExecutor.submit(() -> {
-      try {
-        GameSnapshot snap = gameEngineService.getSnapshot(roomId);
-        while (snap.getIsBot() != null
-            && snap.getCurrentSeatIndex() < snap.getIsBot().length
-            && snap.getIsBot()[snap.getCurrentSeatIndex()]
-            && !GameEngineService.PHASE_FINISHED.equals(snap.getPhase())) {
-
-          BotDifficulty diff = BotDifficulty.HARD;
-          Room room = roomService.getRoom(roomId).orElse(null);
-          if (room != null && snap.getCurrentSeatIndex() < room.getPlayers().size()) {
-            RoomPlayer p = room.getPlayers().get(snap.getCurrentSeatIndex());
-            if (p.getBotDifficulty() != null) {
-              diff = p.getBotDifficulty();
-            }
-          }
-          snap = botService.takeTurnIfBot(
-              roomId,
-              diff,
-              step -> gameEventBus.publishSnapshot(roomId, step)
-          );
-        }
-      } catch (Exception e) {
-        // non-fatal
-      }
-    });
   }
 }

@@ -377,7 +377,9 @@ public class GameEngineService {
     rt.lock.lock();
     try {
       assertActive(rt);
+      int seat = rt.currentSeat;
       clearDice(rt);
+      recordAction(rt, "PASS", seat, null, null);
       nextTurn(rt);
       return snapshot(rt);
     } finally {
@@ -403,6 +405,7 @@ public class GameEngineService {
 
       int seat = rt.currentSeat;
       if (rt.finished[seat]) {
+        recordAction(rt, "PASS", seat, null, null);
         nextTurn(rt);
         return snapshot(rt);
       }
@@ -412,12 +415,12 @@ public class GameEngineService {
       if (eliminated) {
         eliminateAfk(rt, seat);
       }
-      nextTurn(rt);
       if (eliminated) {
         recordAction(rt, "ELIMINATED", seat, null, null);
       } else {
         recordAction(rt, "TIMEOUT", seat, null, null);
       }
+      nextTurn(rt);
       return snapshot(rt);
     } finally {
       rt.lock.unlock();
@@ -436,7 +439,7 @@ public class GameEngineService {
   private GameSnapshot rollInternal(MatchRuntime rt, int seat, Integer forcedValue) {
     assertActive(rt);
     if (rt.finished[seat]) {
-      // All tokens home already — no-op / pass
+      recordAction(rt, "PASS", seat, null, null);
       nextTurn(rt);
       return snapshot(rt);
     }

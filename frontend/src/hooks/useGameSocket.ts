@@ -283,6 +283,10 @@ export function useGameSocket(
           .then((g) => applySnapshot(g, false))
           .catch(() => {
             inFlightActionRef.current = false;
+            if (!roomId) return;
+            void ensureGameSnapshot(roomId)
+              .then((g) => applySnapshot(g, false))
+              .catch(() => undefined);
           });
       }, 2500);
       // Absolute safety: never leave roll/move gated forever
@@ -292,7 +296,7 @@ export function useGameSocket(
         }
       }, 8000);
     },
-    [applySnapshot]
+    [applySnapshot, roomId]
   );
 
   /** Primary: WebSocket. HTTP only if no newer actionSeq arrives. */

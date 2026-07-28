@@ -371,9 +371,8 @@ export function actionsTurnFromSnapshot(
     previousSeatIndex != null &&
     previousSeatIndex !== snapshot.currentSeatIndex;
   const noDiceYet = (snapshot.diceList?.length || 0) === 0;
-  /** Fresh turn — show idle die on the active profile, not the last roll value. */
-  const resetDiceVisual =
-    seatChanged || (awaitingRoll && noDiceYet && !awaitingMove);
+  /** Fresh turn — show idle die only when seat changes (not bonus roll). */
+  const resetDiceVisual = seatChanged;
   const fromList =
     !noDiceYet && snapshot.diceList
       ? (snapshot.diceList[snapshot.diceList.length - 1] as TDicevalues)

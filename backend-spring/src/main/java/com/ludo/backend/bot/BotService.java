@@ -121,6 +121,16 @@ public class BotService {
           continue;
         }
       } catch (RuntimeException ex) {
+        String msg = ex.getMessage() != null ? ex.getMessage() : "";
+        if (msg.contains("Dice already rolled")
+            || msg.contains("Not your turn")
+            || msg.contains("Cannot roll")
+            || msg.contains("Cannot move")) {
+          log.debug("Bot turn noop roomId={} seat={}: {}", roomId, seat, msg);
+          snap = gameEngineService.getSnapshot(roomId);
+          publish(onStep, snap);
+          break;
+        }
         log.warn(
             "Bot turn failed roomId={} seat={}: {} — forcing PASS",
             roomId,
