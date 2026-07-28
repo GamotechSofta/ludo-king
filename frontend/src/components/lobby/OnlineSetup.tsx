@@ -1,9 +1,12 @@
 import React, { useState } from "react";
 import type { IGuestUser } from "./types";
-import { createGuest, createPrivateRoom, joinRoom, queueMatch } from "../../api/ludoApi";
+import { createGuest, joinRoom, queueMatch } from "../../api/ludoApi";
 import "./styles.css";
 
-type TPlayers = 2 | 3 | 4;
+type TPlayers = 2 | 4;
+
+const ENTRY_AMOUNT = 100;
+const WIN_BY_PLAYERS: Record<TPlayers, number> = { 2: 180, 4: 320 };
 
 interface OnlineSetupProps {
   onBack: () => void;
@@ -16,14 +19,15 @@ interface OnlineSetupProps {
 }
 
 const OnlineSetup = ({ onBack, onQueued }: OnlineSetupProps) => {
-  const [name, setName] = useState("Player");
-  const [maxPlayers, setMaxPlayers] = useState<TPlayers>(2);
+  const [maxPlayers, setMaxPlayers] = useState<TPlayers>(4);
   const [roomCode, setRoomCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
+  const winAmount = WIN_BY_PLAYERS[maxPlayers];
+
   const ensureGuest = async () => {
-    const guest = await createGuest(name.trim() || "Player");
+    const guest = await createGuest("Player");
     localStorage.setItem("ludoGuest", JSON.stringify(guest));
     return guest;
   };
@@ -38,20 +42,6 @@ const OnlineSetup = ({ onBack, onQueued }: OnlineSetupProps) => {
       onQueued(guest, res.roomId, res.roomCode, maxPlayers);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Matchmaking failed");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handlePrivate = async () => {
-    setBusy(true);
-    setError("");
-    try {
-      const guest = await ensureGuest();
-      const room = await createPrivateRoom(guest.id, guest.username, maxPlayers);
-      onQueued(guest, room.id, room.roomCode, maxPlayers);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not create room");
     } finally {
       setBusy(false);
     }
@@ -77,82 +67,106 @@ const OnlineSetup = ({ onBack, onQueued }: OnlineSetupProps) => {
 
   return (
     <div className="lobby">
-      <div className="lobby-top" style={{ width: "100%" }}>
-        <button className="lobby-back" type="button" onClick={onBack}>
-          ← Back
-        </button>
-        <h2 className="lobby-heading">Find Match</h2>
-        <p className="lobby-sub">Quick match, private room, or join with code</p>
+      <div className="find-match">
+      <button className="find-match-back" type="button" onClick={onBack} aria-label="Back">
+        ←
+      </button>
 
-        <div className="lobby-panel">
-          <div className="player-row" style={{ marginBottom: 12 }}>
-            <input
-              value={name}
-              maxLength={12}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Your name"
-              aria-label="Your name"
-            />
-          </div>
-
-          <p className="lobby-footer-note">Players</p>
-          <div className="player-count">
-            {([2, 3, 4] as TPlayers[]).map((count) => (
-              <button
-                key={count}
-                type="button"
-                className={maxPlayers === count ? "active" : ""}
-                onClick={() => setMaxPlayers(count)}
-              >
-                {count}P
-              </button>
-            ))}
-          </div>
-
-          <button
-            className="lobby-btn primary"
-            type="button"
-            disabled={busy}
-            onClick={() => void handleQuickMatch()}
-            style={{ marginTop: 12 }}
+      <section className="find-match-card find-match-card-players">
+        <h3 className="find-match-title">SELECT PLAYERS</h3>
+        <div className="find-match-players">
+          <label
+            className={`find-match-player-row ${
+              maxPlayers === 2 ? "selected" : ""
+            }`}
           >
-            QUICK MATCH · {maxPlayers}P
-          </button>
-
-          <button
-            className="lobby-btn secondary"
-            type="button"
-            disabled={busy}
-            onClick={handlePrivate}
-            style={{ marginTop: 10 }}
-          >
-            CREATE PRIVATE ROOM
-          </button>
-
-          <div className="player-row" style={{ marginTop: 14 }}>
             <input
-              value={roomCode}
-              maxLength={6}
-              onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
-              placeholder="ROOM CODE"
-              aria-label="Room code"
+              type="radio"
+              name="players"
+              className="find-match-player-input"
+              checked={maxPlayers === 2}
+              disabled={busy}
+              onChange={() => setMaxPlayers(2)}
             />
-            <button
-              type="button"
-              className="bot-toggle on"
-              disabled={busy || roomCode.length < 4}
-              onClick={handleJoin}
-            >
-              JOIN
-            </button>
-          </div>
-
-          {error && (
-            <p className="lobby-footer-note" style={{ color: "#ffd0d0" }}>
-              {error}
-            </p>
-          )}
+            <span className="find-match-player-radio" aria-hidden="true">
+              {maxPlayers === 2 ? (
+                <span className="find-match-player-check">✓</span>
+              ) : null}
+            </span>
+            <span className="find-match-player-text">2 PLAYERS</span>
+          </label>
+          <label
+            className={`find-match-player-row ${
+              maxPlayers === 4 ? "selected" : ""
+            }`}
+          >
+            <input
+              type="radio"
+              name="players"
+              className="find-match-player-input"
+              checked={maxPlayers === 4}
+              disabled={busy}
+              onChange={() => setMaxPlayers(4)}
+            />
+            <span className="find-match-player-radio" aria-hidden="true">
+              {maxPlayers === 4 ? (
+                <span className="find-match-player-check">✓</span>
+              ) : null}
+            </span>
+            <span className="find-match-player-text">4 PLAYERS</span>
+          </label>
         </div>
+      </section>
+
+      <section className="find-match-card find-match-card-game">
+        <h3 className="find-match-title">SELECT GAME</h3>
+        <div className="find-match-stake find-match-stake-fixed">
+          <div className="find-match-stake-box">
+            <div className="find-match-win">
+              <span className="find-match-win-icon" aria-hidden>
+                🪙
+              </span>
+              <div className="find-match-win-meta">
+                <span className="find-match-win-label">WIN</span>
+                <span className="find-match-win-value">
+                  {winAmount.toLocaleString()}
+                </span>
+              </div>
+            </div>
+            <div className="find-match-entry">
+              Entry: {ENTRY_AMOUNT.toLocaleString()}
+            </div>
+          </div>
+        </div>
+        <button
+          type="button"
+          className="find-match-play"
+          disabled={busy}
+          onClick={() => void handleQuickMatch()}
+        >
+          Play
+        </button>
+      </section>
+
+      <div className="find-match-join">
+        <input
+          value={roomCode}
+          maxLength={6}
+          onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
+          placeholder="ROOM CODE"
+          aria-label="Room code"
+          disabled={busy}
+        />
+        <button
+          type="button"
+          disabled={busy || roomCode.length < 4}
+          onClick={() => void handleJoin()}
+        >
+          JOIN
+        </button>
+      </div>
+
+      {error ? <p className="find-match-error">{error}</p> : null}
       </div>
     </div>
   );
