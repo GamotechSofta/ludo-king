@@ -46,6 +46,7 @@ import { pickHumanAutoMoveFromSnapshot } from "../game/humanAutoMove";
 import type { IGameSnapshot, IGuestUser, IResultEntry } from "./types";
 import Results from "./Results";
 import LostSummaryPopup from "./LostSummaryPopup";
+import LeaveMatchConfirmPopup from "./LeaveMatchConfirmPopup";
 import { fetchWalletBalance, leaveRoom, ensureGameSnapshot } from "../../api/ludoApi";
 import {
   runReturnToJailAnimations,
@@ -118,6 +119,7 @@ const OnlineGame = ({
     useGameSocket(roomId, guest.id, initialSnapshot);
   const [showResults, setShowResults] = useState(false);
   const [showLostSummary, setShowLostSummary] = useState(false);
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [voluntaryExit, setVoluntaryExit] = useState(false);
   const [listTokens, setListTokens] = useState<IListTokens[]>([]);
   const [players, setPlayers] = useState<IPlayer[]>([]);
@@ -1484,7 +1486,8 @@ const OnlineGame = ({
     setIsBusy(false);
   }, []);
 
-  const handleBackExit = useCallback(async () => {
+  const confirmLeaveMatch = useCallback(async () => {
+    setShowLeaveConfirm(false);
     if (exitingRef.current) return;
     exitingRef.current = true;
     stopBackgroundMusic();
@@ -1528,6 +1531,18 @@ const OnlineGame = ({
     refreshBalance,
     clearExitTimers,
   ]);
+
+  const handleBackPress = useCallback(() => {
+    if (exitingRef.current) return;
+    const live = snapshotRef.current;
+    const inMatch =
+      boardReady && !!live && live.phase !== "FINISHED";
+    if (inMatch) {
+      setShowLeaveConfirm(true);
+      return;
+    }
+    void confirmLeaveMatch();
+  }, [boardReady, confirmLeaveMatch]);
 
   const matchPlayerCount = useMemo(() => {
     if (snapshot?.seatColors?.length) return snapshot.seatColors.length;
@@ -1612,7 +1627,7 @@ const OnlineGame = ({
           className="game-back-arrow"
           type="button"
           aria-label="Back"
-          onClick={handleBackExit}
+          onClick={handleBackPress}
         >
           <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden>
             <path
@@ -1678,6 +1693,14 @@ const OnlineGame = ({
         <p className="lobby-footer-note" style={{ textAlign: "center" }}>
           API: {process.env.REACT_APP_API_URL || "http://localhost:3000"}
         </p>
+        {showLeaveConfirm && (
+          <LeaveMatchConfirmPopup
+            isTwoPlayer={isTwoPlayerMatch}
+            isHumanMatch={isHumanOnlineMatch(snapshot)}
+            onConfirm={() => void confirmLeaveMatch()}
+            onCancel={() => setShowLeaveConfirm(false)}
+          />
+        )}
       </PageWrapper>
     );
   }
@@ -1688,7 +1711,7 @@ const OnlineGame = ({
         className="game-back-arrow"
         type="button"
         aria-label="Back"
-        onClick={handleBackExit}
+        onClick={handleBackPress}
       >
         <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden>
           <path
@@ -1789,6 +1812,14 @@ const OnlineGame = ({
             onExit();
           }}
           onWatch={() => setShowLostSummary(false)}
+        />
+      )}
+      {showLeaveConfirm && (
+        <LeaveMatchConfirmPopup
+          isTwoPlayer={isTwoPlayerMatch}
+          isHumanMatch={isHumanOnlineMatch(snapshot)}
+          onConfirm={() => void confirmLeaveMatch()}
+          onCancel={() => setShowLeaveConfirm(false)}
         />
       )}
     </PageWrapper>
