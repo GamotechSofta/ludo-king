@@ -42,6 +42,8 @@ export interface IGameEvent {
   winnerSeat?: number | null;
   isBot?: boolean[];
   standings?: number[];
+  userIds?: string[];
+  usernames?: string[];
 }
 
 function normalizeSnapshot(raw: unknown): IGameSnapshot | null {
@@ -70,6 +72,9 @@ function eventToSnapshot(raw: unknown): IGameSnapshot | null {
       eliminated: state.eliminated ?? ev.eliminated,
       standings: state.standings ?? ev.standings,
       winnerSeat: state.winnerSeat ?? ev.winnerSeat ?? null,
+      userIds: state.userIds?.length ? state.userIds : ev.userIds,
+      usernames: state.usernames?.length ? state.usernames : ev.usernames,
+      seatColors: state.seatColors?.length ? state.seatColors : ev.seatColors,
       lastActionFrom: state.lastActionFrom ?? ev.from ?? null,
       lastActionTo: state.lastActionTo ?? ev.to ?? null,
       lastActionType: state.lastActionType || ev.lastActionType || ev.type || null,
@@ -96,6 +101,8 @@ function eventToSnapshot(raw: unknown): IGameSnapshot | null {
       winnerSeat: ev.winnerSeat,
       isBot: ev.isBot,
       standings: ev.standings,
+      userIds: ev.userIds,
+      usernames: ev.usernames,
       turnStartedAt: ev.turnStartedAt,
       turnSecondsRemaining: ev.turnSecondsRemaining,
       consecutiveSixes: ev.consecutiveSixes,
@@ -152,6 +159,11 @@ export function useGameSocket(
   const lastMoveKeyRef = useRef("");
   const isActionInFlight = useCallback(() => inFlightActionRef.current, []);
   const fallbackTimerRef = useRef<number | null>(null);
+  const lastIdentityRef = useRef<{
+    userIds?: string[];
+    usernames?: string[];
+    seatColors?: string[];
+  }>({});
 
   const applySnapshot = useCallback((snap: unknown, fromWs = false) => {
     const event =
@@ -160,8 +172,31 @@ export function useGameSocket(
         : null;
     const normalized = eventToSnapshot(snap);
     if (!normalized) return false;
-    const sig = snapshotSig(normalized);
-    const nextSeq = normalized.actionSeq ?? 0;
+
+    const merged: IGameSnapshot = {
+      ...normalized,
+      userIds: normalized.userIds?.length
+        ? normalized.userIds
+        : lastIdentityRef.current.userIds,
+      usernames: normalized.usernames?.length
+        ? normalized.usernames
+        : lastIdentityRef.current.usernames,
+      seatColors: normalized.seatColors?.length
+        ? normalized.seatColors
+        : lastIdentityRef.current.seatColors,
+    };
+    if (merged.userIds?.length) {
+      lastIdentityRef.current.userIds = merged.userIds;
+    }
+    if (merged.usernames?.length) {
+      lastIdentityRef.current.usernames = merged.usernames;
+    }
+    if (merged.seatColors?.length) {
+      lastIdentityRef.current.seatColors = merged.seatColors;
+    }
+
+    const sig = snapshotSig(merged);
+    const nextSeq = merged.actionSeq ?? 0;
 
     if (sig === lastSigRef.current) {
       if (fromWs) lastWsAtRef.current = Date.now();
@@ -184,7 +219,7 @@ export function useGameSocket(
     if (fromWs) lastWsAtRef.current = Date.now();
     onlinePerf.markSnapshotApplied(fromWs, nextSeq);
     if (event) setLastEvent(event);
-    setSnapshot(normalized);
+    setSnapshot(merged);
     setLoadError("");
     inFlightActionRef.current = false;
     lastRollKeyRef.current = "";
@@ -195,6 +230,15 @@ export function useGameSocket(
     }
     return true;
   }, []);
+
+  useEffect(() => {
+    if (!roomId) return;
+    lastIdentityRef.current = {
+      userIds: initialSnapshot?.userIds,
+      usernames: initialSnapshot?.usernames,
+      seatColors: initialSnapshot?.seatColors,
+    };
+  }, [roomId, initialSnapshot?.userIds, initialSnapshot?.usernames, initialSnapshot?.seatColors]);
 
   useEffect(() => {
     if (!roomId) return;

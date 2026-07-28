@@ -4,17 +4,13 @@ import type {
   IListTokens,
   IPlayer,
   IToken,
-  TBoardColors,
   TColors,
   TDicevalues,
-  TPositionGame,
-  TTotalPlayers,
   TtypeTile,
 } from "../../interfaces";
 import {
   EActionsBoardGame,
   EBoardColors,
-  EPositionGame,
   EtypeTile,
   MAX_PLAYER_CHANCES,
 } from "../../utils/constants";
@@ -22,48 +18,27 @@ import { getOneBotName } from "../../data/botNames";
 import type { IGameSnapshot } from "./types";
 import { onlineDiceDisabled } from "./diceTurnLogic";
 import { applyTokenCell, recomputeStacking } from "../game/rules";
+import {
+  boardColorForSnapshot,
+  colorToViewCorner,
+  cornerOffsetForSeat,
+  decodeServerPosForView,
+  playerCountFromSnapshot,
+  profileIndexForServerSeat,
+  seatColorsFromSnapshot,
+  viewPositionGameForColor,
+  VIEW_CORNERS_BY_PLAYER_COUNT,
+} from "./onlineViewMapping";
 
-/**
- * Local-player-at-bottom-left view.
- *
- * The server uses absolute RGYB geometry (RED start = shared cell 0, corners
- * clockwise RED→GREEN→YELLOW→BLUE, 13 cells per arm). To show *my* house at
- * bottom-left on every device we rotate EVERYTHING by the same offset k:
- *  - board paint scheme (RGYB/GYBR/YBRG/BRGY)
- *  - token corner (view corner = absolute corner - k)
- *  - shared path cells (view cell = server cell - 13k)
- *  - profile slots (slot = view corner)
- * Rotating all four together keeps colors on their own painted houses.
- */
-
-const ABS_CORNER_INDEX: Record<string, number> = {
-  RED: 0,
-  GREEN: 1,
-  YELLOW: 2,
-  BLUE: 3,
-};
-
-const CORNERS_CW: TPositionGame[] = [
-  EPositionGame.BOTTOM_LEFT,
-  EPositionGame.TOP_LEFT,
-  EPositionGame.TOP_RIGHT,
-  EPositionGame.BOTTOM_RIGHT,
-];
-
-/** Scheme whose bottom-left color is RED/GREEN/YELLOW/BLUE respectively. */
-const SCHEME_BY_OFFSET: TBoardColors[] = [
-  EBoardColors.RGYB,
-  EBoardColors.GYBR,
-  EBoardColors.YBRG,
-  EBoardColors.BRGY,
-];
-
-const CELLS_PER_ARM = 13;
-const TOTAL_CELLS = 52;
-
-const JAIL = -1;
-const EXIT_BASE = 100;
-const HOME = 200;
+export {
+  boardColorForSnapshot,
+  cornerOffsetForSeat,
+  seatColorsFromSnapshot,
+  playerCountFromSnapshot as totalPlayersFromSnapshot,
+  resolveLocalSeatIndex,
+  profileIndexForServerSeat,
+  perspectiveKey,
+} from "./onlineViewMapping";
 
 const isGenericBotLabel = (name?: string) =>
   !!name && /^Bot\s*\d+$/i.test(name.trim());
@@ -72,7 +47,6 @@ const isGenericPlayerLabel = (name?: string) =>
 
 const displayNameCache = new Map<string, string>();
 
-/** Drop cached names when entering a new room (module cache survives route changes). */
 export function clearDisplayNameCache(roomId?: string) {
   if (!roomId) {
     displayNameCache.clear();
@@ -110,7 +84,6 @@ export function displayPlayerName(
   }
 
   if (!isBot) {
-    // Generic "Player" labels are not unique; pin a seat-unique fallback.
     const base = rawName?.trim() || "Player";
     const fallback = isGenericPlayerLabel(base)
       ? `Player ${usedNames.length + 1}`
@@ -127,24 +100,6 @@ export function displayPlayerName(
   return fresh;
 }
 
-/**
- * Seat → color in server seat order (must match userIds[i] / lastActionSeat).
- * Never re-sort by fixed RGYB — colors are shuffled onto seats at match start.
- */
-export function seatColorsFromSnapshot(snapshot: IGameSnapshot): TColors[] {
-  const seats = snapshot.userIds?.length || 0;
-  if (
-    snapshot.seatColors?.length &&
-    (seats === 0 || snapshot.seatColors.length === seats)
-  ) {
-    return snapshot.seatColors as TColors[];
-  }
-  // Fallback: LinkedHashMap insertion order from snapshot JSON
-  const positions = snapshot.tokenPositions || {};
-  return Object.keys(positions) as TColors[];
-}
-
-/** Map a server absolute token position into view tile coords. */
 export function viewTileFromServerPos(
   serverPos: number,
   tokenIndex: number,
@@ -152,59 +107,13 @@ export function viewTileFromServerPos(
   mySeat: number
 ): { typeTile: TtypeTile; positionTile: number } {
   const k = cornerOffsetForSeat(snapshot, mySeat);
-  return decodeServerPos(serverPos, tokenIndex, k);
+  const decoded = decodeServerPosForView(serverPos, tokenIndex, k);
+  return {
+    typeTile: decoded.typeTile as TtypeTile,
+    positionTile: decoded.positionTile,
+  };
 }
 
-/** Rotation offset so the local player's house lands bottom-left. */
-export function cornerOffsetForSeat(
-  snapshot: IGameSnapshot,
-  mySeat: number
-): number {
-  const colors = seatColorsFromSnapshot(snapshot);
-  const myColor = mySeat >= 0 && mySeat < colors.length ? colors[mySeat] : null;
-  if (!myColor) return 0;
-  return ABS_CORNER_INDEX[myColor] ?? 0;
-}
-
-/** Board paint scheme for this device (my color painted bottom-left). */
-export function boardColorForSnapshot(
-  snapshot: IGameSnapshot | null,
-  mySeat: number
-): TBoardColors {
-  if (!snapshot) return EBoardColors.RGYB;
-  return SCHEME_BY_OFFSET[cornerOffsetForSeat(snapshot, mySeat)];
-}
-
-/** View corner slot (0=BL, 1=TL, 2=TR, 3=BR) for a color under offset k. */
-function viewSlotForColor(color: string, k: number): number {
-  const abs = ABS_CORNER_INDEX[color] ?? 0;
-  return (abs - k + 4) % 4;
-}
-
-function decodeServerPos(
-  serverPos: number,
-  tokenIndex: number,
-  k: number
-): { typeTile: TtypeTile; positionTile: number } {
-  if (serverPos === JAIL || serverPos < 0) {
-    return { typeTile: EtypeTile.JAIL, positionTile: tokenIndex };
-  }
-  if (serverPos >= HOME) {
-    return { typeTile: EtypeTile.END, positionTile: tokenIndex };
-  }
-  if (serverPos >= EXIT_BASE) {
-    return {
-      typeTile: EtypeTile.EXIT,
-      positionTile: serverPos - EXIT_BASE,
-    };
-  }
-  // Shared path cell — rotate into view space.
-  const rotated =
-    (serverPos - k * CELLS_PER_ARM + TOTAL_CELLS * 2) % TOTAL_CELLS;
-  return { typeTile: EtypeTile.NORMAL, positionTile: rotated };
-}
-
-/** Players in server seat order (engine / results logic). */
 export function playersFromSnapshot(
   snapshot: IGameSnapshot,
   stableRoomId?: string
@@ -215,10 +124,6 @@ export function playersFromSnapshot(
   return colors.map((color, i) => {
     const raw = snapshot.usernames?.[i];
     const isBot = !!snapshot.isBot?.[i];
-    /**
-     * Bot IDs/usernames can be inconsistent across snapshots in some flows.
-     * Pin bot display name to seat index for the whole room so it never changes mid-game.
-     */
     const stableSeatKey = isBot
       ? `${roomId}:bot-seat-${i}`
       : seatDisplayKey(roomId, snapshot.userIds?.[i], i);
@@ -246,35 +151,42 @@ export function playersFromSnapshot(
 }
 
 /**
- * 4-slot profile array (BL, TL, TR, BR view corners). The local player's
- * house is rotated to slot 0 (bottom-left). Empty corners stay undefined —
- * ProfileSection skips them. Always render with totalPlayers=4.
+ * Profile-ready list: local player always at compact index 0 (bottom-left).
+ * 2P → [BL, TR], 3P → [BL, TL, TR], 4P → all corners.
  */
 export function playersForView(
   snapshot: IGameSnapshot,
   mySeat: number,
   stableRoomId?: string
 ): IPlayer[] {
+  if (mySeat < 0) return [];
   const server = playersFromSnapshot(snapshot, stableRoomId);
   const k = cornerOffsetForSeat(snapshot, mySeat);
-  const slots: IPlayer[] = new Array(4);
+  const count = playerCountFromSnapshot(snapshot);
+  const activeCorners = VIEW_CORNERS_BY_PLAYER_COUNT[count];
+
+  const byCorner: (IPlayer | undefined)[] = new Array(4);
   server.forEach((p) => {
-    const slot = viewSlotForColor(p.color, k);
-    slots[slot] = { ...p, index: slot };
+    const corner = colorToViewCorner(p.color, k);
+    byCorner[corner] = { ...p };
   });
-  return slots;
+
+  return activeCorners
+    .map((corner, compactIndex) => {
+      const p = byCorner[corner];
+      if (!p) return null;
+      return { ...p, index: compactIndex };
+    })
+    .filter((p): p is IPlayer => p != null);
 }
 
-/** Profile slot (0..3) that currently has the turn. */
 export function profileTurnIndex(
   snapshot: IGameSnapshot,
   serverSeat: number,
   mySeat: number
 ): number {
-  const colors = seatColorsFromSnapshot(snapshot);
-  const color = colors[serverSeat];
-  if (!color) return 0;
-  return viewSlotForColor(color, cornerOffsetForSeat(snapshot, mySeat));
+  if (mySeat < 0) return 0;
+  return profileIndexForServerSeat(serverSeat, snapshot, mySeat);
 }
 
 export function listTokensFromSnapshot(
@@ -282,6 +194,7 @@ export function listTokensFromSnapshot(
   mySeat: number,
   canMove: boolean
 ): IListTokens[] {
+  if (mySeat < 0) return [];
   const colors = seatColorsFromSnapshot(snapshot);
   const k = cornerOffsetForSeat(snapshot, mySeat);
 
@@ -299,15 +212,11 @@ export function listTokensFromSnapshot(
   }));
 
   const groups: IListTokens[] = colors.map((color, seat) => {
-    const positionGame =
-      CORNERS_CW[viewSlotForColor(color, k)] || EPositionGame.BOTTOM_LEFT;
+    const positionGame = viewPositionGameForColor(color, snapshot, mySeat);
     const positions = snapshot.tokenPositions[color] || [-1, -1, -1, -1];
     const tokens: IToken[] = positions.map((serverPos, tokenIndex) => {
-      const { typeTile, positionTile } = decodeServerPos(
-        serverPos,
-        tokenIndex,
-        k
-      );
+      const decoded = decodeServerPosForView(serverPos, tokenIndex, k);
+      const typeTile = decoded.typeTile as TtypeTile;
       let token = applyTokenCell(
         {
           color: color as TColors,
@@ -325,7 +234,7 @@ export function listTokensFromSnapshot(
         },
         positionGame,
         typeTile,
-        positionTile,
+        decoded.positionTile,
         false
       );
 
@@ -364,7 +273,7 @@ export function actionsTurnFromSnapshot(
   prev?: IActionsTurn,
   previousSeatIndex?: number
 ): IActionsTurn {
-  const isMyTurn = snapshot.currentSeatIndex === mySeat;
+  const isMyTurn = mySeat >= 0 && snapshot.currentSeatIndex === mySeat;
   const diceList: IDiceList[] = (snapshot.diceList || []).map((value, i) => ({
     key: i + 1,
     value: value as TDicevalues,
@@ -376,13 +285,11 @@ export function actionsTurnFromSnapshot(
     previousSeatIndex != null &&
     previousSeatIndex !== snapshot.currentSeatIndex;
   const noDiceYet = (snapshot.diceList?.length || 0) === 0;
-  /** Fresh turn — show idle die only when seat changes (not bonus roll). */
   const resetDiceVisual = seatChanged;
   const fromList =
     !noDiceYet && snapshot.diceList
       ? (snapshot.diceList[snapshot.diceList.length - 1] as TDicevalues)
       : 0;
-  // Keep rolled pips visible during AWAITING_MOVE (and after sync) — never blank the face.
   const keptFace = (fromList || prev?.diceValue || 0) as IActionsTurn["diceValue"];
 
   return {
@@ -419,14 +326,6 @@ export function snapshotTokenPositionsEqual(
     if (!ta || !tb || ta.length !== tb.length) return false;
     return ta.every((v, i) => v === tb[i]);
   });
-}
-
-export function totalPlayersFromSnapshot(
-  snapshot: IGameSnapshot
-): TTotalPlayers {
-  const n = seatColorsFromSnapshot(snapshot).length;
-  if (n === 2 || n === 3 || n === 4) return n;
-  return 4;
 }
 
 export const ONLINE_BOARD_COLOR = EBoardColors.RGYB;

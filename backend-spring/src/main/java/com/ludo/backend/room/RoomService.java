@@ -257,6 +257,13 @@ public class RoomService {
       if (isAllHumanRoom(room)) {
         try {
           ensureLiveMatch(room);
+        } catch (RuntimeException ignored) {
+          if (!gameEngineService.hasMatch(roomId)) {
+            markDisconnected(roomId, userId);
+            return;
+          }
+        }
+        try {
           GameSnapshot snap = gameEngineService.forfeitOnExit(roomId, userId);
           gameEventBus.publishSnapshotAndMeta(roomId, snap);
           if (GameEngineService.PHASE_FINISHED.equals(snap.getPhase())) {

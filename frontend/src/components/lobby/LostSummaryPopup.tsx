@@ -9,6 +9,8 @@ interface LostSummaryPopupProps {
   entries: IResultEntry[];
   entryAmount: number;
   isTwoPlayer?: boolean;
+  /** Why the player was eliminated — timeout vs leaving the match. */
+  exitReason?: "timeout" | "left";
   onExit: () => void;
   onWatch: () => void;
 }
@@ -17,6 +19,7 @@ const LostSummaryPopup = ({
   entries,
   entryAmount,
   isTwoPlayer = false,
+  exitReason = "timeout",
   onExit,
   onWatch,
 }: LostSummaryPopupProps) => {
@@ -46,9 +49,13 @@ const LostSummaryPopup = ({
           You&apos;re Out
         </h2>
         <p className="lost-summary-sub">
-          {isTwoPlayer
-            ? `${MAX_PLAYER_CHANCES} turn timeouts — match ended. Opponent wins.`
-            : `${MAX_PLAYER_CHANCES} turn timeouts used — you have been eliminated.`}
+          {exitReason === "left"
+            ? isTwoPlayer
+              ? "You left the match — marked as LOST. Opponent wins."
+              : "You left the match — marked as LOST."
+            : isTwoPlayer
+              ? `${MAX_PLAYER_CHANCES} turn timeouts — match ended. Opponent wins.`
+              : `${MAX_PLAYER_CHANCES} turn timeouts used — you have been eliminated.`}
         </p>
 
         <div className="lost-summary-stat-row">

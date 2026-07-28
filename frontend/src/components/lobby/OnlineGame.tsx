@@ -46,7 +46,7 @@ import { pickHumanAutoMoveFromSnapshot } from "../game/humanAutoMove";
 import type { IGameSnapshot, IGuestUser, IResultEntry } from "./types";
 import Results from "./Results";
 import LostSummaryPopup from "./LostSummaryPopup";
-import { fetchWalletBalance, leaveRoom } from "../../api/ludoApi";
+import { fetchWalletBalance, leaveRoom, ensureGameSnapshot } from "../../api/ludoApi";
 import {
   runReturnToJailAnimations,
   type CaptureVictim,
@@ -70,6 +70,9 @@ import {
   seatDisplayKey,
   snapshotTokenPositionsEqual,
   viewTileFromServerPos,
+  totalPlayersFromSnapshot,
+  resolveLocalSeatIndex,
+  perspectiveKey,
 } from "./onlineSnapshotBoard";
 import {
   buildRollDedupKey,
@@ -111,10 +114,11 @@ const OnlineGame = ({
   onExit,
   onPlayAgain,
 }: OnlineGameProps) => {
-  const { snapshot, connected, loadError, rollDice, moveToken, isActionInFlight } =
+  const { snapshot, connected, loadError, rollDice, moveToken, isActionInFlight, setSnapshot } =
     useGameSocket(roomId, guest.id, initialSnapshot);
   const [showResults, setShowResults] = useState(false);
   const [showLostSummary, setShowLostSummary] = useState(false);
+  const [voluntaryExit, setVoluntaryExit] = useState(false);
   const [listTokens, setListTokens] = useState<IListTokens[]>([]);
   const [players, setPlayers] = useState<IPlayer[]>([]);
   const [actionsTurn, setActionsTurn] = useState<IActionsTurn>(() =>
@@ -140,6 +144,9 @@ const OnlineGame = ({
   const [liveBalance, setLiveBalance] = useState<number | null>(
     walletBalance ?? null
   );
+  const exitingRef = useRef(false);
+  const leftRoomRef = useRef(false);
+  const lostSummaryShownRef = useRef(false);
 
   useEffect(() => {
     setLiveBalance(walletBalance ?? null);
@@ -161,6 +168,7 @@ const OnlineGame = ({
   }, [refreshBalance]);
 
   useEffect(() => {
+    if (leftRoomRef.current || exitingRef.current) return;
     if (snapshot?.phase === "FINISHED") {
       void refreshBalance();
       // Settle room as COMPLETED while results show — next queue gets a fresh match
@@ -168,20 +176,10 @@ const OnlineGame = ({
     }
   }, [snapshot?.phase, refreshBalance, roomId, guest.id]);
 
-  const mySeat = useMemo(() => {
-    if (!snapshot) return -1;
-    if (snapshot.userIds?.length) {
-      const byId = snapshot.userIds.findIndex((id) => id === guest.id);
-      if (byId >= 0) return byId;
-    }
-    if (snapshot.usernames?.length) {
-      const byName = snapshot.usernames.findIndex(
-        (n) => n === guest.username || n === guest.name
-      );
-      if (byName >= 0) return byName;
-    }
-    return 0;
-  }, [snapshot, guest.id, guest.username, guest.name]);
+  const mySeat = useMemo(
+    () => resolveLocalSeatIndex(snapshot, guest.id, guest.name, guest.username),
+    [snapshot, guest.id, guest.username, guest.name]
+  );
 
   const myEliminated = useMemo(() => {
     if (mySeat < 0 || !snapshot) return false;
@@ -190,8 +188,6 @@ const OnlineGame = ({
       (snapshot.consecutiveTimeouts?.[mySeat] ?? 0) >= MAX_PLAYER_CHANCES
     );
   }, [snapshot, mySeat]);
-
-  const lostSummaryShownRef = useRef(false);
 
   useEffect(() => {
     if (!myEliminated || lostSummaryShownRef.current) return;
@@ -204,7 +200,8 @@ const OnlineGame = ({
   // Prefer showing the board as soon as we have token positions
   const boardReady = !!(
     snapshot?.tokenPositions &&
-    Object.keys(snapshot.tokenPositions).length > 0
+    Object.keys(snapshot.tokenPositions).length > 0 &&
+    mySeat >= 0
   );
 
   const lastDiceSigRef = useRef("");
@@ -240,6 +237,7 @@ const OnlineGame = ({
   const lockedBoardColorRef = useRef<ReturnType<
     typeof boardColorForSnapshot
   > | null>(null);
+  const perspectiveKeyRef = useRef("");
   const snapshotRef = useRef<IGameSnapshot | null>(snapshot);
   const prevConnectedRef = useRef(false);
   const lockSeqRef = useRef<{ seq: number; at: number }>({ seq: 0, at: Date.now() });
@@ -258,6 +256,7 @@ const OnlineGame = ({
 
   useEffect(() => {
     lockedBoardColorRef.current = null;
+    perspectiveKeyRef.current = "";
     diceOwnerSeatRef.current = -1;
     passFlashUntilRef.current = 0;
     lastAutoMoveKeyRef.current = "";
@@ -349,24 +348,22 @@ const OnlineGame = ({
         seat,
         diceList: [value],
       };
-      flushSync(() => {
-        applyDiceOwnerTurn(snap, seat);
-        setActionsTurn((prevActions) => {
-          const base = actionsTurnFromSnapshot(
-            {
-              ...snap,
-              currentSeatIndex: seat,
-              phase: "AWAITING_MOVE",
-              diceList: [value],
-            },
-            mySeat,
-            prevActions
-          );
-          const rolled = applyServerDiceVisual(base, value);
-          rolled.diceList = base.diceList;
-          rolled.actionsBoardGame = EActionsBoardGame.ROLL_DICE;
-          return rolled;
-        });
+      applyDiceOwnerTurn(snap, seat);
+      setActionsTurn((prevActions) => {
+        const base = actionsTurnFromSnapshot(
+          {
+            ...snap,
+            currentSeatIndex: seat,
+            phase: "AWAITING_MOVE",
+            diceList: [value],
+          },
+          mySeat,
+          prevActions
+        );
+        const rolled = applyServerDiceVisual(base, value);
+        rolled.diceList = base.diceList;
+        rolled.actionsBoardGame = EActionsBoardGame.ROLL_DICE;
+        return rolled;
       });
       return true;
     },
@@ -411,18 +408,16 @@ const OnlineGame = ({
       snapshot.phase === "AWAITING_ROLL" &&
       (snapshot.diceList?.length ?? 0) === 0;
     if (seatHandoff) {
-      flushSync(() => {
-        setActionsTurn((prevActions) =>
-          actionsTurnFromSnapshot(
-            snapshot,
-            mySeat,
-            prevActions,
-            prev.currentSeatIndex
-          )
-        );
-        diceOwnerSeatRef.current = snapshot.currentSeatIndex;
-        applyDiceOwnerTurn(snapshot, snapshot.currentSeatIndex);
-      });
+      setActionsTurn((prevActions) =>
+        actionsTurnFromSnapshot(
+          snapshot,
+          mySeat,
+          prevActions,
+          prev.currentSeatIndex
+        )
+      );
+      diceOwnerSeatRef.current = snapshot.currentSeatIndex;
+      applyDiceOwnerTurn(snapshot, snapshot.currentSeatIndex);
       return;
     }
     applyDiceOwnerTurn(snapshot, snapshot.currentSeatIndex);
@@ -488,6 +483,24 @@ const OnlineGame = ({
     snapshot?.currentSeatIndex,
   ]);
 
+  const totalPlayers: TTotalPlayers = useMemo(
+    () => (snapshot ? totalPlayersFromSnapshot(snapshot) : 4),
+    [snapshot]
+  );
+
+  /** Rebuild local perspective when seat/color/count is known or changes (reconnect). */
+  useEffect(() => {
+    if (exitingRef.current || !snapshot || mySeat < 0) return;
+    const key = perspectiveKey(roomId, snapshot, mySeat);
+    if (perspectiveKeyRef.current === key) return;
+    perspectiveKeyRef.current = key;
+    lockedBoardColorRef.current = boardColorForSnapshot(snapshot, mySeat);
+    setPlayers(playersForView(snapshot, mySeat, roomId));
+    setListTokens(listTokensFromSnapshot(snapshot, mySeat, false));
+    diceOwnerSeatRef.current = snapshot.currentSeatIndex;
+    applyDiceOwnerTurn(snapshot, snapshot.currentSeatIndex);
+  }, [snapshot, mySeat, roomId, applyDiceOwnerTurn]);
+
   const syncBoardFromSnapshot = useCallback(
     (
       snap: IGameSnapshot,
@@ -545,14 +558,12 @@ const OnlineGame = ({
       if (turnHandoff) {
         lastProcessedRollIdRef.current = "";
         lastDiceSigRef.current = `${snap.currentSeatIndex}|${snap.phase}|`;
-        flushSync(() => {
-          setPlayers(playersForView(snap, mySeat, roomId));
-          setActionsTurn((prevActions) =>
-            actionsTurnFromSnapshot(snap, mySeat, prevActions, prevSeat)
-          );
-          diceOwnerSeatRef.current = snap.currentSeatIndex;
-          applyDiceOwnerTurn(snap, snap.currentSeatIndex);
-        });
+        setPlayers(playersForView(snap, mySeat, roomId));
+        setActionsTurn((prevActions) =>
+          actionsTurnFromSnapshot(snap, mySeat, prevActions, prevSeat)
+        );
+        diceOwnerSeatRef.current = snap.currentSeatIndex;
+        applyDiceOwnerTurn(snap, snap.currentSeatIndex);
         setListTokens((tok) => {
           const cleared = clearDiceAvailable(tok);
           listTokensRef.current = cleared;
@@ -587,12 +598,10 @@ const OnlineGame = ({
         snap.phase === "AWAITING_ROLL" &&
         (snap.diceList?.length ?? 0) === 0;
       if (idleTurnPass) {
-        flushSync(() => {
-          setActionsTurn((prevActions) =>
-            actionsTurnFromSnapshot(snap, mySeat, prevActions, prevSeat)
-          );
-          applyDiceOwnerTurn(snap, snap.currentSeatIndex);
-        });
+        setActionsTurn((prevActions) =>
+          actionsTurnFromSnapshot(snap, mySeat, prevActions, prevSeat)
+        );
+        applyDiceOwnerTurn(snap, snap.currentSeatIndex);
       } else {
         applyDiceOwnerTurn(snap, snap.currentSeatIndex);
         setActionsTurn((prevActions) => {
@@ -672,17 +681,15 @@ const OnlineGame = ({
         (snapshot.diceList?.length ?? 0) === 0;
       diceOwnerSeatRef.current = snapshot.currentSeatIndex;
       if (idleHandoff) {
-        flushSync(() => {
-          setActionsTurn((prev) =>
-            actionsTurnFromSnapshot(
-              snapshot,
-              mySeat,
-              prev,
-              prevOwner >= 0 ? prevOwner : undefined
-            )
-          );
-          applyDiceOwnerTurn(snapshot, snapshot.currentSeatIndex);
-        });
+        setActionsTurn((prev) =>
+          actionsTurnFromSnapshot(
+            snapshot,
+            mySeat,
+            prev,
+            prevOwner >= 0 ? prevOwner : undefined
+          )
+        );
+        applyDiceOwnerTurn(snapshot, snapshot.currentSeatIndex);
       } else {
         applyDiceOwnerTurn(snapshot, snapshot.currentSeatIndex);
         setActionsTurn((prev) => ({
@@ -916,7 +923,7 @@ const OnlineGame = ({
 
   // Lock BEFORE browser paints MOVE destination into any derived UI
   useLayoutEffect(() => {
-    if (!snapshot) return;
+    if (exitingRef.current || !snapshot) return;
     if (
       isMoveSnapshot(snapshot, lastAnimatedMoveSeqRef.current) &&
       !suppressMoveAnimRef.current
@@ -927,7 +934,7 @@ const OnlineGame = ({
 
   // Apply snapshot → board (dice + opponent/bot move animations)
   useEffect(() => {
-    if (!snapshot || mySeat < 0) return;
+    if (exitingRef.current || !snapshot || mySeat < 0) return;
     let cancelled = false;
 
     const apply = async (snap: IGameSnapshot) => {
@@ -1458,6 +1465,70 @@ const OnlineGame = ({
     [snapshot, guest.id, roomId]
   );
 
+  const clearExitTimers = useCallback(() => {
+    animCancelRef.current = { cancelled: true };
+    if (autoMoveTimerRef.current != null) {
+      window.clearTimeout(autoMoveTimerRef.current);
+      autoMoveTimerRef.current = null;
+    }
+    if (diceRollFallbackRef.current != null) {
+      window.clearTimeout(diceRollFallbackRef.current);
+      diceRollFallbackRef.current = null;
+    }
+    diceRollPendingRef.current = false;
+    animatingRef.current = false;
+    suppressMoveAnimRef.current = false;
+    rollingRef.current = false;
+    pendingSnapRef.current = [];
+    pendingDiceRef.current = null;
+    setIsBusy(false);
+  }, []);
+
+  const handleBackExit = useCallback(async () => {
+    if (exitingRef.current) return;
+    exitingRef.current = true;
+    stopBackgroundMusic();
+    clearExitTimers();
+
+    const live = snapshotRef.current;
+    const inMatch = !!live && live.phase !== "FINISHED";
+    const humanMatch = isHumanOnlineMatch(live);
+
+    if (roomId) {
+      try {
+        if (!leftRoomRef.current) {
+          await leaveRoom(roomId, guest.id);
+          leftRoomRef.current = true;
+        }
+      } catch {
+        // room may already be completed
+      }
+    }
+
+    if (inMatch && humanMatch && roomId) {
+      try {
+        const updated = await ensureGameSnapshot(roomId);
+        setSnapshot(updated);
+        void refreshBalance();
+        lostSummaryShownRef.current = true;
+        setVoluntaryExit(true);
+        setShowLostSummary(true);
+        return;
+      } catch {
+        // fall through to lobby
+      }
+    }
+
+    onExit();
+  }, [
+    roomId,
+    guest.id,
+    onExit,
+    setSnapshot,
+    refreshBalance,
+    clearExitTimers,
+  ]);
+
   const matchPlayerCount = useMemo(() => {
     if (snapshot?.seatColors?.length) return snapshot.seatColors.length;
     if (snapshot?.usernames?.length) return snapshot.usernames.length;
@@ -1468,32 +1539,31 @@ const OnlineGame = ({
   const matchEnded = snapshot?.phase === "FINISHED";
 
   useEffect(() => {
+    if (voluntaryExit) return;
     if (matchEnded && showLostSummary) {
       setShowLostSummary(false);
     }
-  }, [matchEnded, showLostSummary]);
+  }, [matchEnded, showLostSummary, voluntaryExit]);
 
   useEffect(() => {
+    if (voluntaryExit) return;
     if (myEliminated && isTwoPlayerMatch && matchEnded) {
       setShowResults(true);
     }
-  }, [myEliminated, isTwoPlayerMatch, matchEnded]);
+  }, [myEliminated, isTwoPlayerMatch, matchEnded, voluntaryExit]);
 
   const resultEntries: IResultEntry[] = useMemo(
     () => buildResults(snapshot, guest.id, roomId),
     [snapshot, guest.id, roomId]
   );
 
-  // 4-slot sparse view (BL/TL/TR/BR) with my house rotated to bottom-left.
-  // ProfileSection skips empty slots; always render with the 4-player layout.
+  // Local perspective: compact profile list (my home = bottom-left).
   const renderPlayers =
     players.length > 0
       ? players
-      : snapshot
+      : snapshot && mySeat >= 0
       ? playersForView(snapshot, mySeat, roomId)
       : [];
-
-  const totalPlayers: TTotalPlayers = 4;
 
   if (snapshot && mySeat >= 0 && lockedBoardColorRef.current === null) {
     lockedBoardColorRef.current = boardColorForSnapshot(snapshot, mySeat);
@@ -1542,7 +1612,7 @@ const OnlineGame = ({
           className="game-back-arrow"
           type="button"
           aria-label="Back"
-          onClick={onExit}
+          onClick={handleBackExit}
         >
           <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden>
             <path
@@ -1618,7 +1688,7 @@ const OnlineGame = ({
         className="game-back-arrow"
         type="button"
         aria-label="Back"
-        onClick={onExit}
+        onClick={handleBackExit}
       >
         <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden>
           <path
@@ -1701,18 +1771,21 @@ const OnlineGame = ({
           {...profileProps}
         />
       </BoardWrapper>
-      {showLostSummary && !matchEnded && (
+      {(showLostSummary && (!matchEnded || voluntaryExit)) && (
         <LostSummaryPopup
           entries={lostSummaryEntries}
           entryAmount={ONLINE_ENTRY_AMOUNT}
           isTwoPlayer={isTwoPlayerMatch}
+          exitReason={voluntaryExit ? "left" : "timeout"}
           onExit={() => {
             if (isTwoPlayerMatch) {
               setShowLostSummary(false);
               setShowResults(true);
               return;
             }
-            void leaveRoom(roomId, guest.id).catch(() => undefined);
+            if (!leftRoomRef.current) {
+              void leaveRoom(roomId, guest.id).catch(() => undefined);
+            }
             onExit();
           }}
           onWatch={() => setShowLostSummary(false)}
