@@ -74,9 +74,10 @@ const Token = ({
   }, [showTooltip, diceAvailable]);
 
   /**
-   * Se ejecuta cuando se ha hecho click en el botón del token...
+   * Se ejecuta cuando se ha hecho click en el botón / pawn visual...
    */
-  const handleClickDice = () => {
+  const handleClickDice = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
     if (diceAvailable.length === 1) {
       /**
        * Se obtiene el índice del dado en el listado de dados globales,
@@ -143,7 +144,6 @@ const Token = ({
   const isAnimatedClass = animated ? "animated" : "";
   const isSnapClass = snapPlace ? "snap" : "";
   const isReturningClass = isReturning ? "returning" : "";
-  const className = `game-token ${isAnimatedClass} ${isMovingClass} ${isSnapClass} ${isReturningClass}`;
   const stylePiece = getTokenSyle({ ...calculateTokenStyles, typeTile });
 
   const showButton =
@@ -153,12 +153,37 @@ const Token = ({
     !isMoving &&
     !isDisabledUI;
 
+  const className = `game-token ${isAnimatedClass} ${isMovingClass} ${isSnapClass} ${isReturningClass}${
+    showButton ? " selectable" : ""
+  }`;
+
   return (
     <React.Fragment>
-      <div className={className} style={styleWrapper}>
+      <div
+        className={className}
+        style={styleWrapper}
+        onClick={showButton ? handleClickDice : undefined}
+        role={showButton ? "button" : undefined}
+        tabIndex={showButton ? 0 : undefined}
+        onKeyDown={
+          showButton
+            ? (e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  handleClickDice();
+                }
+              }
+            : undefined
+        }
+      >
         <Piece color={color} style={stylePiece} debug={debug} index={index} />
         {showButton && (
-          <button className="game-token-button" onClick={handleClickDice} />
+          <button
+            type="button"
+            className="game-token-button"
+            onClick={handleClickDice}
+            aria-label="Select pawn"
+          />
         )}
       </div>
       {canSelectToken && showTooltip && (

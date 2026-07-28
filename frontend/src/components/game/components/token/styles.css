@@ -69,6 +69,13 @@
   -webkit-tap-highlight-color: rgba(255, 255, 255, 0);
 }
 
+/* Pin head sits above the cell — must receive clicks, not only the tile ring. */
+.game-token.selectable .game-token-piece {
+  pointer-events: auto;
+  cursor: pointer;
+  z-index: 4;
+}
+
 @keyframes rotation {
   from {
     transform: rotate(0deg);
