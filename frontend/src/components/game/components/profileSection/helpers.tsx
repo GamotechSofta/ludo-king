@@ -106,11 +106,11 @@ export const renderProfileComponent = (
       : currentTurn === indexProfile - 1;
 
     /**
-     * Si tiene el turno, pasa el valor de actionsTurn, si no enviará el valor por defecto,
-     * con esto sólo el componente Profile que tenga el turno otendrá el valor de actionsTurn,
-     * que se le pasado desde el padre...
+     * Always pass the live actionsTurn snapshot.
+     * RenderDice now handles turn/visibility internally; gating this to only
+     * hasTurn profiles can drop fast bot roll frames (points apply, animation missed).
      */
-    const newActionsTurn = hasTurn ? actionsTurn : DEFAULT_VALUE_ACTION_TURN;
+    const newActionsTurn = actionsTurn;
 
     /**
      * Se generan los props que se le pasarán al componente de Profile...

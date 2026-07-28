@@ -361,14 +361,18 @@ export function actionsTurnFromSnapshot(
   /** Fresh turn — show idle die on the active profile, not the last roll value. */
   const resetDiceVisual =
     seatChanged || (awaitingRoll && noDiceYet && !awaitingMove);
+  const fromList =
+    !noDiceYet && snapshot.diceList
+      ? (snapshot.diceList[snapshot.diceList.length - 1] as TDicevalues)
+      : 0;
+  // Keep rolled pips visible during AWAITING_MOVE (and after sync) — never blank the face.
+  const keptFace = (fromList || prev?.diceValue || 0) as IActionsTurn["diceValue"];
 
   return {
     timerActivated: awaitingRoll || awaitingMove,
     disabledDice: onlineDiceDisabled(snapshot, mySeat),
     showDice: true,
-    diceValue: resetDiceVisual
-      ? 0
-      : ((prev?.diceValue || 0) as IActionsTurn["diceValue"]),
+    diceValue: resetDiceVisual ? 0 : keptFace,
     diceList,
     diceRollNumber: resetDiceVisual ? 0 : prev?.diceRollNumber || 0,
     isDisabledUI: !isMyTurn || snapshot.phase === "FINISHED",

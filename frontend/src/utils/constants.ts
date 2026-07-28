@@ -164,12 +164,11 @@ export const CAPTURE_RETURN_STEP_MS = 55;
 export const CAPTURE_RETURN_PAUSE_MS = 0;
 
 /**
- * Dice spin duration (seconds) for react-dice-complete.
- * Classic-like roll feel (~0.65s).
+ * Dice spin duration (seconds) for react-dice-complete (original).
  */
 export const ROLL_TIME_VALUE = 0.65;
 
-/** Online: wait for react-dice-complete spin before pawn hops. */
+/** Online: wait for dice spin before pawn hops / rollDone side-effects. */
 export const DICE_ROLL_ANIM_MS = Math.round(ROLL_TIME_VALUE * 1000);
 
 /** Pause before the die handoff to the next player (online). */

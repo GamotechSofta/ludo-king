@@ -1,4 +1,4 @@
-/* Flat pad — no 3D blue bevel */
+/* Flat pad — no 3D blue bevel (original) */
 .game-profile-dice {
   position: relative;
   width: 52px;
@@ -79,6 +79,11 @@
 
 .game-profile-dice-face .die-container {
   margin: 0 !important;
+}
+
+/* Library transition fights tumble keyframes */
+.game-profile-dice-face .die {
+  transition: none !important;
 }
 
 .game-profile-dice.ready .game-profile-dice-face {

@@ -290,17 +290,8 @@ export const getRandomValueDice = (
    */
   copyActionsTurn.disabledDice = true;
 
-  /**
-   * Se incrementa el valor del lanzamiento por si el valor del dado no cambia
-   */
-  const diceRollNumber = copyActionsTurn.diceRollNumber;
-
-  /**
-   * Se valida que sólo incremente hasta 10 para así evitar estar almancenado
-   * un número grande que no se refelja en el UI
-   */
-  const newDiceRollNumber = diceRollNumber + 1 >= 10 ? 1 : diceRollNumber + 1;
-  copyActionsTurn.diceRollNumber = newDiceRollNumber;
+  // Monotonic — wrapping 1..9 reused roll keys and skipped CSS spin.
+  copyActionsTurn.diceRollNumber = (copyActionsTurn.diceRollNumber || 0) + 1;
   copyActionsTurn.rollId = undefined;
 
   return copyActionsTurn;
@@ -317,9 +308,8 @@ export const applyServerDiceVisual = (
   copyActionsTurn.diceValue = diceValue;
   copyActionsTurn.timerActivated = false;
   copyActionsTurn.disabledDice = true;
-  const diceRollNumber = copyActionsTurn.diceRollNumber;
-  copyActionsTurn.diceRollNumber =
-    diceRollNumber + 1 >= 10 ? 1 : diceRollNumber + 1;
+  // Monotonic — never wrap (wrap caused identical roll keys → skipped spin)
+  copyActionsTurn.diceRollNumber = (copyActionsTurn.diceRollNumber || 0) + 1;
   copyActionsTurn.rollId = undefined;
   return copyActionsTurn;
 };
