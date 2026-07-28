@@ -65,7 +65,7 @@ export const playSound = (name: TGameSound, volume?: number) => {
   }
 };
 
-/** Loop counting ding during online match search (15s window). */
+/** Loop counting ding during online match search (10s window). */
 export const startMatchSearchLoop = (volume = 0.55) => {
   try {
     if (!matchSearchLoop) {

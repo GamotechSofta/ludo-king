@@ -1,12 +1,12 @@
 /** Must match backend RoomService.FILL_SECONDS */
-export const SEARCH_FILL_SECONDS = 15;
+export const SEARCH_FILL_SECONDS = 10;
 
 export type TSearchPhase = "NEARBY" | "EXPANDED" | "WIDE" | "BOT_FILL";
 
 export const getSearchPhase = (elapsedSec: number): TSearchPhase => {
-  if (elapsedSec < 5) return "NEARBY";
-  if (elapsedSec < 10) return "EXPANDED";
-  if (elapsedSec < 15) return "WIDE";
+  if (elapsedSec < 3) return "NEARBY";
+  if (elapsedSec < 6) return "EXPANDED";
+  if (elapsedSec < SEARCH_FILL_SECONDS) return "WIDE";
   return "BOT_FILL";
 };
 
@@ -18,7 +18,8 @@ export const getSearchRemainingSec = (
   if (fillDeadlineAt) {
     const deadlineMs = new Date(fillDeadlineAt).getTime();
     if (Number.isFinite(deadlineMs)) {
-      return Math.max(0, Math.ceil((deadlineMs - nowMs) / 1000));
+      const raw = Math.max(0, Math.ceil((deadlineMs - nowMs) / 1000));
+      return Math.min(SEARCH_FILL_SECONDS, raw);
     }
   }
   const elapsed = Math.min(

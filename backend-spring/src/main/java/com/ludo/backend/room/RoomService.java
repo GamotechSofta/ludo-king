@@ -35,7 +35,7 @@ import org.springframework.stereotype.Service;
 public class RoomService {
 
   /** Max wait to fill seats before existing bot-fill kicks in. */
-  private static final int FILL_SECONDS = 15;
+  private static final int FILL_SECONDS = 10;
   private static final int COUNTDOWN_SECONDS = 4;
   private static final int RECONNECT_SECONDS = 30;
   private static final String CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -821,13 +821,13 @@ public class RoomService {
 
   private SearchPhase searchPhase(Room room) {
     int elapsed = searchElapsedSec(room);
-    if (elapsed < 5) {
+    if (elapsed < 3) {
       return SearchPhase.NEARBY;
     }
-    if (elapsed < 10) {
+    if (elapsed < 6) {
       return SearchPhase.EXPANDED;
     }
-    if (elapsed < 15) {
+    if (elapsed < FILL_SECONDS) {
       return SearchPhase.WIDE;
     }
     return SearchPhase.BOT_FILL;

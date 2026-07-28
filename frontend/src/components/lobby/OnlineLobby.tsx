@@ -12,7 +12,6 @@ import {
   markRoomReady,
 } from "../../api/ludoApi";
 import {
-  playSound,
   preloadGameSounds,
   startMatchSearchLoop,
   stopMatchSearchLoop,
@@ -83,7 +82,6 @@ const OnlineLobby = ({
 
   const prevPlayerIdsRef = useRef<Set<string>>(new Set());
   const prevPlayerCountRef = useRef(1);
-  const lastCountdownSoundRef = useRef<string | null>(null);
   const failCountRef = useRef(0);
   const joinFlashTimerRef = useRef<number | null>(null);
   const pollRef = useRef<(() => void) | null>(null);
@@ -207,17 +205,6 @@ const OnlineLobby = ({
     return () => stopMatchSearchLoop();
   }, [isSearching, networkLost]);
 
-  useEffect(() => {
-    if (displayCountdown == null) {
-      lastCountdownSoundRef.current = null;
-      return;
-    }
-    const key = String(displayCountdown);
-    if (lastCountdownSoundRef.current === key) return;
-    lastCountdownSoundRef.current = key;
-    playSound("countdownDing", 0.65);
-  }, [displayCountdown]);
-
   const searchTimerSec = useMemo(
     () =>
       getSearchElapsedSec(room?.fillDeadlineAt, now, searchStart),
@@ -268,8 +255,7 @@ const OnlineLobby = ({
       (id) => !prevPlayerIdsRef.current.has(id) && id !== guest.id
     );
 
-    if (newIds.length > 0 && isReadyPhase) {
-      playSound("countdownDing", 0.5);
+    if (newIds.length > 0 && (isSearching || isReadyPhase)) {
       newIds.forEach((id, i) => {
         window.setTimeout(() => {
           setJoiningIds((prev) => new Set([...prev, id]));
