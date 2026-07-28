@@ -24,6 +24,8 @@ public class Room {
   private Instant startedAt;
   private Instant endedAt;
   private Instant fillDeadlineAt;
+  /** Matchmaking region bucket (e.g. IN). */
+  private String region = "IN";
   private String winnerId;
   private List<Integer> finalStandings = new ArrayList<>();
   /** When set, room is in countdown before PLAYING. */
@@ -119,6 +121,14 @@ public class Room {
 
   public void setFillDeadlineAt(Instant fillDeadlineAt) {
     this.fillDeadlineAt = fillDeadlineAt;
+  }
+
+  public String getRegion() {
+    return region;
+  }
+
+  public void setRegion(String region) {
+    this.region = region;
   }
 
   public String getWinnerId() {

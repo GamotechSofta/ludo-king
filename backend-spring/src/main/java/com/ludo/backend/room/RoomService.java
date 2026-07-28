@@ -36,7 +36,7 @@ public class RoomService {
 
   /** Max wait to fill seats before existing bot-fill kicks in. */
   private static final int FILL_SECONDS = 15;
-  private static final int COUNTDOWN_SECONDS = 3;
+  private static final int COUNTDOWN_SECONDS = 4;
   private static final int RECONNECT_SECONDS = 30;
   private static final String CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
@@ -75,10 +75,27 @@ public class RoomService {
   public record QueueEntry(String userId, String username, Instant enqueuedAt) {
   }
 
+  public enum SearchPhase {
+    NEARBY, EXPANDED, WIDE, BOT_FILL
+  }
+
   public record QueueResponse(String status, String roomId, String roomCode, Room room) {
   }
 
   public QueueResponse enqueue(String userId, String username, int maxPlayers, String stakeTier) {
+    return enqueue(userId, username, maxPlayers, stakeTier, 1000, "IN", null, "default");
+  }
+
+  public QueueResponse enqueue(
+      String userId,
+      String username,
+      int maxPlayers,
+      String stakeTier,
+      int rating,
+      String region,
+      Integer ping,
+      String avatarId
+  ) {
     if (maxPlayers < 2 || maxPlayers > 4) {
       throw new IllegalArgumentException("maxPlayers must be 2-4");
     }
@@ -114,8 +131,15 @@ public class RoomService {
         "username", username,
         "gameMode", maxPlayers,
         "stakeTier", tier,
+        "rating", rating,
+        "region", region == null || region.isBlank() ? "IN" : region,
+        "ping", ping == null ? 0 : ping,
         "joinedAt", Instant.now().toString()
     ));
+
+    String playerRegion = region == null || region.isBlank() ? "IN" : region.trim().toUpperCase();
+    int playerRating = rating > 0 ? rating : 1000;
+    String playerAvatar = avatarId == null || avatarId.isBlank() ? "default" : avatarId.trim();
 
     // Serialize joins per bucket so two 2P players don't each open a solo room.
     String bucket = maxPlayers + "|" + tier;
@@ -126,6 +150,10 @@ public class RoomService {
           .stream()
           .filter(r -> r.getPlayers().size() < r.getMaxPlayers())
           .filter(r -> r.getPlayers().stream().noneMatch(p -> userId.equals(p.getUserId())))
+          .filter(r -> canJoinRoom(r, playerRating, playerRegion))
+          .sorted((a, b) -> Integer.compare(
+              Math.abs(averageHumanRating(a) - playerRating),
+              Math.abs(averageHumanRating(b) - playerRating)))
           .toList();
 
       if (!waiting.isEmpty()) {
@@ -140,7 +168,12 @@ public class RoomService {
           List<LudoColor> colors = LudoColor.forPlayerCount(maxPlayers);
           int seat = room.getPlayers().size();
           RoomPlayer joined = new RoomPlayer(userId, username, colors.get(seat).name(), false, seat);
+          joined.setRating(playerRating);
+          joined.setAvatar(playerAvatar);
           room.getPlayers().add(joined);
+          if (room.getFillDeadlineAt() == null) {
+            room.setFillDeadlineAt(Instant.now().plus(FILL_SECONDS, ChronoUnit.SECONDS));
+          }
           room = roomRepository.save(room);
           try {
             double fee = room.getEntryFee() > 0 ? room.getEntryFee() : bet;
@@ -160,11 +193,14 @@ public class RoomService {
       }
 
       Room room = newEmptyRoom(maxPlayers, tier);
+      room.setRegion(playerRegion);
       if (bet > 0) {
         room.setEntryFee(Math.round(bet));
       }
       List<LudoColor> colors = LudoColor.forPlayerCount(maxPlayers);
       RoomPlayer host = new RoomPlayer(userId, username, colors.get(0).name(), false, 0);
+      host.setRating(playerRating);
+      host.setAvatar(playerAvatar);
       room.getPlayers().add(host);
       room.setFillDeadlineAt(Instant.now().plus(FILL_SECONDS, ChronoUnit.SECONDS));
       room = roomRepository.save(room);
@@ -370,6 +406,8 @@ public class RoomService {
     body.put("maxPlayers", room.getMaxPlayers());
     body.put("readyCount", readyCount(room));
     body.put("allReady", allReady(room));
+    body.put("searchElapsedSec", searchElapsedSec(room));
+    body.put("searchPhase", searchPhase(room).name());
     if (room.getCountdownValue() != null) {
       body.put("countdown", room.getCountdownValue());
     }
@@ -473,6 +511,8 @@ public class RoomService {
       );
       bot.setBotDifficulty(BotDifficulty.HARD);
       bot.setReady(true);
+      bot.setAvatar(randomBotAvatar());
+      bot.setRating(900 + random.nextInt(400));
       room.getPlayers().add(bot);
       broadcastPlayerJoined(room, bot);
     }
@@ -607,7 +647,7 @@ public class RoomService {
         continue;
       }
       long secsLeft = ChronoUnit.SECONDS.between(now, room.getCountdownEndsAt());
-      int value = (int) Math.max(0, secsLeft);
+      int value = countdownDisplayValue(secsLeft);
       if (room.getCountdownValue() == null || room.getCountdownValue() != value) {
         room.setCountdownValue(value);
         roomRepository.save(room);
@@ -619,6 +659,20 @@ public class RoomService {
         ));
       }
     }
+  }
+
+  /** Map remaining seconds to 3, 2, 1, 0 (GO) — one label per second. */
+  private static int countdownDisplayValue(long secsLeft) {
+    if (secsLeft >= 4) {
+      return 3;
+    }
+    if (secsLeft == 3) {
+      return 2;
+    }
+    if (secsLeft == 2) {
+      return 1;
+    }
+    return 0;
   }
 
   public void processReconnectTimeouts() {
@@ -721,7 +775,6 @@ public class RoomService {
         events.toUser(p.getUserId(), MatchmakingEventPublisher.EVENT_MATCH_FOUND, roomPayload(room));
       }
     }
-    // If only bots somehow (shouldn't), or all already ready
     if (allReady(room)) {
       room = beginCountdown(room);
     }
@@ -730,11 +783,11 @@ public class RoomService {
 
   private Room beginCountdown(Room room) {
     room.setCountdownEndsAt(Instant.now().plus(COUNTDOWN_SECONDS, ChronoUnit.SECONDS));
-    room.setCountdownValue(COUNTDOWN_SECONDS);
+    room.setCountdownValue(3);
     room = roomRepository.save(room);
     events.toRoom(room.getId(), MatchmakingEventPublisher.EVENT_COUNTDOWN, Map.of(
-        "countdown", COUNTDOWN_SECONDS,
-        "secondsLeft", COUNTDOWN_SECONDS,
+        "countdown", 3,
+        "secondsLeft", 3,
         "roomId", room.getId()
     ));
     return room;
@@ -756,6 +809,62 @@ public class RoomService {
 
   private long readyCount(Room room) {
     return room.getPlayers().stream().filter(p -> p.isBot() || p.isReady()).count();
+  }
+
+  private int searchElapsedSec(Room room) {
+    if (room.getFillDeadlineAt() == null) {
+      return 0;
+    }
+    long remaining = ChronoUnit.SECONDS.between(Instant.now(), room.getFillDeadlineAt());
+    return (int) Math.min(FILL_SECONDS, Math.max(0, FILL_SECONDS - remaining));
+  }
+
+  private SearchPhase searchPhase(Room room) {
+    int elapsed = searchElapsedSec(room);
+    if (elapsed < 5) {
+      return SearchPhase.NEARBY;
+    }
+    if (elapsed < 10) {
+      return SearchPhase.EXPANDED;
+    }
+    if (elapsed < 15) {
+      return SearchPhase.WIDE;
+    }
+    return SearchPhase.BOT_FILL;
+  }
+
+  private int averageHumanRating(Room room) {
+    return (int) room.getPlayers().stream()
+        .filter(p -> !p.isBot())
+        .mapToInt(RoomPlayer::getRating)
+        .average()
+        .orElse(1000);
+  }
+
+  private boolean canJoinRoom(Room room, int seekerRating, String seekerRegion) {
+    SearchPhase phase = searchPhase(room);
+    int avgRating = averageHumanRating(room);
+    int ratingDiff = Math.abs(avgRating - seekerRating);
+    return switch (phase) {
+      case NEARBY -> ratingDiff <= 200 && sameRegion(room, seekerRegion);
+      case EXPANDED -> ratingDiff <= 500 && sameRegion(room, seekerRegion);
+      case WIDE, BOT_FILL -> true;
+    };
+  }
+
+  private boolean sameRegion(Room room, String region) {
+    if (region == null || region.isBlank()) {
+      return true;
+    }
+    String roomRegion = room.getRegion();
+    if (roomRegion == null || roomRegion.isBlank()) {
+      return true;
+    }
+    return roomRegion.equalsIgnoreCase(region.trim());
+  }
+
+  private String randomBotAvatar() {
+    return "bot-" + (random.nextInt(12) + 1);
   }
 
   private void broadcastPlayerJoined(Room room, RoomPlayer player) {

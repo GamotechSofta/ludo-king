@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import type { IGuestUser } from "./types";
-import { createGuest, joinRoom, queueMatch } from "../../api/ludoApi";
+import { createGuest, queueMatch } from "../../api/ludoApi";
+import CoinsWinIcon from "./CoinsWinIcon";
 import "./styles.css";
 
 type TPlayers = 2 | 4;
@@ -20,7 +21,6 @@ interface OnlineSetupProps {
 
 const OnlineSetup = ({ onBack, onQueued }: OnlineSetupProps) => {
   const [maxPlayers, setMaxPlayers] = useState<TPlayers>(4);
-  const [roomCode, setRoomCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -37,29 +37,15 @@ const OnlineSetup = ({ onBack, onQueued }: OnlineSetupProps) => {
     setError("");
     try {
       const guest = await ensureGuest();
-      const res = await queueMatch(guest.id, guest.username, maxPlayers);
+      const res = await queueMatch(guest.id, guest.username, maxPlayers, "FREE", {
+        rating: guest.rating,
+        region: "IN",
+        avatarId: guest.avatarId,
+      });
       if (!res.roomId) throw new Error("No room returned");
       onQueued(guest, res.roomId, res.roomCode, maxPlayers);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Matchmaking failed");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleJoin = async () => {
-    setBusy(true);
-    setError("");
-    try {
-      const guest = await ensureGuest();
-      const room = await joinRoom(
-        roomCode.trim().toUpperCase(),
-        guest.id,
-        guest.username
-      );
-      onQueued(guest, room.id, room.roomCode, room.maxPlayers as TPlayers);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not join room");
     } finally {
       setBusy(false);
     }
@@ -120,12 +106,10 @@ const OnlineSetup = ({ onBack, onQueued }: OnlineSetupProps) => {
 
       <section className="find-match-card find-match-card-game">
         <h3 className="find-match-title">SELECT GAME</h3>
-        <div className="find-match-stake find-match-stake-fixed">
+        <div className="find-match-game-body">
           <div className="find-match-stake-box">
             <div className="find-match-win">
-              <span className="find-match-win-icon" aria-hidden>
-                🪙
-              </span>
+              <CoinsWinIcon />
               <div className="find-match-win-meta">
                 <span className="find-match-win-label">WIN</span>
                 <span className="find-match-win-value">
@@ -137,34 +121,16 @@ const OnlineSetup = ({ onBack, onQueued }: OnlineSetupProps) => {
               Entry: {ENTRY_AMOUNT.toLocaleString()}
             </div>
           </div>
+          <button
+            type="button"
+            className="find-match-play"
+            disabled={busy}
+            onClick={() => void handleQuickMatch()}
+          >
+            Play
+          </button>
         </div>
-        <button
-          type="button"
-          className="find-match-play"
-          disabled={busy}
-          onClick={() => void handleQuickMatch()}
-        >
-          Play
-        </button>
       </section>
-
-      <div className="find-match-join">
-        <input
-          value={roomCode}
-          maxLength={6}
-          onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
-          placeholder="ROOM CODE"
-          aria-label="Room code"
-          disabled={busy}
-        />
-        <button
-          type="button"
-          disabled={busy || roomCode.length < 4}
-          onClick={() => void handleJoin()}
-        >
-          JOIN
-        </button>
-      </div>
 
       {error ? <p className="find-match-error">{error}</p> : null}
       </div>

@@ -474,18 +474,39 @@
 }
 
 .find-match-back {
+  align-items: center;
   align-self: flex-start;
-  background: rgba(8, 28, 64, 0.75);
-  border: 2px solid rgba(255, 255, 255, 0.45);
+  background: linear-gradient(180deg, #007bff 0%, #003d99 100%);
+  border: 3px solid #ffcc00;
   border-radius: 50%;
+  box-shadow:
+    0 0 10px rgba(255, 204, 0, 0.45),
+    0 4px 0 rgba(0, 0, 0, 0.28);
   color: #fff;
   cursor: pointer;
+  display: flex;
+  flex-shrink: 0;
   font-family: "Fredoka", sans-serif;
-  font-size: 1.1rem;
-  font-weight: 700;
-  height: 40px;
+  font-size: 1.25rem;
+  font-weight: 800;
+  height: 44px;
+  justify-content: center;
+  line-height: 1;
   margin-bottom: 4px;
-  width: 40px;
+  padding: 0;
+  text-shadow:
+    -1px -1px 0 #1a1a1a,
+    1px -1px 0 #1a1a1a,
+    -1px 1px 0 #1a1a1a,
+    1px 1px 0 #1a1a1a;
+  width: 44px;
+}
+
+.find-match-back:active {
+  box-shadow:
+    0 0 8px rgba(255, 204, 0, 0.35),
+    0 2px 0 rgba(0, 0, 0, 0.25);
+  transform: translateY(2px);
 }
 
 .find-match-resources {
@@ -656,38 +677,50 @@
 }
 
 .find-match-players {
-  align-items: flex-start;
+  align-items: stretch;
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  margin: 4px auto 0;
+  gap: 16px;
+  margin: 0 auto;
   width: fit-content;
 }
 
-.find-match-card-players {
-  background: radial-gradient(
-    ellipse 120% 80% at 50% 40%,
-    #1a4580 0%,
-    #0f2a58 45%,
-    #081830 100%
-  );
-  padding-bottom: 20px;
-  padding-top: 16px;
+.find-match-card-players,
+.find-match-card-game {
+  background: #003b94;
+  border: none;
+  box-shadow: none;
+  padding: 16px 14px 20px;
+}
+
+.find-match-card-players .find-match-title,
+.find-match-card-game .find-match-title {
+  color: #ffcc00;
+  font-size: 1.05rem;
+  letter-spacing: 0.8px;
+  margin-bottom: 14px;
+  text-shadow:
+    -1.5px -1.5px 0 #2d1600,
+    1.5px -1.5px 0 #2d1600,
+    -1.5px 1.5px 0 #2d1600,
+    1.5px 1.5px 0 #2d1600,
+    0 2px 0 #2d1600;
 }
 
 .find-match-player-row {
   align-items: center;
   cursor: pointer;
   display: flex;
-  gap: 14px;
+  gap: 12px;
   justify-content: flex-start;
+  min-width: 168px;
   user-select: none;
 }
 
 .find-match-player-row.selected .find-match-player-radio {
   box-shadow:
-    0 0 0 2px rgba(245, 200, 66, 0.35),
-    0 0 12px rgba(245, 200, 66, 0.45);
+    0 0 0 2px rgba(255, 204, 0, 0.35),
+    0 0 12px rgba(255, 204, 0, 0.5);
 }
 
 .find-match-player-input {
@@ -701,22 +734,22 @@
 .find-match-player-radio {
   align-items: center;
   background: radial-gradient(circle at 35% 30%, #1a3a6e 0%, #0a1e3d 100%);
-  border: 3px solid #f0c040;
+  border: 3px solid #ffcc00;
   border-radius: 50%;
   box-shadow:
     inset 0 2px 6px rgba(0, 0, 0, 0.45),
     0 1px 0 rgba(255, 255, 255, 0.12);
   display: flex;
   flex-shrink: 0;
-  height: 30px;
+  height: 32px;
   justify-content: center;
-  width: 30px;
+  width: 32px;
 }
 
 .find-match-player-check {
-  color: #f5c842;
+  color: #ffcc00;
   font-family: "Fredoka", sans-serif;
-  font-size: 1rem;
+  font-size: 1.05rem;
   font-weight: 800;
   line-height: 1;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
@@ -725,10 +758,14 @@
 .find-match-player-text {
   color: #fff;
   font-family: "Fredoka", sans-serif;
-  font-size: 1.05rem;
-  font-weight: 700;
-  letter-spacing: 0.4px;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+  font-size: 1.1rem;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  text-shadow:
+    -1px -1px 0 #1a1a1a,
+    1px -1px 0 #1a1a1a,
+    -1px 1px 0 #1a1a1a,
+    1px 1px 0 #1a1a1a;
 }
 
 .find-match-extended {
@@ -782,22 +819,13 @@
   margin-bottom: 18px;
 }
 
-.find-match-stake-fixed {
-  justify-content: center;
-}
-
-.find-match-stake-fixed .find-match-stake-box {
+.find-match-game-body {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
   margin: 0 auto;
-}
-
-.find-match-card-game {
-  background: radial-gradient(
-    ellipse 120% 90% at 50% 35%,
-    #1a4580 0%,
-    #0f2a58 50%,
-    #081830 100%
-  );
-  padding-bottom: 20px;
+  width: 100%;
 }
 
 .find-match-stake-btn {
@@ -825,6 +853,67 @@
   opacity: 0.4;
 }
 
+.find-match-card-game .find-match-stake-box {
+  background: #ffcc00;
+  border: 4px solid #ffcc00;
+  border-radius: 16px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.28);
+  max-width: 240px;
+}
+
+.find-match-card-game .find-match-win {
+  background: #6c833c;
+  border-radius: 10px 10px 0 0;
+  margin: 6px 6px 0;
+  min-height: 72px;
+  padding: 10px 12px 12px;
+}
+
+.find-match-card-game .find-match-win-label {
+  color: #fff;
+  font-size: 1.15rem;
+  letter-spacing: 1px;
+  text-shadow:
+    -1px -1px 0 #1a1a1a,
+    1px -1px 0 #1a1a1a,
+    -1px 1px 0 #1a1a1a,
+    1px 1px 0 #1a1a1a;
+}
+
+.find-match-card-game .find-match-win-value {
+  background: #3e512a;
+  font-size: 1.35rem;
+  min-width: 108px;
+  padding: 8px 18px;
+  text-shadow:
+    -1px -1px 0 #1a1a1a,
+    1px -1px 0 #1a1a1a,
+    -1px 1px 0 #1a1a1a,
+    1px 1px 0 #1a1a1a;
+}
+
+.find-match-card-game .find-match-entry {
+  color: #000;
+  font-size: 1.05rem;
+  padding: 12px 12px 14px;
+  text-shadow: none;
+}
+
+.find-match-card-game .find-match-play {
+  background: linear-gradient(180deg, #007bff 0%, #003d99 100%);
+  border: 4px solid #ffcc00;
+  box-shadow:
+    0 0 12px rgba(255, 204, 0, 0.55),
+    0 5px 0 rgba(0, 0, 0, 0.3);
+  font-size: 1.45rem;
+  max-width: 240px;
+  text-shadow:
+    -1px -1px 0 #1a1a1a,
+    1px -1px 0 #1a1a1a,
+    -1px 1px 0 #1a1a1a,
+    1px 1px 0 #1a1a1a;
+}
+
 .find-match-stake-box {
   background: linear-gradient(180deg, #ffe566 0%, #f5c842 100%);
   border: 3px solid #e8b020;
@@ -832,41 +921,49 @@
   box-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.35),
     0 4px 12px rgba(0, 0, 0, 0.25);
-  min-width: 148px;
+  box-sizing: border-box;
+  max-width: 220px;
   overflow: hidden;
   text-align: center;
+  width: 100%;
 }
 
 .find-match-win {
   align-items: center;
   background: linear-gradient(180deg, #4a8f28 0%, #2d6a18 100%);
-  border-radius: 10px 10px 0 0;
+  border-radius: 8px 8px 0 0;
+  box-sizing: border-box;
   display: flex;
   gap: 8px;
   justify-content: center;
-  margin: 6px 6px 0;
-  padding: 10px 8px 8px;
+  margin: 5px 5px 0;
+  min-height: 58px;
+  padding: 8px 10px;
 }
 
 .find-match-win-icon {
+  display: block;
   flex-shrink: 0;
-  font-size: 1.35rem;
-  line-height: 1;
+  height: 38px;
+  object-fit: contain;
+  width: 38px;
 }
 
 .find-match-win-meta {
   align-items: center;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  flex-shrink: 0;
+  gap: 5px;
+  min-width: 88px;
 }
 
 .find-match-win-label {
   color: #fff;
   font-family: "Fredoka", sans-serif;
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   font-weight: 800;
-  letter-spacing: 0.6px;
+  letter-spacing: 0.8px;
   line-height: 1;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
 }
@@ -874,22 +971,26 @@
 .find-match-win-value {
   background: linear-gradient(180deg, #5a7020 0%, #3d5018 100%);
   border-radius: 999px;
+  box-sizing: border-box;
   color: #fff;
+  display: inline-block;
   font-family: "Fredoka", sans-serif;
-  font-size: 0.95rem;
+  font-size: 1rem;
   font-weight: 800;
   line-height: 1;
-  min-width: 72px;
-  padding: 5px 12px;
+  min-width: 84px;
+  padding: 6px 14px;
+  text-align: center;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
 }
 
 .find-match-entry {
   color: #1a1a1a;
   font-family: "Fredoka", sans-serif;
-  font-size: 0.95rem;
+  font-size: 1rem;
   font-weight: 800;
-  padding: 10px 12px 12px;
+  line-height: 1.2;
+  padding: 9px 12px 11px;
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35);
 }
 
@@ -904,13 +1005,14 @@
   cursor: pointer;
   display: block;
   font-family: "Fredoka", sans-serif;
-  font-size: 1.4rem;
+  font-size: 1.35rem;
   font-weight: 800;
-  margin: 0 auto;
+  margin: 0;
+  max-width: 220px;
   min-width: 150px;
-  padding: 11px 40px;
+  padding: 10px 36px;
   text-shadow: 0 2px 3px rgba(0, 0, 0, 0.35);
-  width: auto;
+  width: 100%;
 }
 
 .find-match-play:active:not(:disabled) {
@@ -923,54 +1025,713 @@
   opacity: 0.6;
 }
 
-.find-match-join {
-  align-items: center;
-  background: rgba(8, 28, 64, 0.65);
-  border: 1px solid rgba(201, 162, 39, 0.45);
-  border-radius: 999px;
-  display: flex;
-  gap: 8px;
-  margin-top: 4px;
-  padding: 6px 8px 6px 14px;
-}
-
-.find-match-join input {
-  background: transparent;
-  border: none;
-  color: #fff;
-  flex: 1;
-  font-family: "Fredoka", sans-serif;
-  font-size: 0.85rem;
-  font-weight: 600;
-  min-width: 0;
-  outline: none;
-}
-
-.find-match-join input::placeholder {
-  color: rgba(255, 255, 255, 0.45);
-}
-
-.find-match-join button {
-  background: linear-gradient(180deg, #3cb878 0%, #2a9d5c 100%);
-  border: none;
-  border-radius: 999px;
-  color: #fff;
-  cursor: pointer;
-  font-family: "Fredoka", sans-serif;
-  font-size: 0.78rem;
-  font-weight: 800;
-  padding: 8px 14px;
-}
-
-.find-match-join button:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
 .find-match-error {
   color: #ffb4b4;
   font-family: "Fredoka", sans-serif;
   font-size: 0.82rem;
   margin: 0;
   text-align: center;
+}
+
+/* —— Finding Players (reference layout) —— */
+.find-players-lobby.lobby {
+  justify-content: flex-start;
+  overflow: hidden;
+  padding: 4px 14px 10px;
+}
+
+.find-players-lobby {
+  background: transparent;
+}
+
+.find-players {
+  align-items: center;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: clamp(8px, 1.6vh, 14px);
+  justify-content: flex-start;
+  margin: 0 auto;
+  max-height: 100%;
+  max-width: 360px;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+  width: 100%;
+}
+
+.find-players-back {
+  align-items: center;
+  align-self: flex-start;
+  background: linear-gradient(180deg, #007bff 0%, #003d99 100%);
+  border: 2px solid #ffcc00;
+  border-radius: 50%;
+  box-shadow:
+    0 0 8px rgba(255, 204, 0, 0.45),
+    0 3px 0 rgba(0, 0, 0, 0.28);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  flex-shrink: 0;
+  font-family: "Fredoka", sans-serif;
+  font-size: 1rem;
+  font-weight: 800;
+  height: 34px;
+  justify-content: center;
+  left: 0;
+  line-height: 1;
+  padding: 0;
+  position: absolute;
+  text-shadow:
+    -1px -1px 0 #1a1a1a,
+    1px -1px 0 #1a1a1a,
+    -1px 1px 0 #1a1a1a,
+    1px 1px 0 #1a1a1a;
+  top: 0;
+  width: 34px;
+  z-index: 2;
+}
+
+.find-players-logo {
+  display: block;
+  flex-shrink: 1;
+  height: auto;
+  margin: 24px auto 0;
+  max-height: clamp(140px, 28vh, 260px);
+  max-width: clamp(220px, 72vw, 340px);
+  min-height: 0;
+  object-fit: contain;
+  width: min(72vw, 340px);
+}
+
+.find-players-heading {
+  color: #ffcc00;
+  flex-shrink: 0;
+  font-family: "Fredoka", sans-serif;
+  font-size: clamp(1.25rem, 5.2vw, 1.75rem);
+  font-weight: 800;
+  letter-spacing: 0.9px;
+  line-height: 1.1;
+  margin: 10px 0 14px;
+  padding: 0 8px;
+  text-align: center;
+  text-shadow:
+    -1.5px -1.5px 0 #5a1200,
+    1.5px -1.5px 0 #5a1200,
+    -1.5px 1.5px 0 #5a1200,
+    1.5px 1.5px 0 #5a1200;
+  text-transform: uppercase;
+}
+
+.find-players-info {
+  border: 2px solid #ffcc00;
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 1px rgba(255, 215, 100, 0.12);
+  flex-shrink: 0;
+  margin: 0;
+  overflow: hidden;
+  width: min(100%, 280px);
+}
+
+.find-players-info-head,
+.find-players-info-body {
+  display: grid;
+  font-family: "Fredoka", sans-serif;
+  grid-template-columns: 1fr 1fr;
+}
+
+.find-players-info-cell {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  min-height: 28px;
+  padding: 5px 8px;
+  position: relative;
+  text-align: center;
+}
+
+.find-players-info-cell:first-child::after {
+  background: rgba(255, 204, 0, 0.35);
+  bottom: 18%;
+  content: "";
+  position: absolute;
+  right: 0;
+  top: 18%;
+  width: 1px;
+}
+
+.find-players-info-head {
+  background: #003b94;
+  border-bottom: 1px solid rgba(255, 204, 0, 0.28);
+  color: #fff;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.find-players-info-head .find-players-info-cell {
+  min-height: 26px;
+  padding: 4px 8px;
+}
+
+.find-players-info-body {
+  background: #003b94;
+}
+
+.find-players-info-body .find-players-info-cell {
+  min-height: 32px;
+  padding: 6px 8px;
+}
+
+.find-players-info-body .find-players-info-cell:first-child {
+  background: #1a4580;
+}
+
+.find-players-info-body .find-players-info-cell:last-child {
+  background: #0f2a58;
+}
+
+.find-players-classic {
+  color: #ffcc00;
+  font-size: 0.88rem;
+  font-weight: 800;
+  gap: 5px;
+}
+
+.find-players-trophy-icon {
+  display: block;
+  flex-shrink: 0;
+  height: 20px;
+  width: 20px;
+}
+
+.find-players-entry {
+  color: #ffcc00;
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.find-players-me {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 1;
+  gap: 10px;
+  margin: 4px 0 0;
+  min-height: 0;
+  padding: 0 12px;
+}
+
+.find-players-avatar-frame {
+  background: #fff;
+  border: 3px solid #fff;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.35);
+  height: clamp(76px, 14vh, 96px);
+  overflow: hidden;
+  position: relative;
+  width: clamp(76px, 14vh, 96px);
+}
+
+.find-players-avatar-frame.compact {
+  height: clamp(58px, 11vh, 76px);
+  width: clamp(58px, 11vh, 76px);
+}
+
+.find-players-avatar {
+  display: block;
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
+}
+
+.find-players-avatar-placeholder {
+  background: linear-gradient(180deg, #d8dce8 0%, #98a0b8 100%);
+  height: 100%;
+  width: 100%;
+}
+
+.find-players-avatar-frame.searching {
+  background: #0a1628;
+  overflow: hidden;
+}
+
+.find-players-search-scroll {
+  height: 100%;
+  overflow: hidden;
+  position: relative;
+  width: 100%;
+}
+
+.find-players-search-scroll-track {
+  animation: find-players-slot-scroll 1.15s linear infinite;
+  display: flex;
+  flex-direction: column;
+  height: 800%;
+  will-change: transform;
+}
+
+.find-players-search-scroll-item {
+  align-items: center;
+  display: flex;
+  flex: 0 0 12.5%;
+  height: 12.5%;
+  justify-content: center;
+  overflow: hidden;
+  width: 100%;
+}
+
+.find-players-search-scroll-item svg {
+  height: 72%;
+  width: 72%;
+}
+
+@keyframes find-players-slot-scroll {
+  from {
+    transform: translateY(0);
+  }
+
+  to {
+    transform: translateY(-50%);
+  }
+}
+
+.find-players-name {
+  color: #fff;
+  font-family: "Fredoka", sans-serif;
+  font-size: 0.88rem;
+  font-weight: 700;
+  line-height: 1.1;
+  max-width: 96px;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+  white-space: nowrap;
+}
+
+.find-players-vs {
+  color: #ffb347;
+  flex-shrink: 0;
+  font-family: "Fredoka", sans-serif;
+  font-size: clamp(1.8rem, 6vw, 2.4rem);
+  font-weight: 900;
+  line-height: 1;
+  margin: 0;
+  text-shadow:
+    0 0 14px rgba(255, 180, 60, 0.85),
+    0 0 28px rgba(255, 140, 0, 0.55),
+    -2px -2px 0 #fff,
+    2px -2px 0 #fff,
+    -2px 2px 0 #fff,
+    2px 2px 0 #fff,
+    0 3px 0 #c45a00;
+}
+
+.find-players-opponent-single {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 1;
+  gap: 4px;
+  margin: 0;
+  min-height: 0;
+}
+
+.find-players-chest {
+  filter: drop-shadow(0 0 12px rgba(255, 210, 80, 0.65));
+  flex-shrink: 1;
+  height: auto;
+  margin: 0;
+  min-height: 0;
+  width: clamp(72px, 18vw, 110px);
+}
+
+.find-players-chest-img {
+  display: block;
+  height: auto;
+  object-fit: contain;
+  width: 100%;
+}
+
+.find-players-opponents-row {
+  display: flex;
+  flex-shrink: 1;
+  gap: 10px;
+  justify-content: center;
+  margin: 0;
+  min-height: 0;
+  width: 100%;
+}
+
+.find-players-opponent-slot {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 76px;
+}
+
+.find-players-countdown {
+  align-items: center;
+  animation: find-players-countdown-pop 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  color: #ffcc00;
+  display: flex;
+  flex-shrink: 0;
+  font-family: "Fredoka", sans-serif;
+  font-size: clamp(2.4rem, 8vw, 3.2rem);
+  font-weight: 900;
+  height: clamp(64px, 12vh, 88px);
+  justify-content: center;
+  line-height: 1;
+  margin: 0;
+  text-shadow:
+    0 0 16px rgba(255, 204, 0, 0.75),
+    -2px -2px 0 #5a1200,
+    2px -2px 0 #5a1200,
+    -2px 2px 0 #5a1200,
+    2px 2px 0 #5a1200;
+}
+
+.find-players-countdown.go {
+  font-size: clamp(2.8rem, 10vw, 4rem);
+  height: clamp(72px, 14vh, 100px);
+}
+
+@keyframes find-players-countdown-pop {
+  0% {
+    opacity: 0.25;
+    transform: scale(0.35);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(1.14);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.find-players-status {
+  align-items: center;
+  background: rgba(74, 12, 22, 0.72);
+  border-radius: 999px;
+  color: #ffcc00;
+  display: inline-flex;
+  flex-shrink: 0;
+  font-family: "Fredoka", sans-serif;
+  font-size: 0.64rem;
+  font-weight: 800;
+  gap: 6px;
+  letter-spacing: 0.3px;
+  margin: 0;
+  padding: 6px 12px;
+  text-transform: uppercase;
+}
+
+.find-players-status-match {
+  background: linear-gradient(180deg, rgba(0, 80, 180, 0.92) 0%, rgba(0, 40, 120, 0.95) 100%);
+  border: 2px solid #ffcc00;
+  box-shadow: 0 0 12px rgba(255, 204, 0, 0.45);
+  font-size: 0.78rem;
+  letter-spacing: 0.6px;
+  padding: 8px 18px;
+}
+
+.find-players-ready-wait {
+  color: #ffcc00;
+  flex-shrink: 0;
+  font-family: "Fredoka", sans-serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+  margin: 0;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+
+.find-players-spinner {
+  animation: find-players-spin 0.9s linear infinite;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-radius: 50%;
+  border-top-color: #5eb6ff;
+  flex-shrink: 0;
+  height: 13px;
+  width: 13px;
+}
+
+@keyframes find-players-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.find-players-timer {
+  align-items: center;
+  background: rgba(20, 8, 12, 0.82);
+  border-radius: 999px;
+  color: #fff;
+  display: inline-flex;
+  flex-shrink: 0;
+  font-family: "Fredoka", sans-serif;
+  font-size: 0.88rem;
+  font-weight: 800;
+  gap: 6px;
+  margin: 0;
+  padding: 5px 12px 5px 8px;
+}
+
+.find-players-stopwatch {
+  background: linear-gradient(180deg, #5fd068 0%, #2ea842 100%);
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.2);
+  flex-shrink: 0;
+  height: 18px;
+  position: relative;
+  width: 18px;
+}
+
+.find-players-stopwatch::before {
+  background: #fff;
+  border-radius: 1px;
+  content: "";
+  height: 7px;
+  left: 50%;
+  position: absolute;
+  top: 4px;
+  transform: translateX(-50%);
+  width: 2px;
+}
+
+.find-players-stopwatch::after {
+  background: #fff;
+  border-radius: 1px;
+  content: "";
+  height: 2px;
+  left: 50%;
+  position: absolute;
+  top: 2px;
+  transform: translateX(-50%);
+  width: 8px;
+}
+
+.find-players-ready {
+  background: linear-gradient(180deg, #4a9cf0 0%, #2563c7 100%);
+  border: 3px solid #f0a830;
+  border-radius: 999px;
+  box-shadow:
+    0 0 10px rgba(240, 168, 48, 0.55),
+    0 5px 0 rgba(0, 0, 0, 0.28);
+  color: #fff;
+  cursor: pointer;
+  flex-shrink: 0;
+  font-family: "Fredoka", sans-serif;
+  font-size: 1.2rem;
+  font-weight: 800;
+  margin: 0;
+  min-width: 150px;
+  padding: 10px 36px;
+  text-shadow: 0 2px 3px rgba(0, 0, 0, 0.35);
+}
+
+.find-players-ready:active:not(:disabled) {
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.25);
+  transform: translateY(3px);
+}
+
+.find-players-ready:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.find-players-error {
+  color: #ffd0d0;
+  flex-shrink: 0;
+  font-family: "Fredoka", sans-serif;
+  font-size: 0.72rem;
+  margin: 0;
+  text-align: center;
+}
+
+.find-players-timer-est {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.find-players-avatar-frame.filled {
+  position: relative;
+}
+
+.find-players-avatar-frame.joining {
+  animation: find-players-slot-join 0.85s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.find-players-avatar-glow {
+  animation: find-players-glow-pulse 0.85s ease-out both;
+  background: radial-gradient(
+    circle,
+    rgba(255, 204, 0, 0.55) 0%,
+    rgba(255, 204, 0, 0) 72%
+  );
+  border-radius: 50%;
+  inset: -6px;
+  pointer-events: none;
+  position: absolute;
+  z-index: 0;
+}
+
+.find-players-avatar-frame.joining .find-players-avatar {
+  animation: find-players-avatar-pop 0.75s cubic-bezier(0.22, 1, 0.36, 1) both;
+  position: relative;
+  z-index: 1;
+}
+
+.find-players-name.joining {
+  animation: find-players-name-in 0.65s ease-out both;
+}
+
+.find-players-ready-badge {
+  align-items: center;
+  background: linear-gradient(180deg, #5fd068 0%, #2ea842 100%);
+  border: 2px solid #fff;
+  border-radius: 50%;
+  bottom: -2px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.35);
+  color: #fff;
+  display: flex;
+  font-size: 0.55rem;
+  font-weight: 900;
+  height: 18px;
+  justify-content: center;
+  position: absolute;
+  right: -2px;
+  width: 18px;
+  z-index: 2;
+}
+
+@keyframes find-players-slot-join {
+  0% {
+    opacity: 0.2;
+    transform: scale(0.72);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes find-players-avatar-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes find-players-glow-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 204, 0, 0.85);
+  }
+  100% {
+    box-shadow: 0 0 18px 6px rgba(255, 204, 0, 0);
+  }
+}
+
+@keyframes find-players-name-in {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.find-players-network-overlay {
+  align-items: center;
+  background: rgba(0, 0, 0, 0.72);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 20px;
+  position: fixed;
+  z-index: 1200;
+}
+
+.find-players-network-card {
+  background: linear-gradient(180deg, #0a3d99 0%, #052a6e 100%);
+  border: 3px solid #ffcc00;
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-family: "Fredoka", sans-serif;
+  max-width: 320px;
+  padding: 22px 20px;
+  text-align: center;
+  width: 100%;
+}
+
+.find-players-network-card h3 {
+  color: #ffcc00;
+  font-size: 1.2rem;
+  margin: 0 0 8px;
+}
+
+.find-players-network-card p {
+  font-size: 0.88rem;
+  margin: 0 0 16px;
+  opacity: 0.92;
+}
+
+.find-players-network-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.find-players-network-actions button {
+  background: linear-gradient(180deg, #4a9cf0 0%, #2563c7 100%);
+  border: 2px solid #f0a830;
+  border-radius: 999px;
+  color: #fff;
+  cursor: pointer;
+  font-family: "Fredoka", sans-serif;
+  font-size: 0.95rem;
+  font-weight: 800;
+  min-width: 90px;
+  padding: 8px 18px;
+}
+
+.find-players-network-actions button.secondary {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+@media (max-height: 640px) {
+  .find-players-logo {
+    max-height: 120px;
+    max-width: 200px;
+    width: 200px;
+  }
+
+  .find-players-avatar-frame {
+    height: 68px;
+    width: 68px;
+  }
+
+  .find-players-avatar-frame.compact {
+    height: 54px;
+    width: 54px;
+  }
+
+  .find-players-chest {
+    width: 68px;
+  }
 }

@@ -3,6 +3,7 @@ const SOUND_FILES = {
   passingNext: "/sounds/passingNext.mp3",
   inside: "/sounds/inside.mp3",
   capture: "/sounds/fahhh_KcgAXfs.mp3",
+  countdownDing: "/sounds/tunetank.com_scroll-ding-counting-slow.mp3",
 } as const;
 
 export type TGameSound = keyof typeof SOUND_FILES;
@@ -16,10 +17,12 @@ const DEFAULT_VOLUME: Record<TGameSound, number> = {
   passingNext: 0.38,
   inside: 0.62,
   capture: 0.85,
+  countdownDing: 0.62,
 };
 
 const cache = new Map<TGameSound, HTMLAudioElement>();
 let bgMusic: HTMLAudioElement | null = null;
+let matchSearchLoop: HTMLAudioElement | null = null;
 
 const getAudio = (name: TGameSound) => {
   let audio = cache.get(name);
@@ -46,7 +49,7 @@ export const playSound = (name: TGameSound, volume?: number) => {
   try {
     const base = getAudio(name);
     const audio =
-      name === "passingNext" || name === "capture"
+      name === "passingNext" || name === "capture" || name === "countdownDing"
         ? (base.cloneNode(true) as HTMLAudioElement)
         : base;
     audio.volume = Math.min(
@@ -59,6 +62,35 @@ export const playSound = (name: TGameSound, volume?: number) => {
     });
   } catch {
     // Missing file / unsupported — ignore
+  }
+};
+
+/** Loop counting ding during online match search (15s window). */
+export const startMatchSearchLoop = (volume = 0.55) => {
+  try {
+    if (!matchSearchLoop) {
+      matchSearchLoop = new Audio(SOUND_FILES.countdownDing);
+      matchSearchLoop.loop = true;
+      matchSearchLoop.preload = "auto";
+    }
+    matchSearchLoop.volume = Math.min(1, volume);
+    if (!matchSearchLoop.paused) return;
+    matchSearchLoop.currentTime = 0;
+    void matchSearchLoop.play().catch(() => {
+      // Autoplay may be blocked until user gesture; ignore
+    });
+  } catch {
+    // ignore
+  }
+};
+
+export const stopMatchSearchLoop = () => {
+  try {
+    if (!matchSearchLoop) return;
+    matchSearchLoop.pause();
+    matchSearchLoop.currentTime = 0;
+  } catch {
+    // ignore
   }
 };
 

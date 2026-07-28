@@ -37,15 +37,36 @@ export const queueMatch = (
   userId: string,
   username: string,
   maxPlayers: number,
-  stakeTier = "FREE"
+  stakeTier = "FREE",
+  options?: {
+    rating?: number;
+    region?: string;
+    ping?: number;
+    avatarId?: string;
+  }
 ) =>
   json<{ status: string; roomId: string; roomCode: string; room: IOnlineRoom }>(
     "/api/rooms/queue",
     {
       method: "POST",
-      body: JSON.stringify({ userId, username, maxPlayers, stakeTier }),
+      body: JSON.stringify({
+        userId,
+        username,
+        maxPlayers,
+        stakeTier,
+        rating: options?.rating ?? 1000,
+        region: options?.region ?? "IN",
+        ping: options?.ping ?? 0,
+        avatarId: options?.avatarId ?? "default",
+      }),
     }
   );
+
+export const cancelQueue = (userId: string) =>
+  json<{ ok: boolean }>("/api/rooms/queue/cancel", {
+    method: "POST",
+    body: JSON.stringify({ userId }),
+  });
 
 export const createPrivateRoom = (
   userId: string,
@@ -85,6 +106,8 @@ export const getRoomState = (roomId: string) =>
     readyCount?: number;
     allReady?: boolean;
     countdown?: number;
+    searchElapsedSec?: number;
+    searchPhase?: string;
   }>(`/api/rooms/${roomId}/state`);
 
 /** Always returns a game snapshot (rehydrates engine if needed). */

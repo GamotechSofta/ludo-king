@@ -22,7 +22,16 @@ public class RoomController {
     this.roomService = roomService;
   }
 
-  public record QueueRequest(String userId, String username, Integer maxPlayers, String stakeTier) {
+  public record QueueRequest(
+      String userId,
+      String username,
+      Integer maxPlayers,
+      String stakeTier,
+      Integer rating,
+      String region,
+      Integer ping,
+      String avatarId
+  ) {
   }
 
   public record JoinRequest(String userId, String username) {
@@ -40,7 +49,11 @@ public class RoomController {
         req.userId(),
         req.username(),
         req.maxPlayers() == null ? 4 : req.maxPlayers(),
-        req.stakeTier()
+        req.stakeTier(),
+        req.rating() == null ? 1000 : req.rating(),
+        req.region(),
+        req.ping(),
+        req.avatarId()
     );
   }
 

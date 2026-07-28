@@ -47,6 +47,7 @@ export interface IOnlineRoom {
     rating?: number;
   }>;
   fillDeadlineAt?: string;
+  region?: string;
   countdownEndsAt?: string;
   countdownValue?: number;
   reconnectDeadlineAt?: string;
