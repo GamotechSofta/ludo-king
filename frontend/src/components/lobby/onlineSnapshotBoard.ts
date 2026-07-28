@@ -66,6 +66,8 @@ const HOME = 200;
 
 const isGenericBotLabel = (name?: string) =>
   !!name && /^Bot\s*\d+$/i.test(name.trim());
+const isGenericPlayerLabel = (name?: string) =>
+  !!name && /^Player(?:\s*\d+)?$/i.test(name.trim());
 
 const displayNameCache = new Map<string, string>();
 
@@ -100,14 +102,18 @@ export function displayPlayerName(
   const cached = displayNameCache.get(seatKey);
   if (cached) return cached;
 
-  if (rawName && !isGenericBotLabel(rawName)) {
+  if (rawName && !isGenericBotLabel(rawName) && !isGenericPlayerLabel(rawName)) {
     const stable = rawName.trim();
     displayNameCache.set(seatKey, stable);
     return stable;
   }
 
   if (!isBot) {
-    const fallback = rawName?.trim() || "Player";
+    // Generic "Player" labels are not unique; pin a seat-unique fallback.
+    const base = rawName?.trim() || "Player";
+    const fallback = isGenericPlayerLabel(base)
+      ? `Player ${usedNames.length + 1}`
+      : base;
     displayNameCache.set(seatKey, fallback);
     return fallback;
   }
@@ -207,15 +213,22 @@ export function playersFromSnapshot(
   const used: string[] = [];
   return colors.map((color, i) => {
     const raw = snapshot.usernames?.[i];
-    const seatKey = seatDisplayKey(roomId, snapshot.userIds?.[i], i);
-    const name = displayPlayerName(raw, seatKey, used, !!snapshot.isBot?.[i]);
+    const isBot = !!snapshot.isBot?.[i];
+    /**
+     * Bot IDs/usernames can be inconsistent across snapshots in some flows.
+     * Pin bot display name to seat index for the whole room so it never changes mid-game.
+     */
+    const stableSeatKey = isBot
+      ? `${roomId}:bot-seat-${i}`
+      : seatDisplayKey(roomId, snapshot.userIds?.[i], i);
+    const name = displayPlayerName(raw, stableSeatKey, used, isBot);
     used.push(name);
     return {
       id: snapshot.userIds?.[i] || `seat-${i}`,
       name,
       index: i,
       color,
-      isBot: !!snapshot.isBot?.[i],
+      isBot,
       isOnline: false,
       isOffline: false,
       finished: !!snapshot.finished?.[i],
