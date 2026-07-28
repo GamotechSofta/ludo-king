@@ -83,6 +83,7 @@ import {
   isTurnSeatHandoff,
   isNoMovePassSnapshot,
   moveDiceValueFromSnapshot,
+  onlineDiceDisabled,
   shouldClearStuckDice,
   shouldEnableTokenSelection,
 } from "./diceTurnLogic";
@@ -142,6 +143,7 @@ const OnlineGame = ({
   /** House color that should show the die (authoritative seat → color). */
   const [turnColor, setTurnColor] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
+  const [diceRolling, setDiceRolling] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
   const [liveBalance, setLiveBalance] = useState<number | null>(
     walletBalance ?? null
@@ -230,6 +232,7 @@ const OnlineGame = ({
   const diceRollPendingRef = useRef(false);
   const diceRollWaitersRef = useRef<Array<() => void>>([]);
   const diceRollFallbackRef = useRef<number | null>(null);
+  const rollRecoveryTimerRef = useRef<number | null>(null);
   /** Dedup bot/opponent roll flash (bots often skip AWAITING_MOVE). */
   const lastDiceFlashKeyRef = useRef("");
   /** Dedup dice sound per server roll event key. */
@@ -270,6 +273,7 @@ const OnlineGame = ({
       diceRollFallbackRef.current = null;
     }
     diceRollPendingRef.current = false;
+    setDiceRolling(false);
     diceRollWaitersRef.current = [];
     lastDiceFlashKeyRef.current = "";
     lastDiceSoundKeyRef.current = "";
@@ -278,8 +282,8 @@ const OnlineGame = ({
   }, [roomId]);
 
   const finishDiceRollAnimation = useCallback(() => {
-    if (!diceRollPendingRef.current) return;
     diceRollPendingRef.current = false;
+    setDiceRolling(false);
     if (diceRollFallbackRef.current != null) {
       window.clearTimeout(diceRollFallbackRef.current);
       diceRollFallbackRef.current = null;
@@ -288,8 +292,22 @@ const OnlineGame = ({
     waiters.forEach((resolve) => resolve());
   }, []);
 
+  const waitForDiceRollAnimation = useCallback(async () => {
+    if (!diceRollPendingRef.current) return;
+    await Promise.race([
+      new Promise<void>((resolve) => {
+        diceRollWaitersRef.current.push(resolve);
+      }),
+      new Promise<void>((resolve) => {
+        window.setTimeout(resolve, DICE_ROLL_ANIM_MS + 250);
+      }),
+    ]);
+    finishDiceRollAnimation();
+  }, [finishDiceRollAnimation]);
+
   const beginDiceRollAnimation = useCallback(() => {
     diceRollPendingRef.current = true;
+    setDiceRolling(true);
     if (diceRollFallbackRef.current != null) {
       window.clearTimeout(diceRollFallbackRef.current);
     }
@@ -297,13 +315,6 @@ const OnlineGame = ({
       finishDiceRollAnimation();
     }, DICE_ROLL_ANIM_MS + 120);
   }, [finishDiceRollAnimation]);
-
-  const waitForDiceRollAnimation = useCallback(async () => {
-    if (!diceRollPendingRef.current) return;
-    await new Promise<void>((resolve) => {
-      diceRollWaitersRef.current.push(resolve);
-    });
-  }, []);
 
   const playDiceRollingOnce = useCallback((soundKey: string) => {
     if (!soundKey) return;
@@ -364,7 +375,7 @@ const OnlineGame = ({
         );
         const rolled = applyServerDiceVisual(base, value);
         rolled.diceList = base.diceList;
-        rolled.actionsBoardGame = EActionsBoardGame.ROLL_DICE;
+        rolled.actionsBoardGame = EActionsBoardGame.SELECT_TOKEN;
         return rolled;
       });
       return true;
@@ -515,6 +526,17 @@ const OnlineGame = ({
         return;
       }
       rollingRef.current = false;
+      if (rollRecoveryTimerRef.current != null) {
+        window.clearTimeout(rollRecoveryTimerRef.current);
+        rollRecoveryTimerRef.current = null;
+      }
+
+      const isMyRollTurn =
+        snap.currentSeatIndex === mySeat && snap.phase === "AWAITING_ROLL";
+      if (isMyRollTurn && !animatingRef.current) {
+        setIsBusy(false);
+        isBusyRef.current = false;
+      }
 
       // MOVE snapshots carry destination tokenPositions — never paint those
       // until forceTokens (animation finished). Chrome/UI-only update instead.
@@ -934,6 +956,8 @@ const OnlineGame = ({
     }
   }, [snapshot]);
 
+  const handleDoneDiceRef = useRef<() => void>(() => undefined);
+
   // Apply snapshot → board (dice + opponent/bot move animations)
   useEffect(() => {
     if (exitingRef.current || !snapshot || mySeat < 0) return;
@@ -982,32 +1006,50 @@ const OnlineGame = ({
 
       if (diceAppeared) {
         rollingRef.current = false;
+        if (rollRecoveryTimerRef.current != null) {
+          window.clearTimeout(rollRecoveryTimerRef.current);
+          rollRecoveryTimerRef.current = null;
+        }
         lastDiceSigRef.current = diceSig;
         const value = snap.diceList[snap.diceList.length - 1] as TDicevalues;
         const flashKey = `${snap.actionSeq || 0}|${snap.currentSeatIndex}|${value}`;
+
+        if (snap.currentSeatIndex === mySeat) {
+          lastAutoMoveKeyRef.current = "";
+          applyDiceOwnerTurn(snap, snap.currentSeatIndex);
+          setPlayers(playersForView(snap, mySeat, roomId));
+          setActionsTurn((prev) => {
+            const base = actionsTurnFromSnapshot(snap, mySeat, prev);
+            return applyServerDiceVisual(base, value);
+          });
+          beginDiceRollAnimation();
+          prevSnapRef.current = {
+            ...snap,
+            tokenPositions:
+              prev?.tokenPositions && Object.keys(prev.tokenPositions).length
+                ? prev.tokenPositions
+                : snap.tokenPositions,
+          };
+          snapshotRef.current = snap;
+          return;
+        }
+
         if (snap.currentSeatIndex !== mySeat) {
           playDiceRollingOnce(flashKey);
-        } else {
-          lastAutoMoveKeyRef.current = "";
-          const nextTokens = listTokensFromSnapshot(snap, mySeat, false);
-          setListTokens(nextTokens);
-          listTokensRef.current = nextTokens;
+          setPlayers(playersForView(snap, mySeat, roomId));
+          flashDiceOnSeat(snap, snap.currentSeatIndex, value, flashKey);
+          prevSnapRef.current = {
+            ...snap,
+            tokenPositions:
+              prev?.tokenPositions && Object.keys(prev.tokenPositions).length
+                ? prev.tokenPositions
+                : snap.tokenPositions,
+          };
+          window.setTimeout(() => {
+            const next = pendingSnapRef.current.shift();
+            if (next) void apply(next);
+          }, DICE_ROLL_ANIM_MS + 80);
         }
-        setPlayers(playersForView(snap, mySeat, roomId));
-        flashDiceOnSeat(snap, snap.currentSeatIndex, value, flashKey);
-        // Never full-sync here — it races the dice visual and clears the first roll value
-        prevSnapRef.current = {
-          ...snap,
-          tokenPositions:
-            prev?.tokenPositions && Object.keys(prev.tokenPositions).length
-              ? prev.tokenPositions
-              : snap.tokenPositions,
-        };
-        // Drain MOVE that may already be queued after bot's fast roll→move
-        window.setTimeout(() => {
-          const next = pendingSnapRef.current.shift();
-          if (next) void apply(next);
-        }, DICE_ROLL_ANIM_MS + 80);
         return;
       }
 
@@ -1018,6 +1060,9 @@ const OnlineGame = ({
       );
       if (isTurnSeatHandoff(snap, prev) && !animatingRef.current && !moveNeedsAnim) {
         rollingRef.current = false;
+        finishDiceRollAnimation();
+        setIsBusy(false);
+        isBusyRef.current = false;
         lastProcessedRollIdRef.current = "";
         lastDiceSigRef.current = diceSig;
         diceOwnerSeatRef.current = snap.currentSeatIndex;
@@ -1187,6 +1232,9 @@ const OnlineGame = ({
         }
         animatingRef.current = false;
         setIsBusy(false);
+        isBusyRef.current = false;
+        finishDiceRollAnimation();
+        rollingRef.current = false;
         if (
           snap.currentSeatIndex !== moved.seat &&
           snap.phase === "AWAITING_ROLL"
@@ -1239,16 +1287,33 @@ const OnlineGame = ({
       }
       rollingRef.current = true;
       playSound("diceRolling");
-      const nextActions = {
-        ...actionsTurnRef.current,
-        disabledDice: true,
-        timerActivated: false,
-      };
-      actionsTurnRef.current = nextActions;
-      setActionsTurn(nextActions);
+      setActionsTurn((prev) => {
+        const next = applyServerDiceVisual(prev, 1 as TDicevalues);
+        actionsTurnRef.current = next;
+        return next;
+      });
+      if (rollRecoveryTimerRef.current != null) {
+        window.clearTimeout(rollRecoveryTimerRef.current);
+      }
+      rollRecoveryTimerRef.current = window.setTimeout(() => {
+        rollRecoveryTimerRef.current = null;
+        if (!rollingRef.current) return;
+        rollingRef.current = false;
+        finishDiceRollAnimation();
+        const latest = snapshotRef.current;
+        if (
+          latest?.currentSeatIndex === mySeat &&
+          latest.phase === "AWAITING_ROLL"
+        ) {
+          setActionsTurn((prev) => ({
+            ...prev,
+            disabledDice: onlineDiceDisabled(latest, mySeat),
+          }));
+        }
+      }, 4000);
       rollDice();
     },
-    [snapshot, isBusy, mySeat, rollDice, isActionInFlight]
+    [snapshot, isBusy, mySeat, rollDice, isActionInFlight, finishDiceRollAnimation]
   );
 
   const handleSelectedToken = useCallback(
@@ -1257,7 +1322,7 @@ const OnlineGame = ({
       snapOverride?: IGameSnapshot
     ): Promise<boolean> => {
       const live = snapOverride ?? snapshotRef.current ?? snapshot;
-      if (!live || animatingRef.current) return false;
+      if (!live) return false;
       if (live.currentSeatIndex !== mySeat) return false;
       if (live.phase !== "AWAITING_MOVE") return false;
       if (isActionInFlight()) return false;
@@ -1267,10 +1332,25 @@ const OnlineGame = ({
       if (!diceValue) return false;
 
       const moveKey = `${live.actionSeq ?? 0}|${(live.diceList || []).join(",")}|${tokenIndex}|${diceIndex}`;
+
+      const legal =
+        live.legalMoves?.length
+          ? live.legalMoves
+          : (live.legalTokenIndexes || []).map((ti) => ({
+              tokenIndex: ti,
+              diceIndex: 0,
+            }));
+      const allowed = legal.some(
+        (m) => m.tokenIndex === tokenIndex && m.diceIndex === diceIndex
+      );
+      if (!allowed) return false;
+
+      if (animatingRef.current) return false;
+
+      if (diceRollPendingRef.current) return false;
+
       if (lastAutoMoveKeyRef.current === moveKey) return false;
       lastAutoMoveKeyRef.current = moveKey;
-
-      await waitForDiceRollAnimation();
 
       animatingRef.current = true;
       isBusyRef.current = true;
@@ -1294,6 +1374,8 @@ const OnlineGame = ({
       );
       if (ok) {
         await runPostMoveCaptureReturn(mySeat, tokenIndex);
+      } else {
+        lastAutoMoveKeyRef.current = "";
       }
       animatingRef.current = false;
       isBusyRef.current = false;
@@ -1318,9 +1400,9 @@ const OnlineGame = ({
           actionSeq: (prevSnapRef.current?.actionSeq || 0) + 1,
         };
       }
-      return true;
+      return ok;
     },
-    [snapshot, mySeat, isActionInFlight, runMoveAnimation, runPostMoveCaptureReturn, moveToken, syncBoardFromSnapshot, waitForDiceRollAnimation]
+    [snapshot, mySeat, isActionInFlight, runMoveAnimation, runPostMoveCaptureReturn, moveToken, syncBoardFromSnapshot]
   );
 
   const scheduleHumanAutoMove = useCallback(
@@ -1371,7 +1453,14 @@ const OnlineGame = ({
       const live = snapshotRef.current;
       if (!live) return;
       if (live.phase === "FINISHED") return;
-      if (!animatingRef.current && !isBusyRef.current && !diceRollPendingRef.current) return;
+      if (
+        !animatingRef.current &&
+        !isBusyRef.current &&
+        !diceRollPendingRef.current &&
+        !rollingRef.current
+      ) {
+        return;
+      }
 
       const seq = live.actionSeq || 0;
       if (lockSeqRef.current.seq !== seq) {
@@ -1380,7 +1469,9 @@ const OnlineGame = ({
       }
 
       const elapsed = Date.now() - lockSeqRef.current.at;
-      if (elapsed < 4500) return;
+      const unlockMs =
+        rollingRef.current && !diceRollPendingRef.current ? 2800 : 4500;
+      if (elapsed < unlockMs) return;
       if (isActionInFlight()) return;
       if (isMoveSnapshot(live, lastAnimatedMoveSeqRef.current)) return;
 
@@ -1407,10 +1498,13 @@ const OnlineGame = ({
   const handleDoneDice = useCallback(() => {
     finishDiceRollAnimation();
     if (!snapshot) return;
-    if (animatingRef.current) return;
-    rollingRef.current = false;
 
     const live = snapshotRef.current ?? snapshot;
+    const isMyMovePhase =
+      live.currentSeatIndex === mySeat && live.phase === "AWAITING_MOVE";
+
+    if (animatingRef.current && !isMyMovePhase) return;
+    rollingRef.current = false;
 
     if (live.currentSeatIndex !== mySeat) {
       rollingRef.current = false;
@@ -1442,6 +1536,12 @@ const OnlineGame = ({
       actions.diceValue as number
     );
     if (rollId && lastProcessedRollIdRef.current === rollId) {
+      const canMove = shouldEnableTokenSelection(live, mySeat);
+      if (canMove) {
+        const nextTokens = listTokensFromSnapshot(live, mySeat, true);
+        setListTokens(nextTokens);
+        listTokensRef.current = nextTokens;
+      }
       scheduleHumanAutoMove(live);
       return;
     }
@@ -1462,6 +1562,8 @@ const OnlineGame = ({
     scheduleHumanAutoMove(live);
   }, [snapshot, mySeat, syncBoardFromSnapshot, scheduleHumanAutoMove, finishDiceRollAnimation]);
 
+  handleDoneDiceRef.current = handleDoneDice;
+
   const lostSummaryEntries = useMemo(
     () => buildLiveSummary(snapshot, guest.id, roomId),
     [snapshot, guest.id, roomId]
@@ -1478,6 +1580,7 @@ const OnlineGame = ({
       diceRollFallbackRef.current = null;
     }
     diceRollPendingRef.current = false;
+    setDiceRolling(false);
     animatingRef.current = false;
     suppressMoveAnimRef.current = false;
     rollingRef.current = false;
@@ -1781,7 +1884,7 @@ const OnlineGame = ({
         >
           <Board boardColor={boardColor}>
             <Tokens
-              isDisabledUI={actionsTurn.isDisabledUI || isBusy}
+              isDisabledUI={actionsTurn.isDisabledUI || isBusy || diceRolling}
               listTokens={listTokens}
               diceList={actionsTurn.diceList}
               handleSelectedToken={handleSelectedToken}

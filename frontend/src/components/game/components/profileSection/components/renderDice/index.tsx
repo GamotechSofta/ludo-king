@@ -148,6 +148,8 @@ const RenderDice = ({
       }
       if (attempt < 20) {
         requestAnimationFrame(() => kick(attempt + 1));
+      } else if (valueRef.current !== 0) {
+        handleDoneDiceRef.current();
       }
     };
 

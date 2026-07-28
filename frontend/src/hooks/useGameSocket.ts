@@ -164,6 +164,12 @@ export function useGameSocket(
     usernames?: string[];
     seatColors?: string[];
   }>({});
+  const lastLegalRef = useRef<{
+    actionSeq?: number;
+    legalMoves?: IGameSnapshot["legalMoves"];
+    legalTokenIndexes?: number[];
+    diceList?: number[];
+  }>({});
 
   const applySnapshot = useCallback((snap: unknown, fromWs = false) => {
     const event =
@@ -184,6 +190,27 @@ export function useGameSocket(
       seatColors: normalized.seatColors?.length
         ? normalized.seatColors
         : lastIdentityRef.current.seatColors,
+      legalMoves:
+        normalized.legalMoves?.length
+          ? normalized.legalMoves
+          : normalized.phase === "AWAITING_MOVE" &&
+              lastLegalRef.current.actionSeq === normalized.actionSeq
+            ? lastLegalRef.current.legalMoves
+            : normalized.legalMoves,
+      legalTokenIndexes:
+        normalized.legalTokenIndexes?.length
+          ? normalized.legalTokenIndexes
+          : normalized.phase === "AWAITING_MOVE" &&
+              lastLegalRef.current.actionSeq === normalized.actionSeq
+            ? lastLegalRef.current.legalTokenIndexes ?? []
+            : normalized.legalTokenIndexes ?? [],
+      diceList:
+        normalized.diceList?.length
+          ? normalized.diceList
+          : normalized.phase === "AWAITING_MOVE" &&
+              lastLegalRef.current.actionSeq === normalized.actionSeq
+            ? lastLegalRef.current.diceList ?? []
+            : normalized.diceList ?? [],
     };
     if (merged.userIds?.length) {
       lastIdentityRef.current.userIds = merged.userIds;
@@ -193,6 +220,19 @@ export function useGameSocket(
     }
     if (merged.seatColors?.length) {
       lastIdentityRef.current.seatColors = merged.seatColors;
+    }
+    if (
+      merged.phase === "AWAITING_MOVE" &&
+      (merged.legalMoves?.length || merged.legalTokenIndexes?.length)
+    ) {
+      lastLegalRef.current = {
+        actionSeq: merged.actionSeq,
+        legalMoves: merged.legalMoves,
+        legalTokenIndexes: merged.legalTokenIndexes,
+        diceList: merged.diceList,
+      };
+    } else if (merged.phase === "AWAITING_ROLL") {
+      lastLegalRef.current = {};
     }
 
     const sig = snapshotSig(merged);
@@ -355,6 +395,8 @@ export function useGameSocket(
       window.setTimeout(() => {
         if (inFlightActionRef.current && lastSeqRef.current <= seqAtSend) {
           inFlightActionRef.current = false;
+          lastRollKeyRef.current = "";
+          lastMoveKeyRef.current = "";
         }
       }, 8000);
     },
@@ -386,6 +428,7 @@ export function useGameSocket(
       .then((g) => applySnapshot(g, false))
       .catch(() => {
         inFlightActionRef.current = false;
+        lastRollKeyRef.current = "";
       });
   }, [roomId, userId, applySnapshot, scheduleHttpFallback]);
 
