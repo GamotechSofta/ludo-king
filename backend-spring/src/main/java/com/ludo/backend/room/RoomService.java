@@ -253,19 +253,21 @@ public class RoomService {
       if (trySettleFinishedRoom(room)) {
         return;
       }
-      // 2P human exit: opponent wins immediately; skip reconnect grace
-      if (room.getMaxPlayers() == 2 && isAllHumanRoom(room)) {
+      // Human-only exit: mark LOST, skip from turns (4P) or end match (2P)
+      if (isAllHumanRoom(room)) {
         try {
           ensureLiveMatch(room);
           GameSnapshot snap = gameEngineService.forfeitOnExit(roomId, userId);
           gameEventBus.publishSnapshotAndMeta(roomId, snap);
-          settleIfFinished(room, snap);
+          if (GameEngineService.PHASE_FINISHED.equals(snap.getPhase())) {
+            settleIfFinished(room, snap);
+          }
           return;
         } catch (RuntimeException ignored) {
           // Fall through to disconnect-only path
         }
       }
-      // Bot or 3/4P mid-match leave: disconnect so enqueue won't reuse this room
+      // Bot mix mid-match leave: disconnect so enqueue won't reuse this room
       markDisconnected(roomId, userId);
       return;
     }

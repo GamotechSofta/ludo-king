@@ -35,6 +35,29 @@ class GameEngineForfeitTest {
   }
 
   @Test
+  void forfeitRemovesFourPlayerFromRotationAndContinuesMatch() {
+    List<GameEngineService.SeatInfo> seats = List.of(
+        new GameEngineService.SeatInfo("a", "A", LudoColor.RED, false),
+        new GameEngineService.SeatInfo("b", "B", LudoColor.GREEN, false),
+        new GameEngineService.SeatInfo("c", "C", LudoColor.YELLOW, false),
+        new GameEngineService.SeatInfo("d", "D", LudoColor.BLUE, false)
+    );
+    engine.createMatch("room-4p", seats);
+    GameSnapshot before = engine.getSnapshot("room-4p");
+    int seatB = 1;
+
+    GameSnapshot snap = engine.forfeitOnExit("room-4p", "b");
+
+    assertEquals(GameEngineService.PHASE_ROLL, snap.getPhase());
+    assertTrue(snap.getEliminated()[seatB]);
+    assertEquals(0, snap.getStandings().get(seatB));
+    assertEquals("FORFEIT", snap.getLastActionType());
+    if (before.getCurrentSeatIndex() == seatB) {
+      assertEquals(2, snap.getCurrentSeatIndex());
+    }
+  }
+
+  @Test
   void forfeitIsIdempotentWhenAlreadyFinished() {
     List<GameEngineService.SeatInfo> seats = List.of(
         new GameEngineService.SeatInfo("u1", "Player 1", LudoColor.RED, false),

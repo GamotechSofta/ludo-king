@@ -82,7 +82,7 @@ import {
   shouldClearStuckDice,
   shouldEnableTokenSelection,
 } from "./diceTurnLogic";
-import { isTwoPlayerHumanMatch } from "./humanMatch";
+import { isHumanOnlineMatch } from "./humanMatch";
 
 /** flushSync outside React commit/effects — avoids lifecycle flushSync warning. */
 function flushSyncAfterRender(update: () => void): Promise<void> {
@@ -619,7 +619,7 @@ const OnlineGame = ({
     [mySeat, applyDiceOwnerTurn, roomId]
   );
 
-  /** Human 2P: after reconnect, drop stale locks and paint authoritative board. */
+  /** Human online (2P/4P): after reconnect, drop stale locks and paint authoritative board. */
   useEffect(() => {
     if (!snapshot || mySeat < 0) {
       prevConnectedRef.current = connected;
@@ -628,7 +628,7 @@ const OnlineGame = ({
     if (
       connected &&
       !prevConnectedRef.current &&
-      isTwoPlayerHumanMatch(snapshot)
+      isHumanOnlineMatch(snapshot)
     ) {
       animatingRef.current = false;
       suppressMoveAnimRef.current = false;
@@ -933,8 +933,8 @@ const OnlineGame = ({
     const apply = async (snap: IGameSnapshot) => {
       if (cancelled) return;
 
-      // Human 2P: match ended (win/forfeit) — skip animation queue
-      if (isTwoPlayerHumanMatch(snap) && snap.phase === "FINISHED") {
+      // Human online: match ended (win/forfeit) — skip animation queue
+      if (isHumanOnlineMatch(snap) && snap.phase === "FINISHED") {
         animatingRef.current = false;
         suppressMoveAnimRef.current = false;
         rollingRef.current = false;
@@ -1391,8 +1391,9 @@ const OnlineGame = ({
 
   useEffect(() => {
     if (!snapshot || mySeat < 0) return;
+    if (myEliminated || snapshot.eliminated?.[mySeat]) return;
     scheduleHumanAutoMove(snapshot);
-  }, [snapshot, mySeat, scheduleHumanAutoMove, isBusy, listTokens]);
+  }, [snapshot, mySeat, scheduleHumanAutoMove, isBusy, listTokens, myEliminated]);
 
   const handleDoneDice = useCallback(() => {
     finishDiceRollAnimation();

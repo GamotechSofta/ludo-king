@@ -471,10 +471,7 @@ public class GameEngineService {
     return seats == 2 && isAllHumanMatch(snap);
   }
 
-  static boolean isTwoPlayerHumanRuntime(MatchRuntime rt) {
-    if (rt.maxPlayers != 2) {
-      return false;
-    }
+  static boolean isAllHumanRuntime(MatchRuntime rt) {
     for (boolean bot : rt.isBot) {
       if (bot) {
         return false;
@@ -483,9 +480,14 @@ public class GameEngineService {
     return true;
   }
 
+  static boolean isTwoPlayerHumanRuntime(MatchRuntime rt) {
+    return rt.maxPlayers == 2 && isAllHumanRuntime(rt);
+  }
+
   /**
-   * Intentional exit during a live 2P human match: leaver LOST, opponent WIN, match ends.
-   * No-op if already finished; throws if not a 2P all-human session.
+   * Intentional exit during a live human-only match.
+   * 2P: leaver LOST, opponent WIN, match ends.
+   * 4P: leaver LOST + skipped from rotation; match continues until first winner.
    */
   public GameSnapshot forfeitOnExit(String roomId, String userId) {
     MatchRuntime rt = require(roomId);
@@ -494,18 +496,27 @@ public class GameEngineService {
       if (PHASE_FINISHED.equals(rt.phase)) {
         return snapshot(rt);
       }
-      if (!isTwoPlayerHumanRuntime(rt)) {
-        throw new IllegalStateException("Forfeit only applies to 2-player human matches");
+      if (!isAllHumanRuntime(rt)) {
+        throw new IllegalStateException("Forfeit only applies to human-only matches");
       }
       int seat = seatOfUser(rt, userId);
       if (seat < 0) {
         throw new IllegalStateException("Not a player in this room");
       }
-      rt.eliminated[seat] = true;
-      rt.finished[seat] = true;
-      clearDice(rt);
+      if (rt.eliminated[seat] && rt.finished[seat]) {
+        return snapshot(rt);
+      }
+      boolean wasCurrent = rt.currentSeat == seat;
+      markPlayerExited(rt, seat);
+      if (wasCurrent) {
+        clearDice(rt);
+      }
       recordAction(rt, "FORFEIT", seat, null, null);
-      finishMatchAfterElimination(rt, seat);
+      if (rt.maxPlayers == 2) {
+        finishMatchAfterElimination(rt, seat);
+      } else if (wasCurrent) {
+        nextTurn(rt);
+      }
       return snapshot(rt);
     } finally {
       rt.lock.unlock();
@@ -514,9 +525,7 @@ public class GameEngineService {
 
   private GameSnapshot rollInternal(MatchRuntime rt, int seat, Integer forcedValue) {
     assertActive(rt);
-    if (rt.finished[seat]) {
-      recordAction(rt, "PASS", seat, null, null);
-      nextTurn(rt);
+    if (rt.eliminated[seat] || rt.finished[seat]) {
       return snapshot(rt);
     }
     if (seat != rt.currentSeat) {
@@ -573,6 +582,9 @@ public class GameEngineService {
 
   private GameSnapshot moveInternal(MatchRuntime rt, int seat, int tokenIndex, int diceIndex) {
     assertActive(rt);
+    if (rt.eliminated[seat] || rt.finished[seat]) {
+      return snapshot(rt);
+    }
     if (seat != rt.currentSeat) {
       throw new IllegalStateException("Not your turn");
     }
@@ -669,22 +681,28 @@ public class GameEngineService {
     rt.lastRollWasSix = false;
   }
 
-  /** 3 timeouts used → remove player from the match. */
-  private void eliminateAfk(MatchRuntime rt, int seat) {
+  /** Exit / AFK removal: LOST, tokens cleared, skipped in {@link #nextTurn}. */
+  private void markPlayerExited(MatchRuntime rt, int seat) {
     if (rt.finished[seat]) {
       return;
     }
     rt.finished[seat] = true;
     rt.eliminated[seat] = true;
+    rt.ranking[seat] = RANK_LOST;
     Arrays.fill(rt.tokens[seat], JAIL);
+  }
+
+  /** 3 timeouts used → remove player from the match. */
+  private void eliminateAfk(MatchRuntime rt, int seat) {
+    if (rt.finished[seat]) {
+      return;
+    }
+    markPlayerExited(rt, seat);
 
     // 2-player: one AFK elimination ends the match (opponent wins).
     if (rt.maxPlayers == 2) {
       finishMatchAfterElimination(rt, seat);
-      return;
     }
-
-    rt.ranking[seat] = RANK_LOST;
   }
 
   /** 2P: last active seat wins; eliminated seat is LOST. */
