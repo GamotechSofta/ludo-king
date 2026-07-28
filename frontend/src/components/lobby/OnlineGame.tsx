@@ -82,6 +82,7 @@ import {
   shouldClearStuckDice,
   shouldEnableTokenSelection,
 } from "./diceTurnLogic";
+import { isTwoPlayerHumanMatch } from "./humanMatch";
 
 /** flushSync outside React commit/effects — avoids lifecycle flushSync warning. */
 function flushSyncAfterRender(update: () => void): Promise<void> {
@@ -240,6 +241,7 @@ const OnlineGame = ({
     typeof boardColorForSnapshot
   > | null>(null);
   const snapshotRef = useRef<IGameSnapshot | null>(snapshot);
+  const prevConnectedRef = useRef(false);
   const lockSeqRef = useRef<{ seq: number; at: number }>({ seq: 0, at: Date.now() });
 
   useEffect(() => {
@@ -617,6 +619,43 @@ const OnlineGame = ({
     [mySeat, applyDiceOwnerTurn, roomId]
   );
 
+  /** Human 2P: after reconnect, drop stale locks and paint authoritative board. */
+  useEffect(() => {
+    if (!snapshot || mySeat < 0) {
+      prevConnectedRef.current = connected;
+      return;
+    }
+    if (
+      connected &&
+      !prevConnectedRef.current &&
+      isTwoPlayerHumanMatch(snapshot)
+    ) {
+      animatingRef.current = false;
+      suppressMoveAnimRef.current = false;
+      rollingRef.current = false;
+      pendingSnapRef.current = [];
+      pendingDiceRef.current = null;
+      passFlashUntilRef.current = 0;
+      lastAutoMoveKeyRef.current = "";
+      lastProcessedRollIdRef.current = "";
+      lastAnimatedMoveSeqRef.current = snapshot.actionSeq || 0;
+      lastDiceSigRef.current = `${snapshot.actionSeq || 0}|${
+        snapshot.currentSeatIndex
+      }|${snapshot.phase}|${(snapshot.diceList || []).join(",")}`;
+      diceOwnerSeatRef.current = snapshot.currentSeatIndex;
+      finishDiceRollAnimation();
+      setIsBusy(false);
+      syncBoardFromSnapshot(snapshot, false, true);
+    }
+    prevConnectedRef.current = connected;
+  }, [
+    connected,
+    snapshot,
+    mySeat,
+    syncBoardFromSnapshot,
+    finishDiceRollAnimation,
+  ]);
+
   /** Die profile must match the seat that can actually play (fixes wrong-profile dice). */
   useEffect(() => {
     if (!snapshot || mySeat < 0) return;
@@ -893,6 +932,19 @@ const OnlineGame = ({
 
     const apply = async (snap: IGameSnapshot) => {
       if (cancelled) return;
+
+      // Human 2P: match ended (win/forfeit) — skip animation queue
+      if (isTwoPlayerHumanMatch(snap) && snap.phase === "FINISHED") {
+        animatingRef.current = false;
+        suppressMoveAnimRef.current = false;
+        rollingRef.current = false;
+        pendingSnapRef.current = [];
+        pendingDiceRef.current = null;
+        finishDiceRollAnimation();
+        setIsBusy(false);
+        syncBoardFromSnapshot(snap, false, true);
+        return;
+      }
 
       const moveSeq = snap.actionSeq || 0;
       const isRemoteMove =

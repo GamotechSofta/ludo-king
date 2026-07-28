@@ -3,6 +3,7 @@ package com.ludo.backend.room;
 import com.ludo.backend.game.GameEngineService;
 import com.ludo.backend.game.GameEngineService.SeatInfo;
 import com.ludo.backend.game.GameSnapshot;
+import com.ludo.backend.realtime.GameEventBus;
 import com.ludo.backend.game.LudoColor;
 import com.ludo.backend.platform.wallet.MatchEconomyService;
 import com.ludo.backend.platform.wallet.WalletProperties;
@@ -49,6 +50,7 @@ public class RoomService {
   private final ObjectMapper objectMapper;
   private final MongoTemplate mongoTemplate;
   private final UserService userService;
+  private final GameEventBus gameEventBus;
   private final SecureRandom random = new SecureRandom();
 
   private final ConcurrentHashMap<String, ConcurrentLinkedQueue<QueueEntry>> queues =
@@ -64,7 +66,8 @@ public class RoomService {
       MatchmakingEventPublisher events,
       ObjectMapper objectMapper,
       MongoTemplate mongoTemplate,
-      UserService userService
+      UserService userService,
+      @org.springframework.context.annotation.Lazy GameEventBus gameEventBus
   ) {
     this.roomRepository = roomRepository;
     this.gameEngineService = gameEngineService;
@@ -74,6 +77,7 @@ public class RoomService {
     this.objectMapper = objectMapper;
     this.mongoTemplate = mongoTemplate;
     this.userService = userService;
+    this.gameEventBus = gameEventBus;
   }
 
   public record QueueEntry(String userId, String username, Instant enqueuedAt) {
@@ -249,7 +253,19 @@ public class RoomService {
       if (trySettleFinishedRoom(room)) {
         return;
       }
-      // Intentional leave mid-match: disconnect so enqueue won't reuse this room
+      // 2P human exit: opponent wins immediately; skip reconnect grace
+      if (room.getMaxPlayers() == 2 && isAllHumanRoom(room)) {
+        try {
+          ensureLiveMatch(room);
+          GameSnapshot snap = gameEngineService.forfeitOnExit(roomId, userId);
+          gameEventBus.publishSnapshotAndMeta(roomId, snap);
+          settleIfFinished(room, snap);
+          return;
+        } catch (RuntimeException ignored) {
+          // Fall through to disconnect-only path
+        }
+      }
+      // Bot or 3/4P mid-match leave: disconnect so enqueue won't reuse this room
       markDisconnected(roomId, userId);
       return;
     }
@@ -996,5 +1012,20 @@ public class RoomService {
       return "ROOM-" + code;
     }
     return code;
+  }
+
+  private boolean isAllHumanRoom(Room room) {
+    if (room.getPlayers() == null || room.getPlayers().isEmpty()) {
+      return false;
+    }
+    return room.getPlayers().stream().noneMatch(RoomPlayer::isBot);
+  }
+
+  /** Restore in-memory engine from Mongo/Redis when a human 2P exit needs forfeit. */
+  private void ensureLiveMatch(Room room) {
+    if (gameEngineService.hasMatch(room.getId())) {
+      return;
+    }
+    rehydrateMatch(room);
   }
 }

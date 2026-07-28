@@ -94,6 +94,7 @@ public class GameEvent {
       case "PASS" -> PASS;
       case "TIMEOUT" -> TIMEOUT;
       case "ELIMINATED" -> ELIMINATED;
+      case "FORFEIT" -> FINISHED;
       default -> STATE;
     };
   }

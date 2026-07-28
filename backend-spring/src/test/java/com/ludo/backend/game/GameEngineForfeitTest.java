@@ -1,0 +1,49 @@
+package com.ludo.backend.game;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+class GameEngineForfeitTest {
+
+  private GameEngineService engine;
+
+  @BeforeEach
+  void setUp() {
+    engine = new GameEngineService();
+  }
+
+  @Test
+  void forfeitEndsTwoPlayerHumanMatchWithOpponentWin() {
+    List<GameEngineService.SeatInfo> seats = List.of(
+        new GameEngineService.SeatInfo("u1", "Player 1", LudoColor.RED, false),
+        new GameEngineService.SeatInfo("u2", "Player 2", LudoColor.YELLOW, false)
+    );
+    engine.createMatch("room-forfeit", seats);
+
+    GameSnapshot snap = engine.forfeitOnExit("room-forfeit", "u1");
+
+    assertEquals(GameEngineService.PHASE_FINISHED, snap.getPhase());
+    assertEquals(Integer.valueOf(1), snap.getWinnerSeat());
+    assertEquals(0, snap.getStandings().get(0));
+    assertEquals(1, snap.getStandings().get(1));
+    assertTrue(snap.getEliminated()[0]);
+    assertEquals("FORFEIT", snap.getLastActionType());
+  }
+
+  @Test
+  void forfeitIsIdempotentWhenAlreadyFinished() {
+    List<GameEngineService.SeatInfo> seats = List.of(
+        new GameEngineService.SeatInfo("u1", "Player 1", LudoColor.RED, false),
+        new GameEngineService.SeatInfo("u2", "Player 2", LudoColor.YELLOW, false)
+    );
+    engine.createMatch("room-forfeit2", seats);
+    engine.forfeitOnExit("room-forfeit2", "u1");
+    GameSnapshot again = engine.forfeitOnExit("room-forfeit2", "u2");
+    assertEquals(GameEngineService.PHASE_FINISHED, again.getPhase());
+    assertEquals(Integer.valueOf(1), again.getWinnerSeat());
+  }
+}

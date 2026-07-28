@@ -40,6 +40,8 @@ export interface IGameEvent {
   legalMoves?: Array<{ tokenIndex: number; diceIndex: number }>;
   finished?: boolean[];
   winnerSeat?: number | null;
+  isBot?: boolean[];
+  standings?: number[];
 }
 
 function normalizeSnapshot(raw: unknown): IGameSnapshot | null {
@@ -64,6 +66,10 @@ function eventToSnapshot(raw: unknown): IGameSnapshot | null {
     // Ensure from/to survive even if nested state omitted them
     return {
       ...state,
+      isBot: state.isBot ?? ev.isBot,
+      eliminated: state.eliminated ?? ev.eliminated,
+      standings: state.standings ?? ev.standings,
+      winnerSeat: state.winnerSeat ?? ev.winnerSeat ?? null,
       lastActionFrom: state.lastActionFrom ?? ev.from ?? null,
       lastActionTo: state.lastActionTo ?? ev.to ?? null,
       lastActionType: state.lastActionType || ev.lastActionType || ev.type || null,
@@ -88,6 +94,8 @@ function eventToSnapshot(raw: unknown): IGameSnapshot | null {
       finished: ev.finished,
       eliminated: ev.eliminated,
       winnerSeat: ev.winnerSeat,
+      isBot: ev.isBot,
+      standings: ev.standings,
       turnStartedAt: ev.turnStartedAt,
       turnSecondsRemaining: ev.turnSecondsRemaining,
       consecutiveSixes: ev.consecutiveSixes,
@@ -140,6 +148,8 @@ export function useGameSocket(
   const lastSeqRef = useRef(initialSnapshot?.actionSeq ?? 0);
   const lastWsAtRef = useRef(0);
   const inFlightActionRef = useRef(false);
+  const lastRollKeyRef = useRef("");
+  const lastMoveKeyRef = useRef("");
   const isActionInFlight = useCallback(() => inFlightActionRef.current, []);
   const fallbackTimerRef = useRef<number | null>(null);
 
@@ -177,6 +187,8 @@ export function useGameSocket(
     setSnapshot(normalized);
     setLoadError("");
     inFlightActionRef.current = false;
+    lastRollKeyRef.current = "";
+    lastMoveKeyRef.current = "";
     if (fallbackTimerRef.current != null) {
       window.clearTimeout(fallbackTimerRef.current);
       fallbackTimerRef.current = null;
@@ -243,6 +255,10 @@ export function useGameSocket(
           headers: STOMP_JSON,
           body,
         });
+        // Authoritative resync after reconnect (human 2P recovery)
+        void ensureGameSnapshot(roomId)
+          .then((g) => applySnapshot(g, false))
+          .catch(() => undefined);
       },
       onDisconnect: () => {
         connectedRef.current = false;
@@ -305,6 +321,9 @@ export function useGameSocket(
   const rollDice = useCallback(() => {
     if (!roomId || !userId) return;
     if (inFlightActionRef.current) return;
+    const rollKey = `${lastSeqRef.current}|${roomId}|roll`;
+    if (lastRollKeyRef.current === rollKey) return;
+    lastRollKeyRef.current = rollKey;
     inFlightActionRef.current = true;
     onlinePerf.markActionSent("roll");
     const seqAtSend = lastSeqRef.current;
@@ -330,6 +349,9 @@ export function useGameSocket(
     (tokenIndex: number, diceIndex: number) => {
       if (!roomId || !userId) return;
       if (inFlightActionRef.current) return;
+      const moveKey = `${lastSeqRef.current}|${roomId}|move|${tokenIndex}|${diceIndex}`;
+      if (lastMoveKeyRef.current === moveKey) return;
+      lastMoveKeyRef.current = moveKey;
       inFlightActionRef.current = true;
       onlinePerf.markActionSent("move");
       const seqAtSend = lastSeqRef.current;

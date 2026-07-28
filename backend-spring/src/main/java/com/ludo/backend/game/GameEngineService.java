@@ -446,6 +446,72 @@ public class GameEngineService {
     return matches.keySet();
   }
 
+  /** True when every seated player is human (no bots). */
+  public static boolean isAllHumanMatch(GameSnapshot snap) {
+    if (snap == null || snap.getIsBot() == null || snap.getIsBot().length == 0) {
+      return false;
+    }
+    for (boolean bot : snap.getIsBot()) {
+      if (bot) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /** 2-player queue with two real humans — human-vs-human online rules apply. */
+  public static boolean isTwoPlayerHumanMatch(GameSnapshot snap) {
+    if (snap == null) {
+      return false;
+    }
+    int seats = snap.getSeatColors() != null ? snap.getSeatColors().size() : 0;
+    if (seats == 0 && snap.getUserIds() != null) {
+      seats = snap.getUserIds().size();
+    }
+    return seats == 2 && isAllHumanMatch(snap);
+  }
+
+  static boolean isTwoPlayerHumanRuntime(MatchRuntime rt) {
+    if (rt.maxPlayers != 2) {
+      return false;
+    }
+    for (boolean bot : rt.isBot) {
+      if (bot) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Intentional exit during a live 2P human match: leaver LOST, opponent WIN, match ends.
+   * No-op if already finished; throws if not a 2P all-human session.
+   */
+  public GameSnapshot forfeitOnExit(String roomId, String userId) {
+    MatchRuntime rt = require(roomId);
+    rt.lock.lock();
+    try {
+      if (PHASE_FINISHED.equals(rt.phase)) {
+        return snapshot(rt);
+      }
+      if (!isTwoPlayerHumanRuntime(rt)) {
+        throw new IllegalStateException("Forfeit only applies to 2-player human matches");
+      }
+      int seat = seatOfUser(rt, userId);
+      if (seat < 0) {
+        throw new IllegalStateException("Not a player in this room");
+      }
+      rt.eliminated[seat] = true;
+      rt.finished[seat] = true;
+      clearDice(rt);
+      recordAction(rt, "FORFEIT", seat, null, null);
+      finishMatchAfterElimination(rt, seat);
+      return snapshot(rt);
+    } finally {
+      rt.lock.unlock();
+    }
+  }
+
   private GameSnapshot rollInternal(MatchRuntime rt, int seat, Integer forcedValue) {
     assertActive(rt);
     if (rt.finished[seat]) {
