@@ -1137,11 +1137,7 @@ const OnlineGame = ({
     return () => {
       cancelled = true;
     };
-<<<<<<< Updated upstream
-  }, [snapshot, mySeat, syncBoardFromSnapshot, runMoveAnimation, runPostMoveCaptureReturn, beginDiceRollAnimation, waitForDiceRollAnimation]);
-=======
-  }, [snapshot, mySeat, syncBoardFromSnapshot, runMoveAnimation, beginDiceRollAnimation, waitForDiceRollAnimation, flashDiceOnSeat, playDiceRollingOnce]);
->>>>>>> Stashed changes
+  }, [snapshot, mySeat, syncBoardFromSnapshot, runMoveAnimation, runPostMoveCaptureReturn, beginDiceRollAnimation, waitForDiceRollAnimation, flashDiceOnSeat, playDiceRollingOnce]);
 
   const handleSelectDice = useCallback(
     (_diceValue?: TDicevalues) => {
