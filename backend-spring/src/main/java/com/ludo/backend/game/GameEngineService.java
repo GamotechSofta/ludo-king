@@ -39,8 +39,8 @@ import org.springframework.stereotype.Service;
  *   <li>Own stack max 2 (block); third token cannot join</li>
  *   <li>Opponent blocks: can pass through; cannot land on / capture</li>
  *   <li>AFK timeout 20s: turn is passed to the next player</li>
- *   <li>5 consecutive timeouts → AFK eliminated (skipped, tokens removed)</li>
- *   <li>First player to bring all 4 tokens home wins — match ends immediately</li>
+ *   <li>3 turn timeouts (lifetime) → AFK eliminated (skipped, tokens removed)</li>
+ *   <li>First player with all 4 tokens home wins (rank 1); all others LOST (rank 0)</li>
  *   <li>Team mode: not implemented</li>
  * </ul>
  */
@@ -54,7 +54,10 @@ public class GameEngineService {
   public static final String PHASE_FINISHED = "FINISHED";
 
   public static final int TURN_TIMEOUT_SECONDS = 20;
-  public static final int MAX_CONSECUTIVE_TIMEOUTS = 5;
+  public static final int MAX_CONSECUTIVE_TIMEOUTS = 3;
+  /** Only rank assigned besides LOST (0). */
+  public static final int RANK_WIN = 1;
+  public static final int RANK_LOST = 0;
   private static final int MAX_CONSECUTIVE_SIXES = 3;
 
   private final ConcurrentHashMap<String, MatchRuntime> matches = new ConcurrentHashMap<>();
@@ -83,6 +86,7 @@ public class GameEngineService {
     final boolean[] isBot;
     final int[][] tokens;
     final boolean[] finished;
+    final boolean[] eliminated;
     final int[] ranking;
     final int[] consecutiveTimeouts;
     final List<Integer> diceList = new ArrayList<>();
@@ -111,6 +115,7 @@ public class GameEngineService {
       this.isBot = new boolean[maxPlayers];
       this.tokens = new int[maxPlayers][4];
       this.finished = new boolean[maxPlayers];
+      this.eliminated = new boolean[maxPlayers];
       this.ranking = new int[maxPlayers];
       this.consecutiveTimeouts = new int[maxPlayers];
       this.lastActionType = null;
@@ -185,6 +190,11 @@ public class GameEngineService {
       System.arraycopy(
           snap.getFinished(), 0, rt.finished, 0,
           Math.min(snap.getFinished().length, rt.finished.length));
+    }
+    if (snap.getEliminated() != null) {
+      System.arraycopy(
+          snap.getEliminated(), 0, rt.eliminated, 0,
+          Math.min(snap.getEliminated().length, rt.eliminated.length));
     }
     if (snap.getStandings() != null) {
       int maxRank = 0;
@@ -453,10 +463,6 @@ public class GameEngineService {
       throw new IllegalStateException("Dice already rolled this turn");
     }
 
-    resetTimeoutStreak(rt, seat);
-
-    // Cryptographically sound RNG; client never supplies this value.
-    // Bot assist may force 1–6 when a legal capture is guaranteed.
     int value;
     if (forcedValue != null && forcedValue >= 1 && forcedValue <= 6) {
       value = forcedValue;
@@ -518,8 +524,6 @@ public class GameEngineService {
     if (!canUseDice(rt, seat, tokenIndex, dice)) {
       throw new IllegalStateException("Illegal move");
     }
-
-    resetTimeoutStreak(rt, seat);
 
     boolean usedSix = dice == 6;
     int from = rt.tokens[seat][tokenIndex];
@@ -599,45 +603,35 @@ public class GameEngineService {
     rt.lastRollWasSix = false;
   }
 
-  private void resetTimeoutStreak(MatchRuntime rt, int seat) {
-    if (seat >= 0 && seat < rt.maxPlayers) {
-      rt.consecutiveTimeouts[seat] = 0;
-    }
-  }
-
-  /** 5 consecutive turn timeouts → remove player from the match. */
+  /** 3 timeouts used → remove player from the match. */
   private void eliminateAfk(MatchRuntime rt, int seat) {
     if (rt.finished[seat]) {
       return;
     }
     rt.finished[seat] = true;
-    int rankedCount = 0;
-    for (int i = 0; i < rt.maxPlayers; i++) {
-      if (i != seat && rt.finished[i] && rt.ranking[i] > 0) {
-        rankedCount++;
-      }
-    }
-    rt.ranking[seat] = rt.maxPlayers - rankedCount;
+    rt.eliminated[seat] = true;
     Arrays.fill(rt.tokens[seat], JAIL);
-    sealLastPlaceIfNeeded(rt);
+
+    // 2-player: one AFK elimination ends the match (opponent wins).
+    if (rt.maxPlayers == 2) {
+      finishMatchAfterElimination(rt, seat);
+      return;
+    }
+
+    rt.ranking[seat] = RANK_LOST;
   }
 
-  private void sealLastPlaceIfNeeded(MatchRuntime rt) {
-    int unfinished = 0;
-    int last = -1;
+  /** 2P: last active seat wins; eliminated seat is LOST. */
+  private void finishMatchAfterElimination(MatchRuntime rt, int eliminatedSeat) {
+    rt.ranking[eliminatedSeat] = RANK_LOST;
     for (int i = 0; i < rt.maxPlayers; i++) {
-      if (!rt.finished[i]) {
-        unfinished++;
-        last = i;
+      if (i == eliminatedSeat) {
+        continue;
       }
+      rt.finished[i] = true;
+      rt.ranking[i] = RANK_WIN;
     }
-    if (unfinished <= 1) {
-      if (last >= 0 && !rt.finished[last]) {
-        rt.finished[last] = true;
-        rt.ranking[last] = rt.nextRank++;
-      }
-      rt.phase = PHASE_FINISHED;
-    }
+    rt.phase = PHASE_FINISHED;
   }
 
   private void checkFinished(MatchRuntime rt, int seat) {
@@ -649,21 +643,19 @@ public class GameEngineService {
     finishMatchOnFirstWinner(rt, seat);
   }
 
-  /** First seat with all tokens home wins; assign remaining ranks and end. */
+  /** First seat with all tokens home wins; everyone else is LOST (no rank 2/3/4). */
   private void finishMatchOnFirstWinner(MatchRuntime rt, int winnerSeat) {
-    if (!rt.finished[winnerSeat]) {
-      rt.finished[winnerSeat] = true;
-      rt.ranking[winnerSeat] = 1;
-      rt.nextRank = 2;
-    }
-    int rank = rt.nextRank;
+    rt.finished[winnerSeat] = true;
+    rt.ranking[winnerSeat] = RANK_WIN;
     for (int i = 0; i < rt.maxPlayers; i++) {
-      if (!rt.finished[i]) {
-        rt.finished[i] = true;
-        rt.ranking[i] = rank++;
+      if (i == winnerSeat) {
+        continue;
+      }
+      rt.finished[i] = true;
+      if (rt.ranking[i] != RANK_WIN) {
+        rt.ranking[i] = RANK_LOST;
       }
     }
-    rt.nextRank = rank;
     rt.phase = PHASE_FINISHED;
   }
 
@@ -900,6 +892,7 @@ public class GameEngineService {
             && rt.lastActionSeat == rt.currentSeat;
     snap.setBonusRoll(bonusAfterMove);
     snap.setFinished(Arrays.copyOf(rt.finished, rt.finished.length));
+    snap.setEliminated(Arrays.copyOf(rt.eliminated, rt.eliminated.length));
     snap.setIsBot(Arrays.copyOf(rt.isBot, rt.isBot.length));
     snap.setUserIds(Arrays.asList(rt.userIds.clone()));
     snap.setUsernames(Arrays.asList(rt.usernames.clone()));
@@ -937,7 +930,7 @@ public class GameEngineService {
     List<Integer> standings = new ArrayList<>();
     Integer winner = null;
     for (int s = 0; s < rt.maxPlayers; s++) {
-      if (rt.finished[s] && rt.ranking[s] == 1) {
+      if (rt.finished[s] && rt.ranking[s] == RANK_WIN) {
         winner = s;
       }
       standings.add(rt.ranking[s]);

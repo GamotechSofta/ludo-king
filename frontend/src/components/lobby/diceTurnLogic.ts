@@ -39,6 +39,9 @@ export function canRequestOnlineRoll(
 ): boolean {
   if (!snapshot || gate.mySeat < 0) return false;
   if (isGameFinished(snapshot)) return false;
+  if (snapshot.eliminated?.[gate.mySeat] || snapshot.finished?.[gate.mySeat]) {
+    return false;
+  }
   if (gate.isBusy || gate.isAnimating || gate.isRolling || gate.isActionInFlight) {
     return false;
   }
@@ -55,6 +58,7 @@ export function onlineDiceDisabled(
   mySeat: number
 ): boolean {
   if (mySeat < 0 || isGameFinished(snapshot)) return true;
+  if (snapshot.eliminated?.[mySeat] || snapshot.finished?.[mySeat]) return true;
   if (!isCurrentPlayer(snapshot, mySeat)) return true;
   if (!isAwaitingRoll(snapshot)) return true;
   if ((snapshot.diceList?.length ?? 0) > 0) return true;
@@ -92,14 +96,14 @@ export function isStableTurnPass(
   if ((snap.diceList?.length ?? 0) > 0) return false;
   if (prev.currentSeatIndex === snap.currentSeatIndex) return false;
   const passType = snap.lastActionType;
-  return passType === "PASS" || passType === "TIMEOUT";
+  return passType === "PASS" || passType === "TIMEOUT" || passType === "ELIMINATED";
 }
 
 /** Jail / no-move pass — rolled value shown, then turn hands off. */
 export function isNoMovePassSnapshot(snap: IGameSnapshot): boolean {
   const passType = snap.lastActionType;
   return (
-    (passType === "PASS" || passType === "TIMEOUT") &&
+    (passType === "PASS" || passType === "TIMEOUT" || passType === "ELIMINATED") &&
     snap.phase === "AWAITING_ROLL" &&
     (snap.diceList?.length ?? 0) === 0
   );

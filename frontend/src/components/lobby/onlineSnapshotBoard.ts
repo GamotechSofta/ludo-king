@@ -16,6 +16,7 @@ import {
   EBoardColors,
   EPositionGame,
   EtypeTile,
+  MAX_PLAYER_CHANCES,
 } from "../../utils/constants";
 import { getOneBotName } from "../../data/botNames";
 import type { IGameSnapshot } from "./types";
@@ -232,10 +233,14 @@ export function playersFromSnapshot(
       isOnline: false,
       isOffline: false,
       finished: !!snapshot.finished?.[i],
-      ranking: snapshot.standings?.[i] || 0,
+      ranking: snapshot.standings?.[i] === 1 ? 1 : 0,
       chatMessage: "",
       counterMessage: 0,
       isMuted: false,
+      timeoutStreak: snapshot.consecutiveTimeouts?.[i] ?? 0,
+      isEliminated:
+        !!snapshot.eliminated?.[i] ||
+        (snapshot.consecutiveTimeouts?.[i] ?? 0) >= MAX_PLAYER_CHANCES,
     };
   });
 }

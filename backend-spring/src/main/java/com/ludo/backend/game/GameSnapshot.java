@@ -26,6 +26,8 @@ public class GameSnapshot {
   private int consecutiveSixes;
   private List<Integer> consecutiveTimeouts = new ArrayList<>();
   private boolean[] finished;
+  /** True when removed for AFK (3 consecutive timeouts). */
+  private boolean[] eliminated;
   private boolean[] isBot;
   private List<String> userIds = new ArrayList<>();
   private List<String> usernames = new ArrayList<>();
@@ -181,6 +183,14 @@ public class GameSnapshot {
 
   public void setFinished(boolean[] finished) {
     this.finished = finished;
+  }
+
+  public boolean[] getEliminated() {
+    return eliminated;
+  }
+
+  public void setEliminated(boolean[] eliminated) {
+    this.eliminated = eliminated;
   }
 
   public boolean[] getIsBot() {

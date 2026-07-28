@@ -24,6 +24,11 @@ import {
 import { playSound, preloadGameSounds, stopBackgroundMusic } from "../../utils/sounds";
 import { runReturnToJailAnimations } from "../lobby/captureReturnAnim";
 import { runCellByCellSteps, nextFrame } from "../lobby/onlineAnimate";
+import {
+  lostStatusLabel,
+  partitionResults,
+} from "../lobby/resultHelpers";
+import "../lobby/styles.css";
 import { PageWrapper } from "../wrapper";
 import {
   Board,
@@ -167,16 +172,15 @@ const Game = ({
           setGameOver(true);
           gameOverRef.current = true;
           if (onGameOver) {
-            const entries = finalPlayers
-              .slice()
-              .sort((a, b) => a.ranking - b.ranking)
-              .map((p) => ({
-                rank: p.ranking,
-                name: p.name,
-                color: p.color,
-                isBot: !!p.isBot,
-                isYou: !p.isBot && p.index === 0,
-              }));
+            const entries = finalPlayers.map((p) => ({
+              rank: p.ranking === 1 ? 1 : 0,
+              name: p.name,
+              color: p.color,
+              isBot: !!p.isBot,
+              isYou: !p.isBot && p.index === 0,
+              won: p.ranking === 1,
+              lost: p.ranking !== 1,
+            }));
             stopBackgroundMusic();
             window.setTimeout(() => onGameOver(entries), 500);
           }
@@ -693,9 +697,17 @@ const Game = ({
 
   const profileProps = { players, totalPlayers, currentTurn, actionsTurn };
 
-  const ranking = [...players]
-    .filter((p) => p.finished)
-    .sort((a, b) => a.ranking - b.ranking);
+  const offlineResultEntries = players.map((p) => ({
+    rank: p.ranking === 1 ? 1 : 0,
+    name: p.name,
+    color: p.color,
+    isBot: !!p.isBot,
+    isYou: !p.isBot && p.index === 0,
+    won: p.ranking === 1,
+    lost: p.ranking !== 1,
+  }));
+  const { winner: offlineWinner, lost: offlineLost } =
+    partitionResults(offlineResultEntries);
 
   return (
     <PageWrapper>
@@ -743,15 +755,47 @@ const Game = ({
 
       {gameOver && !onGameOver && (
         <div className="game-over-overlay">
-          <div className="game-over-card">
-            <h2>Game Over</h2>
-            <ol>
-              {ranking.map((p) => (
-                <li key={p.id}>
-                  <span>{p.ranking}.</span> {p.name}
-                </li>
-              ))}
-            </ol>
+          <div className="game-over-card match-results-panel">
+            <h2>Match Results</h2>
+            {offlineWinner && (
+              <section className="match-results-section">
+                <h3 className="match-results-section-title winner">🏆 Winner</h3>
+                <div className="match-results-winner-card">
+                  {offlineWinner.color && (
+                    <div
+                      className={`player-swatch ${offlineWinner.color.toLowerCase()}`}
+                    />
+                  )}
+                  <div className="match-results-winner-meta">
+                    <span className="match-results-name">{offlineWinner.name}</span>
+                    <span className="match-results-rank">Rank 1</span>
+                  </div>
+                </div>
+              </section>
+            )}
+            {offlineLost.length > 0 && (
+              <section className="match-results-section">
+                <h3 className="match-results-section-title lost">❌ Lost</h3>
+                <ol className="match-results-lost-list">
+                  {offlineLost.map((entry) => (
+                    <li
+                      className="match-results-lost-row"
+                      key={`${entry.name}-${entry.color || "x"}`}
+                    >
+                      {entry.color && (
+                        <div
+                          className={`player-swatch ${entry.color.toLowerCase()}`}
+                        />
+                      )}
+                      <span className="match-results-name">{entry.name}</span>
+                      <span className="match-results-lost-tag">
+                        {lostStatusLabel(entry)}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              </section>
+            )}
             {onExit && (
               <button
                 className="lobby-btn primary"

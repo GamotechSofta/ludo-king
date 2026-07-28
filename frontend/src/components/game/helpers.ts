@@ -224,6 +224,7 @@ export const getInitialDataPlayers = (
       chatMessage: "",
       counterMessage: 0,
       ranking: 0,
+      timeoutStreak: 0,
       ...users[i],
     });
   }

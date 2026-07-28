@@ -68,6 +68,8 @@ export interface IGameSnapshot {
   userIds?: string[];
   usernames?: string[];
   finished?: boolean[];
+  /** AFK removed after 3 consecutive timeouts. */
+  eliminated?: boolean[];
   isBot?: boolean[];
   standings?: number[];
   winnerSeat?: number | null;
@@ -88,9 +90,16 @@ export interface IGameSnapshot {
 }
 
 export interface IResultEntry {
+  /** 1 = winner, 0 = lost (no rank 2/3/4). */
   rank: number;
   name: string;
   color?: string;
   isBot?: boolean;
   isYou?: boolean;
+  lost?: boolean;
+  won?: boolean;
+  /** AFK eliminated or left before finish. */
+  exited?: boolean;
+  /** Still active mid-match (elimination summary). */
+  playing?: boolean;
 }

@@ -502,9 +502,8 @@ export const resolveLanding = (
       (t) => t.typeTile === EtypeTile.END
     );
     if (allHome && !playersCopy[playerIndex].finished) {
-      const nextRank = playersCopy.filter((p) => p.finished).length + 1;
       playersCopy[playerIndex].finished = true;
-      playersCopy[playerIndex].ranking = nextRank;
+      playersCopy[playerIndex].ranking = 1;
     }
   }
 
@@ -716,11 +715,10 @@ export const isGameOver = (players: IPlayer[]) =>
 
 export const finalizeRankings = (players: IPlayer[]): IPlayer[] => {
   const copy = cloneDeep(players);
-  const nextRank = copy.filter((p) => p.finished).length + 1;
   copy.forEach((p) => {
-    if (!p.finished) {
+    if (p.ranking !== 1) {
       p.finished = true;
-      p.ranking = nextRank;
+      p.ranking = 0;
     }
   });
   return copy;

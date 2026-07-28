@@ -132,6 +132,13 @@ export const DICE_VALUE_GET_OUT_JAIL: TDicevalues = 6;
  */
 export const MAXIMUM_DICE_PER_TURN = 3;
 
+/** Turn timeouts before AFK elimination (matches server MAX_CONSECUTIVE_TIMEOUTS). */
+export const MAX_PLAYER_CHANCES = 3;
+
+/** Online match stakes (Find Match). */
+export const ONLINE_ENTRY_AMOUNT = 100;
+export const ONLINE_WIN_AMOUNT: Record<2 | 4, number> = { 2: 180, 4: 320 };
+
 /**
  * El total de tokes que se podrán mostrar en una celda,
  * después de este valor no se mostrará y se hará visible,

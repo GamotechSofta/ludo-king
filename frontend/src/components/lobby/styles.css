@@ -1735,3 +1735,260 @@
     width: 68px;
   }
 }
+
+/* ── Lost / elimination summary popup (online) ── */
+.lost-summary-overlay {
+  align-items: center;
+  background: rgba(0, 20, 60, 0.72);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 16px;
+  position: absolute;
+  z-index: 50;
+}
+
+.lost-summary-card {
+  background: linear-gradient(180deg, #0a4db8 0%, #003b94 100%);
+  border: 2px solid rgba(255, 204, 0, 0.65);
+  border-radius: 22px;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-family: "Fredoka", sans-serif;
+  max-height: min(88vh, 560px);
+  overflow-y: auto;
+  padding: 22px 18px 18px;
+  position: relative;
+  text-align: center;
+  width: min(360px, 94%);
+}
+
+.lost-summary-badge {
+  background: linear-gradient(180deg, #ff5a72 0%, #d50032 100%);
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-radius: 999px;
+  box-shadow: 0 4px 14px rgba(213, 0, 50, 0.45);
+  display: inline-block;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  margin-bottom: 8px;
+  padding: 5px 14px;
+}
+
+.lost-summary-title {
+  color: #ffcc00;
+  font-family: "Lilita One", cursive;
+  font-size: 1.85rem;
+  line-height: 1.1;
+  margin: 0 0 6px;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.25);
+}
+
+.lost-summary-sub {
+  font-size: 0.88rem;
+  line-height: 1.35;
+  margin: 0 0 14px;
+  opacity: 0.92;
+}
+
+.lost-summary-stat-row {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  padding: 10px 12px;
+}
+
+.lost-summary-stat-label {
+  font-size: 0.84rem;
+  font-weight: 600;
+  opacity: 0.88;
+}
+
+.lost-summary-stat-value {
+  align-items: center;
+  display: inline-flex;
+  font-size: 0.95rem;
+  font-weight: 800;
+  gap: 6px;
+}
+
+.lost-summary-stat-negative {
+  color: #ff8a8a;
+}
+
+.lost-summary-players {
+  margin-top: 12px;
+  text-align: left;
+}
+
+.lost-summary-players-title {
+  color: #ffcc00;
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  margin: 0 0 8px;
+  text-transform: uppercase;
+}
+
+.lost-summary-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.lost-summary-row {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  display: flex;
+  gap: 8px;
+  margin-bottom: 6px;
+  padding: 8px 10px;
+}
+
+.lost-summary-row.you {
+  border: 1px solid rgba(255, 204, 0, 0.45);
+}
+
+.lost-summary-row.lost {
+  opacity: 0.78;
+}
+
+.lost-summary-name {
+  flex: 1;
+  font-size: 0.88rem;
+  font-weight: 700;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lost-summary-name small {
+  color: #ffcc00;
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.lost-summary-status {
+  font-size: 0.78rem;
+  font-weight: 800;
+  min-width: 52px;
+  text-align: right;
+}
+
+.lost-summary-status.lost {
+  color: #ff6b6b;
+}
+
+.lost-summary-status.playing {
+  color: #69f0ae;
+}
+
+.lost-summary-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.lost-summary-btn {
+  width: 100%;
+}
+
+.lost-summary-stat-value .find-match-win-icon {
+  height: 22px;
+  width: 22px;
+}
+
+/* ── First-winner result screen ── */
+.match-results-panel {
+  text-align: left;
+}
+
+.match-results-section {
+  margin-bottom: 18px;
+}
+
+.match-results-section-title {
+  font-family: "Fredoka", sans-serif;
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  margin: 0 0 10px;
+  text-transform: uppercase;
+}
+
+.match-results-section-title.winner {
+  color: #ffcc00;
+}
+
+.match-results-section-title.lost {
+  color: #ff8a8a;
+}
+
+.match-results-winner-card {
+  align-items: center;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 204, 0, 0.18) 0%,
+    rgba(255, 255, 255, 0.08) 100%
+  );
+  border: 1.5px solid rgba(255, 204, 0, 0.55);
+  border-radius: 14px;
+  display: flex;
+  gap: 10px;
+  padding: 12px;
+}
+
+.match-results-winner-meta {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.match-results-name {
+  font-size: 0.95rem;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.match-results-rank {
+  color: #ffcc00;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.match-results-lost-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.match-results-lost-row {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  display: flex;
+  gap: 8px;
+  margin-bottom: 6px;
+  padding: 10px 12px;
+}
+
+.match-results-lost-tag {
+  color: #ff8a8a;
+  font-size: 0.78rem;
+  font-weight: 800;
+  margin-left: auto;
+  text-align: right;
+  white-space: nowrap;
+}

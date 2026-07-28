@@ -51,8 +51,9 @@ public class TurnTimeoutScheduler {
           roomService.getRoom(roomId).ifPresent(
               room -> roomService.settleIfFinished(room, after)
           );
+        } else {
+          botTurnCoordinator.schedule(roomId);
         }
-        botTurnCoordinator.schedule(roomId);
       } catch (Exception ignored) {
         // room may have ended mid-tick
       }

@@ -76,17 +76,45 @@
   box-shadow: inset 0 -1px 1px rgba(0, 0, 0, 0.25);
 }
 
-.game-profile-token-dots span.on.red {
-  background: #ff1744;
+.game-profile.is-eliminated {
+  opacity: 0.62;
+  border-color: rgba(255, 23, 68, 0.55);
+  filter: grayscale(0.35);
 }
-.game-profile-token-dots span.on.green {
+
+.game-profile-lost {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  transform: translateY(-50%);
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: rgba(255, 23, 68, 0.92);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  box-shadow: 0 2px 8px rgba(255, 23, 68, 0.45);
+  pointer-events: none;
+}
+
+.game-profile.right .game-profile-lost {
+  right: auto;
+  left: 10px;
+}
+
+.game-profile-token-dots span.chance-green {
   background: #00c853;
+  box-shadow:
+    inset 0 -1px 1px rgba(0, 0, 0, 0.25),
+    0 0 4px rgba(0, 200, 83, 0.35);
 }
-.game-profile-token-dots span.on.blue {
-  background: #2979ff;
-}
-.game-profile-token-dots span.on.yellow {
-  background: #ffd600;
+
+.game-profile-token-dots span.chance-red {
+  background: #ff1744;
+  box-shadow:
+    inset 0 -1px 1px rgba(0, 0, 0, 0.25),
+    0 0 4px rgba(255, 23, 68, 0.35);
 }
 
 .game-profile.bottom .game-profile-ranking,

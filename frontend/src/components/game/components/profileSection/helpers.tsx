@@ -97,6 +97,16 @@ export const renderProfileComponent = (
 
   if (indexProfile !== 0 && players[indexProfile - 1]) {
     const player = players[indexProfile - 1];
+    if (player.isEliminated) {
+      const extProps = {
+        basePosition,
+        position,
+        hasTurn: false,
+        actionsTurn,
+        ...profileHandlers,
+      };
+      return <Profile {...extProps} player={player} />;
+    }
     /**
      * Online: match house color to active seat color (authoritative).
      * Offline: fall back to view-slot currentTurn index.

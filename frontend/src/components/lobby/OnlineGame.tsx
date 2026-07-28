@@ -23,7 +23,8 @@ import {
   DICE_ROLL_ANIM_MS,
   ONLINE_TURN_PASS_DELAY_MS,
   ONLINE_TOKEN_MOVEMENT_INTERVAL_VALUE,
-  ROLL_TIME_VALUE,
+  MAX_PLAYER_CHANCES,
+  ONLINE_ENTRY_AMOUNT,
   TOKEN_STEP_PAUSE_MS,
 } from "../../utils/constants";
 import { playSound, preloadGameSounds, stopBackgroundMusic } from "../../utils/sounds";
@@ -44,6 +45,7 @@ import {
 import { pickHumanAutoMoveFromSnapshot } from "../game/humanAutoMove";
 import type { IGameSnapshot, IGuestUser, IResultEntry } from "./types";
 import Results from "./Results";
+import LostSummaryPopup from "./LostSummaryPopup";
 import { fetchWalletBalance, leaveRoom } from "../../api/ludoApi";
 import {
   runReturnToJailAnimations,
@@ -111,6 +113,7 @@ const OnlineGame = ({
   const { snapshot, connected, loadError, rollDice, moveToken, isActionInFlight } =
     useGameSocket(roomId, guest.id, initialSnapshot);
   const [showResults, setShowResults] = useState(false);
+  const [showLostSummary, setShowLostSummary] = useState(false);
   const [listTokens, setListTokens] = useState<IListTokens[]>([]);
   const [players, setPlayers] = useState<IPlayer[]>([]);
   const [actionsTurn, setActionsTurn] = useState<IActionsTurn>(() =>
@@ -178,6 +181,24 @@ const OnlineGame = ({
     }
     return 0;
   }, [snapshot, guest.id, guest.username, guest.name]);
+
+  const myEliminated = useMemo(() => {
+    if (mySeat < 0 || !snapshot) return false;
+    return (
+      !!snapshot.eliminated?.[mySeat] ||
+      (snapshot.consecutiveTimeouts?.[mySeat] ?? 0) >= MAX_PLAYER_CHANCES
+    );
+  }, [snapshot, mySeat]);
+
+  const lostSummaryShownRef = useRef(false);
+
+  useEffect(() => {
+    if (!myEliminated || lostSummaryShownRef.current) return;
+    lostSummaryShownRef.current = true;
+    setShowLostSummary(true);
+    stopBackgroundMusic();
+    void refreshBalance();
+  }, [myEliminated, refreshBalance]);
 
   // Prefer showing the board as soon as we have token positions
   const boardReady = !!(
@@ -523,6 +544,7 @@ const OnlineGame = ({
         lastProcessedRollIdRef.current = "";
         lastDiceSigRef.current = `${snap.currentSeatIndex}|${snap.phase}|`;
         flushSync(() => {
+          setPlayers(playersForView(snap, mySeat, roomId));
           setActionsTurn((prevActions) =>
             actionsTurnFromSnapshot(snap, mySeat, prevActions, prevSeat)
           );
@@ -1378,6 +1400,32 @@ const OnlineGame = ({
     scheduleHumanAutoMove(live);
   }, [snapshot, mySeat, syncBoardFromSnapshot, scheduleHumanAutoMove, finishDiceRollAnimation]);
 
+  const lostSummaryEntries = useMemo(
+    () => buildLiveSummary(snapshot, guest.id, roomId),
+    [snapshot, guest.id, roomId]
+  );
+
+  const matchPlayerCount = useMemo(() => {
+    if (snapshot?.seatColors?.length) return snapshot.seatColors.length;
+    if (snapshot?.usernames?.length) return snapshot.usernames.length;
+    return 4;
+  }, [snapshot]);
+
+  const isTwoPlayerMatch = matchPlayerCount === 2;
+  const matchEnded = snapshot?.phase === "FINISHED";
+
+  useEffect(() => {
+    if (matchEnded && showLostSummary) {
+      setShowLostSummary(false);
+    }
+  }, [matchEnded, showLostSummary]);
+
+  useEffect(() => {
+    if (myEliminated && isTwoPlayerMatch && matchEnded) {
+      setShowResults(true);
+    }
+  }, [myEliminated, isTwoPlayerMatch, matchEnded]);
+
   const resultEntries: IResultEntry[] = useMemo(
     () => buildResults(snapshot, guest.id, roomId),
     [snapshot, guest.id, roomId]
@@ -1600,9 +1648,64 @@ const OnlineGame = ({
           {...profileProps}
         />
       </BoardWrapper>
+      {showLostSummary && !matchEnded && (
+        <LostSummaryPopup
+          entries={lostSummaryEntries}
+          entryAmount={ONLINE_ENTRY_AMOUNT}
+          isTwoPlayer={isTwoPlayerMatch}
+          onExit={() => {
+            if (isTwoPlayerMatch) {
+              setShowLostSummary(false);
+              setShowResults(true);
+              return;
+            }
+            void leaveRoom(roomId, guest.id).catch(() => undefined);
+            onExit();
+          }}
+          onWatch={() => setShowLostSummary(false)}
+        />
+      )}
     </PageWrapper>
   );
 };
+
+function buildLiveSummary(
+  snapshot: IGameSnapshot | null,
+  myId: string,
+  stableRoomId: string
+): IResultEntry[] {
+  if (!snapshot?.usernames) return [];
+  const roomId = stableRoomId || snapshot.roomId || "room";
+  const colors = seatColorsFromSnapshot(snapshot);
+  const used: string[] = [];
+  return snapshot.usernames.map((name, seat) => {
+    const seatKey = seatDisplayKey(roomId, snapshot.userIds?.[seat], seat);
+    const display = displayPlayerName(
+      name,
+      seatKey,
+      used,
+      !!snapshot.isBot?.[seat]
+    );
+    used.push(display);
+    const lost =
+      !!snapshot.eliminated?.[seat] ||
+      (snapshot.consecutiveTimeouts?.[seat] ?? 0) >= MAX_PLAYER_CHANCES;
+    const finished = !!snapshot.finished?.[seat];
+    const isWinner =
+      snapshot.winnerSeat === seat || snapshot.standings?.[seat] === 1;
+    return {
+      rank: isWinner ? 1 : 0,
+      name: display,
+      color: colors[seat],
+      isBot: snapshot.isBot?.[seat],
+      isYou: snapshot.userIds?.[seat] === myId,
+      won: isWinner,
+      lost: !isWinner && (lost || finished),
+      exited: lost,
+      playing: !lost && !finished && !isWinner,
+    };
+  });
+}
 
 function buildResults(
   snapshot: IGameSnapshot | null,
@@ -1622,12 +1725,17 @@ function buildResults(
       !!snapshot.isBot?.[seat]
     );
     used.push(display);
+    const isWinner =
+      snapshot.winnerSeat === seat || snapshot.standings?.[seat] === 1;
     return {
-      rank: snapshot.standings![seat] || seat + 1,
+      rank: isWinner ? 1 : 0,
       name: display,
       color: colors[seat],
       isBot: snapshot.isBot?.[seat],
       isYou: snapshot.userIds?.[seat] === myId,
+      won: isWinner,
+      lost: !isWinner,
+      exited: !!snapshot.eliminated?.[seat],
     };
   });
 }

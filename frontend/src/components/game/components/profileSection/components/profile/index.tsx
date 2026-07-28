@@ -11,6 +11,7 @@ import type {
   ThandleSelectDice,
   ThandleTimer,
 } from "../../../../../../interfaces";
+import { MAX_PLAYER_CHANCES } from "../../../../../../utils/constants";
 
 interface ProfileProps {
   basePosition: TPositionProfiles;
@@ -35,17 +36,25 @@ const Profile = ({
   handleSelectDice,
   handleMuteChat,
 }: ProfileProps) => {
+  const isEliminated =
+    !!player.isEliminated ||
+    (player.timeoutStreak ?? 0) >= MAX_PLAYER_CHANCES;
+  const lostChances = isEliminated
+    ? MAX_PLAYER_CHANCES
+    : Math.min(
+        MAX_PLAYER_CHANCES,
+        Math.max(0, player.timeoutStreak ?? 0)
+      );
   const className = `game-profile ${basePosition.toLowerCase()} ${position.toLowerCase()}${
     hasTurn ? " has-turn" : ""
-  }`;
-  const colorClass = (player.color || "RED").toLowerCase();
+  }${isEliminated ? " is-eliminated" : ""}`;
 
   return (
     <div className={className}>
       <div className="game-profile-dice-name">
         <Image
           player={player}
-          startTimer={hasTurn && actionsTurn.timerActivated}
+          startTimer={hasTurn && actionsTurn.timerActivated && !isEliminated}
           position={position}
           handleMuteChat={handleMuteChat}
           handleInterval={(ends) => handleTimer(ends, player.index)}
@@ -58,30 +67,48 @@ const Profile = ({
           <NameAndDice
             name={player.name}
             diceAvailable={[]}
-            hasTurn={hasTurn}
+            hasTurn={hasTurn && !isEliminated}
           />
-          <div className="game-profile-token-dots" aria-hidden>
-            {[0, 1, 2, 3].map((i) => (
-              <span key={i} className={`on ${colorClass}`} />
+          <div
+            className="game-profile-token-dots"
+            aria-label={
+              isEliminated
+                ? "Lost — no chances left"
+                : `${MAX_PLAYER_CHANCES - lostChances} of ${MAX_PLAYER_CHANCES} chances left`
+            }
+          >
+            {Array.from({ length: MAX_PLAYER_CHANCES }, (_, i) => (
+              <span
+                key={i}
+                className={i < lostChances ? "chance-red" : "chance-green"}
+              />
             ))}
           </div>
         </div>
-        <RenderDice
-          hasTurn={hasTurn}
-          disabledDice={
-            !hasTurn || actionsTurn.disabledDice || !actionsTurn.showDice
-          }
-          showDice
-          showArrow={hasTurn && !actionsTurn.disabledDice && actionsTurn.showDice}
-          diceRollNumber={actionsTurn.diceRollNumber}
-          value={actionsTurn.diceValue}
-          handleDoneDice={handleDoneDice}
-          handleSelectDice={() => {
-            if (hasTurn) handleSelectDice();
-          }}
-        />
+        {!isEliminated && (
+          <RenderDice
+            hasTurn={hasTurn}
+            disabledDice={
+              !hasTurn || actionsTurn.disabledDice || !actionsTurn.showDice
+            }
+            showDice
+            showArrow={
+              hasTurn && !actionsTurn.disabledDice && actionsTurn.showDice
+            }
+            diceRollNumber={actionsTurn.diceRollNumber}
+            value={actionsTurn.diceValue}
+            handleDoneDice={handleDoneDice}
+            handleSelectDice={() => {
+              if (hasTurn) handleSelectDice();
+            }}
+          />
+        )}
       </div>
-      {player.finished && <Ranking value={player.ranking} />}
+      {isEliminated ? (
+        <div className="game-profile-lost">LOST</div>
+      ) : (
+        player.finished && player.ranking === 1 && <Ranking value={1} />
+      )}
     </div>
   );
 };
