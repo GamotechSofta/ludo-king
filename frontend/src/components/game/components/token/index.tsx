@@ -176,7 +176,6 @@ const Token = ({
             : undefined
         }
       >
-        <Piece color={color} style={stylePiece} debug={debug} index={index} />
         {showButton && (
           <button
             type="button"
@@ -185,6 +184,7 @@ const Token = ({
             aria-label="Select pawn"
           />
         )}
+        <Piece color={color} style={stylePiece} debug={debug} index={index} />
       </div>
       {canSelectToken && showTooltip && (
         <Tooltip

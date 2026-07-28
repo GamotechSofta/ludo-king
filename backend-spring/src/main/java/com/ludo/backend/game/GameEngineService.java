@@ -62,6 +62,16 @@ public class GameEngineService {
 
   private final ConcurrentHashMap<String, MatchRuntime> matches = new ConcurrentHashMap<>();
   private final SecureRandom secureRandom = new SecureRandom();
+  private final HumanJailDiceAssist humanJailDiceAssist;
+  private final HumanJailExitAssist humanJailExitAssist;
+
+  public GameEngineService(
+      HumanJailDiceAssist humanJailDiceAssist,
+      HumanJailExitAssist humanJailExitAssist
+  ) {
+    this.humanJailDiceAssist = humanJailDiceAssist;
+    this.humanJailExitAssist = humanJailExitAssist;
+  }
 
   public static class SeatInfo {
     public final String userId;
@@ -89,6 +99,8 @@ public class GameEngineService {
     final boolean[] eliminated;
     final int[] ranking;
     final int[] consecutiveTimeouts;
+    /** Human jail assist: consecutive non-6 rolls while all four tokens were jailed. */
+    final int[] jailAssistFailedRolls;
     final List<Integer> diceList = new ArrayList<>();
     final ReentrantLock lock = new ReentrantLock();
     int currentSeat;
@@ -118,6 +130,7 @@ public class GameEngineService {
       this.eliminated = new boolean[maxPlayers];
       this.ranking = new int[maxPlayers];
       this.consecutiveTimeouts = new int[maxPlayers];
+      this.jailAssistFailedRolls = new int[maxPlayers];
       this.lastActionType = null;
       this.lastActionSeat = null;
       this.lastActionTokenIndex = null;
@@ -523,6 +536,10 @@ public class GameEngineService {
     }
   }
 
+  private static boolean allTokensInJail(MatchRuntime rt, int seat) {
+    return HumanJailDiceAssist.allTokensInJail(rt.tokens[seat]);
+  }
+
   private GameSnapshot rollInternal(MatchRuntime rt, int seat, Integer forcedValue) {
     assertActive(rt);
     if (rt.eliminated[seat] || rt.finished[seat]) {
@@ -539,10 +556,34 @@ public class GameEngineService {
     }
 
     int value;
+    boolean allJailedBeforeRoll = allTokensInJail(rt, seat);
+    boolean humanSeat = !rt.isBot[seat];
+    boolean opponentNearStart =
+        humanSeat
+            && allJailedBeforeRoll
+            && humanJailExitAssist.isEnabled()
+            && humanJailExitAssist.isOpponentNearStartingPath(
+                rt.colors[seat].startTile(),
+                rt.maxPlayers,
+                rt.tokens,
+                rt.eliminated,
+                rt.finished,
+                seat);
     if (forcedValue != null && forcedValue >= 1 && forcedValue <= 6) {
       value = forcedValue;
+    } else if (opponentNearStart) {
+      value = humanJailExitAssist.rollDice(secureRandom);
+    } else if (humanSeat && allJailedBeforeRoll && humanJailDiceAssist.isEnabled()) {
+      value = humanJailDiceAssist.rollDice(secureRandom, rt.jailAssistFailedRolls[seat]);
     } else {
       value = secureRandom.nextInt(6) + 1;
+    }
+    if (humanSeat && allJailedBeforeRoll && humanJailDiceAssist.isEnabled() && !opponentNearStart) {
+      if (value == 6) {
+        rt.jailAssistFailedRolls[seat] = 0;
+      } else {
+        rt.jailAssistFailedRolls[seat] += 1;
+      }
     }
     rt.lastDice = value;
     rt.diceList.clear();
@@ -607,6 +648,10 @@ public class GameEngineService {
     int from = rt.tokens[seat][tokenIndex];
     int to = applySteps(rt.colors[seat], from, dice);
     rt.tokens[seat][tokenIndex] = to;
+
+    if (isJail(from) || !allTokensInJail(rt, seat)) {
+      rt.jailAssistFailedRolls[seat] = 0;
+    }
 
     boolean captured = resolveCapture(rt, seat, tokenIndex, to);
     boolean reachedHome = isHome(to);

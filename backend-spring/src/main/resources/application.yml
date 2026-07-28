@@ -53,6 +53,16 @@ ludo:
   bot:
     # Hard bots: 80% chance to roll exact 1–6 for a legal capture when reachable.
     smart-kill-dice-assist: ${SMART_BOT_DICE_ASSIST:true}
+  human-jail-exit-assist:
+    # Human only: boost six chance when all jailed and opponent is 1–6 cells from start.
+    enabled: ${HUMAN_JAIL_EXIT_ASSIST:true}
+    assist-chance-pct: ${HUMAN_JAIL_EXIT_ASSIST_CHANCE:70}
+  human-jail-assist:
+    enabled: ${HUMAN_JAIL_ASSIST:true}
+    max-assist-attempts: ${MAX_ASSIST_ATTEMPTS:6}
+    normal-rolls-before-boost: ${JAIL_ASSIST_NORMAL_ROLLS:2}
+    boost-step: ${JAIL_ASSIST_BOOST_STEP:0.05}
+    max-six-probability: ${JAIL_ASSIST_MAX_SIX_PROB:0.45}
 
 logging:
   level:

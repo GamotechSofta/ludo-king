@@ -3,6 +3,7 @@ package com.ludo.backend.game;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.ludo.backend.config.HumanJailAssistProperties;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -13,7 +14,11 @@ class GameEngineForfeitTest {
 
   @BeforeEach
   void setUp() {
-    engine = new GameEngineService();
+    HumanJailDiceAssist jailAssist =
+        new HumanJailDiceAssist(
+            new HumanJailAssistProperties(false, 6, 2, 0.05, 0.45));
+    HumanJailExitAssist exitAssist = new HumanJailExitAssist(false, 70);
+    engine = new GameEngineService(jailAssist, exitAssist);
   }
 
   @Test
