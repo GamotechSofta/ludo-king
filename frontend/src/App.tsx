@@ -43,6 +43,16 @@ function parsePlatformQuery(): PlatformQuery | "missing-userid" | null {
   const betRaw = params.get("bet");
   const betNum = betRaw ? Number(betRaw) : NaN;
   const bet = Number.isFinite(betNum) && betNum > 0 ? betNum : undefined;
+  const displayNameRaw =
+    params.get("displayName") ||
+    params.get("name") ||
+    params.get("username") ||
+    params.get("playerName") ||
+    params.get("userName");
+  const displayName =
+    displayNameRaw && displayNameRaw.trim()
+      ? displayNameRaw.trim().slice(0, 64)
+      : undefined;
 
   const hasAnyPlatformHint =
     userId != null ||
@@ -65,6 +75,7 @@ function parsePlatformQuery(): PlatformQuery | "missing-userid" | null {
     returnUrl: returnUrl || undefined,
     players,
     bet,
+    displayName,
   };
 }
 

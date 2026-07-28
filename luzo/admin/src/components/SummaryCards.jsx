@@ -1,4 +1,4 @@
-import { formatMoney, formatNumber } from "../utils/format";
+import { formatMoney, formatNumber, formatPnL, pnlTone } from "../utils/format";
 
 function pick(summary, keys, fallback = 0) {
   if (!summary) return fallback;
@@ -10,6 +10,26 @@ function pick(summary, keys, fallback = 0) {
 
 export default function SummaryCards({ summary }) {
   const currency = pick(summary, ["currency"], "INR");
+  const income = Number(
+    pick(summary, ["totalRealIncome", "totalIncome", "income", "grossIncome"])
+  );
+  const net = Number(
+    pick(summary, ["platformProfit", "totalPlatformProfit"])
+  );
+  const profitOnly = Number(
+    pick(summary, ["totalProfit", "profit"], Math.max(0, net))
+  );
+  // Prefer explicit totalLoss from API; else derive from negative net
+  const lossFromApi = pick(summary, ["totalLoss", "loss"], null);
+  const lossOnly =
+    lossFromApi != null
+      ? Math.abs(Number(lossFromApi))
+      : net < 0
+        ? Math.abs(net)
+        : 0;
+  const payouts = Number(
+    pick(summary, ["winnerPayouts", "totalPayouts", "payouts"])
+  );
 
   const cards = [
     {
@@ -20,21 +40,41 @@ export default function SummaryCards({ summary }) {
     },
     {
       label: "Income",
-      value: formatMoney(
-        pick(summary, ["totalIncome", "income", "grossIncome"]),
-        currency
-      ),
+      value: formatMoney(income, currency),
+      hint: "Real player bets",
     },
     {
-      label: "Platform profit",
-      value: formatMoney(
-        pick(summary, [
-          "platformProfit",
-          "totalPlatformProfit",
-          "profit",
-        ]),
-        currency
-      ),
+      label: "Profit",
+      value: formatMoney(profitOnly, currency),
+      tone: profitOnly > 0 ? "positive" : "neutral",
+      hint: "Sum of winning games",
+    },
+    {
+      label: "Loss",
+      value: formatMoney(lossOnly, currency),
+      tone: lossOnly > 0 ? "negative" : "neutral",
+      hint: "Sum of losing games",
+    },
+    {
+      label: "Net P&L",
+      value: formatPnL(net, currency),
+      tone: pnlTone(net),
+      hint: "Income − winner payouts",
+    },
+    {
+      label: "Margin",
+      value: `${Number(pick(summary, ["marginPct"], 0)).toFixed(1)}%`,
+      tone: pnlTone(net),
+      hint: "Net ÷ income",
+    },
+    {
+      label: "Rake (info)",
+      value: formatMoney(pick(summary, ["totalRake", "rake"]), currency),
+      hint: "Fee × seats across games",
+    },
+    {
+      label: "Winner payouts",
+      value: formatMoney(payouts, currency),
     },
     {
       label: "Users",
@@ -56,13 +96,6 @@ export default function SummaryCards({ summary }) {
         })()
       ),
     },
-    {
-      label: "Payouts",
-      value: formatMoney(
-        pick(summary, ["totalPayouts", "payouts", "winnerPayouts"]),
-        currency
-      ),
-    },
   ];
 
   return (
@@ -70,7 +103,10 @@ export default function SummaryCards({ summary }) {
       {cards.map((card) => (
         <div key={card.label} className="summary-card">
           <div className="summary-label">{card.label}</div>
-          <div className="summary-value">{card.value}</div>
+          <div className={`summary-value pnl-${card.tone || "neutral"}`}>
+            {card.value}
+          </div>
+          {card.hint ? <div className="summary-hint">{card.hint}</div> : null}
         </div>
       ))}
     </div>

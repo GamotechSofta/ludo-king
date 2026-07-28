@@ -45,7 +45,18 @@ export default function GameDetailModal({ game, onClose, currency = "INR" }) {
             label="Entry fee"
             value={formatMoney(game.entryFee ?? game.betAmount, cur)}
           />
-          <Detail label="Pot" value={formatMoney(game.pot ?? game.potAmount, cur)} />
+          <Detail
+            label="Display pot"
+            value={formatMoney(game.displayPot ?? game.pot ?? game.potAmount, cur)}
+          />
+          <Detail
+            label="Rake"
+            value={formatMoney(game.rake ?? game.displayPotRake ?? game.realPotRake, cur)}
+          />
+          <Detail
+            label="Real income"
+            value={formatMoney(game.totalRealIncome ?? game.income, cur)}
+          />
           <Detail
             label="Winner payout"
             value={formatMoney(game.winnerPayout ?? game.payout, cur)}
@@ -57,6 +68,23 @@ export default function GameDetailModal({ game, onClose, currency = "INR" }) {
             value={
               <span className={`pnl-${pnlTone(game.platformProfit ?? game.profit)}`}>
                 {formatPnL(game.platformProfit ?? game.profit, cur)}
+              </span>
+            }
+          />
+          <Detail
+            label="Loss"
+            value={
+              <span
+                className={`pnl-${
+                  Number(game.platformProfit ?? game.profit) < 0 ? "negative" : "neutral"
+                }`}
+              >
+                {formatMoney(
+                  Number(game.platformProfit ?? game.profit) < 0
+                    ? Math.abs(Number(game.platformProfit ?? game.profit))
+                    : 0,
+                  cur
+                )}
               </span>
             }
           />

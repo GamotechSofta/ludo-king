@@ -1,6 +1,7 @@
 import SummaryCards from "../components/SummaryCards";
 import GamesTable from "../components/GamesTable";
 import UsersTable from "../components/UsersTable";
+import PlAnalytics from "../components/PlAnalytics";
 
 function operatorsFrom(summary) {
   if (!summary) return [];
@@ -44,7 +45,8 @@ export default function ProfitLossPage({
         <div>
           <h1>Profit &amp; Loss</h1>
           <p className="page-lead">
-            Slice finished matches by player count and operator.
+            Income, rake, profit/loss breakdown with charts — filter by 2P / 4P
+            and platform.
           </p>
         </div>
       </header>
@@ -121,6 +123,7 @@ export default function ProfitLossPage({
       {section === "overview" && (
         <>
           <SummaryCards summary={summary} />
+          <PlAnalytics summary={summary} />
           <section className="panel">
             <div className="panel-header">
               <h2>Recent games</h2>

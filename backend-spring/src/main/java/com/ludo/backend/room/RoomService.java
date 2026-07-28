@@ -8,6 +8,7 @@ import com.ludo.backend.platform.wallet.MatchEconomyService;
 import com.ludo.backend.platform.wallet.WalletProperties;
 import com.ludo.backend.realtime.MatchmakingEventPublisher;
 import com.ludo.backend.realtime.RedisMatchQueue;
+import com.ludo.backend.user.UserService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.security.SecureRandom;
 import java.time.Instant;
@@ -47,6 +48,7 @@ public class RoomService {
   private final MatchmakingEventPublisher events;
   private final ObjectMapper objectMapper;
   private final MongoTemplate mongoTemplate;
+  private final UserService userService;
   private final SecureRandom random = new SecureRandom();
 
   private final ConcurrentHashMap<String, ConcurrentLinkedQueue<QueueEntry>> queues =
@@ -61,7 +63,8 @@ public class RoomService {
       MatchEconomyService matchEconomy,
       MatchmakingEventPublisher events,
       ObjectMapper objectMapper,
-      MongoTemplate mongoTemplate
+      MongoTemplate mongoTemplate,
+      UserService userService
   ) {
     this.roomRepository = roomRepository;
     this.gameEngineService = gameEngineService;
@@ -70,6 +73,7 @@ public class RoomService {
     this.events = events;
     this.objectMapper = objectMapper;
     this.mongoTemplate = mongoTemplate;
+    this.userService = userService;
   }
 
   public record QueueEntry(String userId, String username, Instant enqueuedAt) {
@@ -99,6 +103,7 @@ public class RoomService {
     if (maxPlayers < 2 || maxPlayers > 4) {
       throw new IllegalArgumentException("maxPlayers must be 2-4");
     }
+    username = userService.resolveDisplayName(userId, username);
     String tier = stakeTier == null || stakeTier.isBlank() ? "FREE" : stakeTier.trim().toUpperCase();
     double bet = WalletProperties.parseStakeAmount(tier, matchEconomy.entryFee());
     if (matchEconomy.isLive() && bet <= 0 && !"FREE".equals(tier) && !"PRIVATE".equals(tier)) {
@@ -567,12 +572,16 @@ public class RoomService {
     if (!GameEngineService.PHASE_FINISHED.equals(snap.getPhase())) {
       return;
     }
+    Integer winnerSeat = snap.getWinnerSeat();
+    if (winnerSeat != null && winnerSeat >= 0 && winnerSeat < room.getPlayers().size()) {
+      room.setWinnerId(room.getPlayers().get(winnerSeat).getUserId());
+    }
     // Mark COMPLETED first so rematch / re-queue is never blocked by async wallet settle
     if (room.getStatus() != RoomStatus.COMPLETED) {
       room.setStatus(RoomStatus.COMPLETED);
       room.setEndedAt(Instant.now());
-      roomRepository.save(room);
     }
+    roomRepository.save(room);
     matchEconomy.settleMatch(room, snap);
   }
 

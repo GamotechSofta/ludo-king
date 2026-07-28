@@ -22,8 +22,9 @@ export default function GamesTable({ data, onSelect, currency = "INR" }) {
             <th>Mode</th>
             <th>Finished</th>
             <th>Entry</th>
-            <th>Pot</th>
-            <th>Platform profit</th>
+            <th>Real income</th>
+            <th>Winner payout</th>
+            <th>Profit / Loss</th>
             <th></th>
           </tr>
         </thead>
@@ -55,7 +56,16 @@ export default function GamesTable({ data, onSelect, currency = "INR" }) {
                   )}
                 </td>
                 <td>
-                  {formatMoney(game.pot ?? game.potAmount, game.currency || currency)}
+                  {formatMoney(
+                    game.totalRealIncome ?? game.income ?? game.pot ?? game.potAmount,
+                    game.currency || currency
+                  )}
+                </td>
+                <td>
+                  {formatMoney(
+                    game.winnerPayout ?? game.payout ?? 0,
+                    game.currency || currency
+                  )}
                 </td>
                 <td className={`pnl-${pnlTone(profit)}`}>
                   {formatPnL(profit, game.currency || currency)}

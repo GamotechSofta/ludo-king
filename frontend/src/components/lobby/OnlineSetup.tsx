@@ -27,7 +27,23 @@ const OnlineSetup = ({ onBack, onQueued }: OnlineSetupProps) => {
   const winAmount = WIN_BY_PLAYERS[maxPlayers];
 
   const ensureGuest = async () => {
-    const guest = await createGuest("Player");
+    try {
+      const raw = localStorage.getItem("ludoGuest");
+      if (raw) {
+        const saved = JSON.parse(raw) as IGuestUser;
+        if (
+          saved?.id &&
+          saved.username &&
+          !/^Player(?:\s*\d+)?$/i.test(saved.username.trim())
+        ) {
+          return saved;
+        }
+      }
+    } catch {
+      /* ignore bad cache */
+    }
+    const suffix = Math.floor(1000 + Math.random() * 9000);
+    const guest = await createGuest(`Guest${suffix}`);
     localStorage.setItem("ludoGuest", JSON.stringify(guest));
     return guest;
   };

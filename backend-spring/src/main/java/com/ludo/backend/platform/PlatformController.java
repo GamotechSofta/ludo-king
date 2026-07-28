@@ -1,6 +1,7 @@
 package com.ludo.backend.platform;
 
 import com.ludo.backend.platform.wallet.MatchEconomyService;
+import com.ludo.backend.user.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import java.util.LinkedHashMap;
@@ -35,9 +36,11 @@ public class PlatformController {
   private String sharedSecret;
 
   private final MatchEconomyService matchEconomy;
+  private final UserService userService;
 
-  public PlatformController(MatchEconomyService matchEconomy) {
+  public PlatformController(MatchEconomyService matchEconomy, UserService userService) {
     this.matchEconomy = matchEconomy;
+    this.userService = userService;
   }
 
   public record LaunchRequest(
@@ -70,7 +73,12 @@ public class PlatformController {
     );
     HttpSession session = request.getSession(true);
     session.setAttribute(PlatformLaunchContext.SESSION_KEY, ctx);
-    log.info("platform launch userId={} gameId={} sessionId={}", userId, gameId, ctx.sessionId());
+    try {
+      userService.upsertPlatformProfile(userId, displayName);
+    } catch (Exception e) {
+      log.warn("platform profile upsert failed userId={}: {}", userId, e.getMessage());
+    }
+    log.info("platform launch userId={} gameId={} sessionId={} name={}", userId, gameId, ctx.sessionId(), displayName);
 
     Double balance = null;
     String balanceError = null;

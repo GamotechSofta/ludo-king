@@ -1,5 +1,6 @@
 package com.ludo.backend.platform.wallet;
 
+import com.ludo.backend.admin.AdminSettingsService;
 import com.ludo.backend.game.GameEngineService;
 import com.ludo.backend.game.GameSnapshot;
 import com.ludo.backend.room.Room;
@@ -16,6 +17,11 @@ import org.springframework.web.server.ResponseStatusException;
  * Match ledger for admin P&amp;L + optional Aakda wallet.
  * Always writes local {@code match_economy} rows for human seats (incl. FREE / wallet-off)
  * so the admin dashboard is populated. Wallet debit/credit only when {@link #isLive()}.
+ *
+ * <p>Settlement mirrors craft/luzo wallet math:
+ * display pot = entryFee × all seats (bots count as synthetic paid seats),
+ * rake = min(pot, platformFeePerPlayer × paidSeats),
+ * winner payout = pot − rake (0 if bot/house wins).
  */
 @Service
 public class MatchEconomyService {
@@ -25,15 +31,18 @@ public class MatchEconomyService {
   private final AakdaWalletClient wallet;
   private final WalletProperties props;
   private final MatchEconomyRepository repository;
+  private final AdminSettingsService adminSettings;
 
   public MatchEconomyService(
       AakdaWalletClient wallet,
       WalletProperties props,
-      MatchEconomyRepository repository
+      MatchEconomyRepository repository,
+      AdminSettingsService adminSettings
   ) {
     this.wallet = wallet;
     this.props = props;
     this.repository = repository;
+    this.adminSettings = adminSettings;
   }
 
   public boolean isLive() {
@@ -195,7 +204,6 @@ public class MatchEconomyService {
     MatchEconomyEntry winEntry =
         repository.findByMatchIdAndUserId(room.getId(), winner.getUserId()).orElse(null);
     if (winEntry != null && MatchEconomyEntry.SETTLED.equals(winEntry.getStatus())) {
-      // Still mark any leftover RESERVED/PLAYING siblings
       for (MatchEconomyEntry e : repository.findByMatchId(room.getId())) {
         if (MatchEconomyEntry.PLAYING.equals(e.getStatus())
             || MatchEconomyEntry.RESERVED.equals(e.getStatus())) {
@@ -207,12 +215,10 @@ public class MatchEconomyService {
       return;
     }
 
-    double pot = repository.findByMatchId(room.getId()).stream()
-        .filter(e -> !MatchEconomyEntry.REFUNDED.equals(e.getStatus()))
-        .mapToDouble(MatchEconomyEntry::getEntryAmount)
-        .sum();
+    SettlementMath math = computeSettlement(room);
     double payout;
     if (winner.isBot()) {
+      // House win: keep real reservations; no winner credit.
       payout = 0;
     } else if (props.winPayout() > 0) {
       payout = WalletProperties.money(props.winPayout());
@@ -220,7 +226,7 @@ public class MatchEconomyService {
       payout = WalletProperties.money(
           (winEntry != null ? winEntry.getEntryAmount() : entryFee()) * props.winMultiplier());
     } else {
-      payout = WalletProperties.money(pot);
+      payout = math.winnerPayout();
     }
 
     String winTxn = "LUDO_WIN_" + room.getId() + "_" + winner.getUserId();
@@ -248,18 +254,68 @@ public class MatchEconomyService {
       repository.save(e);
     }
     log.info(
-        "settled matchId={} winner={} payout={} walletLive={}",
+        "settled matchId={} winner={} seats={} displayPot={} rake={} realIncome={} payout={} walletLive={}",
         room.getId(),
         winner.getUserId(),
+        math.paidSeats(),
+        math.displayPot(),
+        math.rake(),
+        math.realIncome(),
         payout,
         isLive()
     );
   }
 
+  /**
+   * Craft-style pot math: bots count as synthetic paid seats for pot/rake;
+   * real income is human cash only.
+   * FREE rooms (entryFee=0) use configured {@link #entryFee()} so admin P&amp;L still shows.
+   */
+  public SettlementMath computeSettlement(Room room) {
+    List<MatchEconomyEntry> rows = repository.findByMatchId(room.getId()).stream()
+        .filter(e -> !MatchEconomyEntry.REFUNDED.equals(e.getStatus()))
+        .toList();
+    double ledgerIncome = rows.stream().mapToDouble(MatchEconomyEntry::getEntryAmount).sum();
+
+    int seats = Math.max(room.getPlayers().size(), room.getMaxPlayers());
+    long humans = room.getPlayers().stream().filter(p -> !p.isBot()).count();
+    double seatFee = room.getEntryFee() > 0
+        ? WalletProperties.money(room.getEntryFee())
+        : 0;
+    if (seatFee <= 0 && ledgerIncome > 0 && humans > 0) {
+      seatFee = WalletProperties.money(ledgerIncome / humans);
+    }
+    // FREE / missing fee → configured entry fee (admin + local accounting)
+    if (seatFee <= 0) {
+      seatFee = entryFee();
+    }
+
+    double realIncome = ledgerIncome;
+    if (realIncome <= 0 && seatFee > 0 && humans > 0) {
+      realIncome = WalletProperties.money(seatFee * humans);
+    }
+
+    double displayPot = WalletProperties.money(seatFee * seats);
+    int paidSeats = seatFee > 0 ? seats : 0;
+    double feePerPlayer = adminSettings.platformFeePerPlayer();
+    double rake = WalletProperties.money(Math.min(displayPot, feePerPlayer * paidSeats));
+    double winnerPayout = WalletProperties.money(Math.max(0, displayPot - rake));
+    return new SettlementMath(displayPot, rake, realIncome, winnerPayout, paidSeats, seatFee);
+  }
+
+  public record SettlementMath(
+      double displayPot,
+      double rake,
+      double realIncome,
+      double winnerPayout,
+      int paidSeats,
+      double seatFee
+  ) {}
+
   private void ensureHumanLedgerRows(Room room) {
     double fee = room.getEntryFee() > 0
         ? WalletProperties.money(room.getEntryFee())
-        : 0;
+        : entryFee();
     for (RoomPlayer p : room.getPlayers()) {
       if (p.isBot() || p.getUserId() == null) {
         continue;

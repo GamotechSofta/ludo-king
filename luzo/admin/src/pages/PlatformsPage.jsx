@@ -59,7 +59,21 @@ export default function PlatformsPage({ summary, loading, error, onSelectPlatfor
                   <Stat
                     label="Profit"
                     value={formatMoney(
-                      op.platformProfit ?? op.profit ?? op.attributedProfit,
+                      op.profit ??
+                        (Number(op.platformProfit ?? op.attributedProfit) > 0
+                          ? op.platformProfit ?? op.attributedProfit
+                          : 0),
+                      currency
+                    )}
+                  />
+                  <Stat
+                    label="Loss"
+                    value={formatMoney(
+                      op.loss ??
+                        op.totalLoss ??
+                        (Number(op.platformProfit ?? op.attributedProfit) < 0
+                          ? Math.abs(Number(op.platformProfit ?? op.attributedProfit))
+                          : 0),
                       currency
                     )}
                   />

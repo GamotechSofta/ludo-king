@@ -27,6 +27,8 @@ export interface PlatformQuery {
   players?: TPlayers;
   /** Optional preselect ?bet=20 */
   bet?: number;
+  /** Aakda / launch query: displayName | name | username */
+  displayName?: string;
 }
 
 interface Props {
@@ -71,7 +73,8 @@ const PlatformLaunch = ({ query, onReady, onError }: Props) => {
           return;
         }
         setMessage("Connecting…");
-        const displayName = "Player";
+        const displayName =
+          (query.displayName && query.displayName.trim()) || "Player";
         const launched = await platformLaunch({
           userId: query.userId.trim(),
           gameId: query.gameId || "LUDO",
@@ -106,13 +109,15 @@ const PlatformLaunch = ({ query, onReady, onError }: Props) => {
         }
 
         setMessage("Preparing player…");
-        await createGuest(launched.displayName || displayName);
+        const resolvedName =
+          (launched.displayName && launched.displayName.trim()) || displayName;
+        await createGuest(resolvedName);
         if (cancelled) return;
 
         const guest: IGuestUser = {
           id: launched.userId,
-          username: launched.displayName || displayName,
-          name: launched.displayName || displayName,
+          username: resolvedName,
+          name: resolvedName,
           rating: 1000,
           avatarId: "1",
         };

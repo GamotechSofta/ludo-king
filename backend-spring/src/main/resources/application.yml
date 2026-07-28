@@ -37,7 +37,7 @@ ludo:
     enabled: ${LUDO_WALLET_ENABLED:true}
     base-url: ${AAKDA_WALLET_BASE_URL:}
     game-id: ${GAME_ID:LUDO}
-    entry-fee: ${ENTRY_FEE:10}
+    entry-fee: ${ENTRY_FEE:100}
     # Selectable bets shown in UI (comma-separated)
     bet-options: ${BET_OPTIONS:10,20,50,100}
     # 0 = winner-takes-pot. Or set WIN_PAYOUT / WIN_MULTIPLIER.
@@ -48,6 +48,8 @@ ludo:
     password: ${ADMIN_PASSWORD:admin123}
     name: ${ADMIN_NAME:PotLudo Admin}
     token-ttl-hours: ${ADMIN_TOKEN_TTL_HOURS:24}
+    # House rake per paid seat (bots count as paid for pot math)
+    platform-fee-per-player: ${PLATFORM_FEE_PER_PLAYER:10}
   bot:
     # Hard bots: 80% chance to roll exact 1–6 for a legal capture when reachable.
     smart-kill-dice-assist: ${SMART_BOT_DICE_ASSIST:true}
