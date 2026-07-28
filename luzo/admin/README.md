@@ -1,6 +1,6 @@
-# PotLudo Admin Panel
+# Ludo King Admin Panel
 
-React admin console for PotLudo — login, live dashboard, per-platform (operator) breakdown, profit & loss, and platform fee settings.
+React admin console for Ludo King — login, live dashboard, per-platform (operator) breakdown, profit & loss, and platform fee settings.
 
 Talks to **backend-spring** (`E:\ludo-king\backend-spring`, port **3000**) admin APIs over HTTP. In local dev, Vite proxies `/api` to that backend.
 
@@ -13,7 +13,7 @@ Talks to **backend-spring** (`E:\ludo-king\backend-spring`, port **3000**) admin
 | UI | React 19 |
 | Bundler | Vite 8 |
 | Styling | Tailwind CSS 4 |
-| Auth token | `localStorage` key `potludo_admin_token` |
+| Auth token | `localStorage` key `ludo_king_admin_token` |
 | Dev port | `5174` |
 | API (default) | Proxied to `http://localhost:3000` |
 
@@ -80,7 +80,7 @@ backend-spring (:3000)
 ### Auth
 
 1. App mounts → “Checking admin session…”
-2. If `potludo_admin_token` exists → `GET /api/v1/admin/auth/me`
+2. If `ludo_king_admin_token` exists → `GET /api/v1/admin/auth/me`
 3. Valid session → load dashboard + P&L data
 4. No / invalid token → **Login** page
 5. Login → `POST /api/v1/admin/auth/login` with `{ email, password }`

@@ -39,6 +39,11 @@ public class AdminProfitLossService {
   private final AdminSettingsService adminSettings;
   private final UserService userService;
 
+  private static final long GAMES_CACHE_TTL_MS = 45_000;
+  private final Map<String, CachedGames> gamesCache = new java.util.concurrent.ConcurrentHashMap<>();
+
+  private record CachedGames(List<Map<String, Object>> games, long expiresAtMs) {}
+
   public AdminProfitLossService(
       MatchEconomyRepository repository,
       RoomRepository roomRepository,
@@ -58,7 +63,7 @@ public class AdminProfitLossService {
       return emptySummary();
     }
 
-    List<Map<String, Object>> games = buildAllGames(players);
+    List<Map<String, Object>> games = buildAllGames(players, false);
     double income = 0;
     double payouts = 0;
     double totalProfit = 0;
@@ -269,7 +274,8 @@ public class AdminProfitLossService {
     if (unknownOperator(operatorId)) {
       return paginate(List.of(), page, limit, "games");
     }
-    List<Map<String, Object>> games = buildAllGames(players);
+    // List view: skip per-user DB name lookups (room usernames are enough for table/modal)
+    List<Map<String, Object>> games = buildAllGames(players, false);
     games.sort((a, b) -> {
       Instant ia = (Instant) a.get("finishedAt");
       Instant ib = (Instant) b.get("finishedAt");
@@ -288,7 +294,7 @@ public class AdminProfitLossService {
 
     // Aggregate from finished games (respects 2P/4P filter).
     Map<String, Map<String, Object>> userRows = new LinkedHashMap<>();
-    for (Map<String, Object> g : buildAllGames(players)) {
+    for (Map<String, Object> g : buildAllGames(players, false)) {
       Object plist = g.get("players");
       if (!(plist instanceof List<?> list)) {
         continue;
@@ -306,9 +312,9 @@ public class AdminProfitLossService {
         Map<String, Object> row = userRows.computeIfAbsent(userId, id -> {
           Map<String, Object> r = new LinkedHashMap<>();
           r.put("userId", id);
-          String uname = p.get("username") != null ? String.valueOf(p.get("username")) : null;
-          r.put("username", userService.resolveDisplayName(id, uname));
-          r.put("name", userService.resolveDisplayName(id, uname));
+          String uname = p.get("username") != null ? String.valueOf(p.get("username")) : id;
+          r.put("username", uname);
+          r.put("name", uname);
           r.put("operatorId", "default");
           r.put("operatorName", "Ludo King");
           r.put("games", 0L);
@@ -363,8 +369,43 @@ public class AdminProfitLossService {
   }
 
   private List<Map<String, Object>> buildAllGames(Integer players) {
+    return buildAllGames(players, true);
+  }
+
+  /**
+   * @param includePlayers when false, skip per-player name lookups (summary path).
+   */
+  private List<Map<String, Object>> buildAllGames(Integer players, boolean includePlayers) {
+    // Short TTL cache — first admin paint hits this hard otherwise.
+    String cacheKey = (players == null ? "all" : String.valueOf(players))
+        + "|"
+        + includePlayers;
+    CachedGames hit = gamesCache.get(cacheKey);
+    long now = System.currentTimeMillis();
+    if (hit != null && hit.expiresAtMs() > now) {
+      return new ArrayList<>(hit.games());
+    }
+
     List<MatchEconomyEntry> all = repository.findAll();
     Map<String, List<MatchEconomyEntry>> byMatch = groupByMatch(all);
+
+    List<Room> finished = finishedRooms();
+    Map<String, Room> roomsById = new HashMap<>(Math.max(16, finished.size() * 2));
+    for (Room room : finished) {
+      roomsById.put(room.getId(), room);
+    }
+
+    // Batch-load any economy match rooms missing from finished set (one query).
+    List<String> missing = byMatch.keySet().stream()
+        .filter(id -> !roomsById.containsKey(id))
+        .toList();
+    if (!missing.isEmpty()) {
+      for (Room room : roomRepository.findAllById(missing)) {
+        roomsById.put(room.getId(), room);
+      }
+    }
+
+    Map<String, String> nameCache = new HashMap<>();
     List<Map<String, Object>> games = new ArrayList<>();
     Set<String> seen = new HashSet<>();
 
@@ -372,8 +413,9 @@ public class AdminProfitLossService {
       if (!isSettledMatch(e.getValue())) {
         continue;
       }
-      Room room = roomRepository.findById(e.getKey()).orElse(null);
-      Map<String, Object> row = gameRowFromEconomy(e.getKey(), e.getValue(), room);
+      Room room = roomsById.get(e.getKey());
+      Map<String, Object> row =
+          gameRowFromEconomy(e.getKey(), e.getValue(), room, includePlayers, nameCache);
       if (!matchesPlayerFilter(row, players)) {
         continue;
       }
@@ -381,17 +423,31 @@ public class AdminProfitLossService {
       games.add(row);
     }
 
-    for (Room room : finishedRooms()) {
+    for (Room room : finished) {
       if (seen.contains(room.getId())) {
         continue;
       }
-      Map<String, Object> row = gameRowFromRoom(room);
+      List<MatchEconomyEntry> rows = byMatch.getOrDefault(room.getId(), List.of());
+      Map<String, Object> row = gameRowFromRoom(room, rows, includePlayers, nameCache);
       if (!matchesPlayerFilter(row, players)) {
         continue;
       }
       games.add(row);
     }
+
+    gamesCache.put(cacheKey, new CachedGames(List.copyOf(games), now + GAMES_CACHE_TTL_MS));
     return games;
+  }
+
+  private String displayName(String userId, String fallback, Map<String, String> nameCache) {
+    if (userId == null) {
+      return fallback != null ? fallback : "Player";
+    }
+    if (nameCache != null) {
+      return nameCache.computeIfAbsent(
+          userId, id -> userService.resolveDisplayName(id, fallback));
+    }
+    return userService.resolveDisplayName(userId, fallback);
   }
 
   private List<Room> finishedRooms() {
@@ -407,10 +463,12 @@ public class AdminProfitLossService {
   private Map<String, Object> gameRowFromEconomy(
       String matchId,
       List<MatchEconomyEntry> rows,
-      Room room
+      Room room,
+      boolean includePlayers,
+      Map<String, String> nameCache
   ) {
     MatchEconomyService.SettlementMath math = room != null
-        ? matchEconomy.computeSettlement(room)
+        ? matchEconomy.computeSettlement(room, rows)
         : null;
 
     double ledgerIncome = rows.stream()
@@ -437,7 +495,6 @@ public class AdminProfitLossService {
       displayPot = math.displayPot();
       rake = math.rake();
       realIncome = ledgerIncome > 0 ? ledgerIncome : math.realIncome();
-      // Prefer settled ledger payout; if FREE/legacy zeros, use craft formula
       if (ledgerPayout > 0) {
         winnerPayout = ledgerPayout;
       } else if (winnerBot) {
@@ -493,6 +550,49 @@ public class AdminProfitLossService {
     row.put("realPlayers", realPlayers);
     row.put("botPlayers", botPlayers);
 
+    if (!includePlayers) {
+      List<Map<String, Object>> light = new ArrayList<>();
+      for (MatchEconomyEntry e : rows) {
+        if (MatchEconomyEntry.REFUNDED.equals(e.getStatus())) {
+          continue;
+        }
+        Map<String, Object> pr = new LinkedHashMap<>();
+        double bet = e.getEntryAmount() > 0 ? e.getEntryAmount() : entryFee;
+        double payout = e.getSettleAmount();
+        if (payout <= 0 && room != null && room.getWinnerId() != null
+            && room.getWinnerId().equals(e.getUserId()) && !winnerBot) {
+          payout = winnerPayout;
+        }
+        pr.put("userId", e.getUserId());
+        RoomPlayer rp = room != null
+            ? room.getPlayers().stream()
+                .filter(p -> e.getUserId() != null && e.getUserId().equals(p.getUserId()))
+                .findFirst().orElse(null)
+            : null;
+        pr.put("username", rp != null ? rp.getUsername() : e.getUserId());
+        pr.put("bet", bet);
+        pr.put("payout", payout);
+        pr.put("isBot", false);
+        light.add(pr);
+      }
+      if (room != null) {
+        for (RoomPlayer p : room.getPlayers()) {
+          if (!p.isBot()) {
+            continue;
+          }
+          Map<String, Object> pr = new LinkedHashMap<>();
+          pr.put("userId", p.getUserId());
+          pr.put("username", p.getUsername());
+          pr.put("bet", 0);
+          pr.put("payout", 0);
+          pr.put("isBot", true);
+          light.add(pr);
+        }
+      }
+      row.put("players", light);
+      return row;
+    }
+
     Map<String, RoomPlayer> byUser = new HashMap<>();
     if (room != null) {
       for (RoomPlayer p : room.getPlayers()) {
@@ -518,10 +618,7 @@ public class AdminProfitLossService {
       pr.put("userId", e.getUserId());
       pr.put(
           "username",
-          userService.resolveDisplayName(
-              e.getUserId(),
-              rp != null ? rp.getUsername() : null
-          )
+          displayName(e.getUserId(), rp != null ? rp.getUsername() : null, nameCache)
       );
       pr.put("bet", bet);
       pr.put("betAmount", bet);
@@ -540,12 +637,7 @@ public class AdminProfitLossService {
         }
         Map<String, Object> pr = new LinkedHashMap<>();
         pr.put("userId", p.getUserId());
-        pr.put(
-            "username",
-            p.isBot()
-                ? (p.getUsername() != null ? p.getUsername() : "Bot")
-                : userService.resolveDisplayName(p.getUserId(), p.getUsername())
-        );
+        pr.put("username", p.getUsername() != null ? p.getUsername() : "Bot");
         pr.put("bet", 0);
         pr.put("betAmount", 0);
         pr.put("payout", 0);
@@ -561,8 +653,13 @@ public class AdminProfitLossService {
     return row;
   }
 
-  private Map<String, Object> gameRowFromRoom(Room room) {
-    MatchEconomyService.SettlementMath math = matchEconomy.computeSettlement(room);
+  private Map<String, Object> gameRowFromRoom(
+      Room room,
+      List<MatchEconomyEntry> rows,
+      boolean includePlayers,
+      Map<String, String> nameCache
+  ) {
+    MatchEconomyService.SettlementMath math = matchEconomy.computeSettlement(room, rows);
     int bots = (int) room.getPlayers().stream().filter(RoomPlayer::isBot).count();
     int humans = room.getPlayers().size() - bots;
     int playerCount = Math.max(room.getMaxPlayers(), room.getPlayers().size());
@@ -572,7 +669,6 @@ public class AdminProfitLossService {
         ? math.realIncome()
         : round2(math.seatFee() * humans);
     double winnerPayoutRaw = winnerBot ? 0 : math.winnerPayout();
-    // If ledger empty but FREE, keep zeros
     if (math.seatFee() <= 0 && realIncome <= 0) {
       winnerPayoutRaw = 0;
     }
@@ -604,6 +700,27 @@ public class AdminProfitLossService {
     row.put("realPlayers", humans);
     row.put("botPlayers", bots);
 
+    if (!includePlayers) {
+      // Lightweight seats for user aggregation when needed
+      row.put(
+          "players",
+          room.getPlayers().stream().map(p -> {
+            Map<String, Object> pr = new LinkedHashMap<>();
+            boolean isWinner = room.getWinnerId() != null
+                && room.getWinnerId().equals(p.getUserId());
+            double bet = p.isBot() ? 0 : math.seatFee();
+            double payout = (!p.isBot() && isWinner && !winnerBot) ? winnerPayout : 0;
+            pr.put("userId", p.getUserId());
+            pr.put("username", p.getUsername());
+            pr.put("bet", bet);
+            pr.put("payout", payout);
+            pr.put("isBot", p.isBot());
+            return pr;
+          }).toList()
+      );
+      return row;
+    }
+
     String winnerId = room.getWinnerId();
     row.put(
         "players",
@@ -617,7 +734,7 @@ public class AdminProfitLossService {
               "username",
               p.isBot()
                   ? (p.getUsername() != null ? p.getUsername() : "Bot")
-                  : userService.resolveDisplayName(p.getUserId(), p.getUsername())
+                  : displayName(p.getUserId(), p.getUsername(), nameCache)
           );
           pr.put("bet", bet);
           pr.put("betAmount", bet);

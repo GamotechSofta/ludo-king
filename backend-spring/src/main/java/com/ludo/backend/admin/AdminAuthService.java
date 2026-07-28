@@ -21,7 +21,7 @@ public class AdminAuthService {
   public AdminAuthService(
       @Value("${ludo.admin.email:admin@ludo.local}") String adminEmail,
       @Value("${ludo.admin.password:admin123}") String adminPassword,
-      @Value("${ludo.admin.name:PotLudo Admin}") String adminName,
+      @Value("${ludo.admin.name:Ludo King Admin}") String adminName,
       @Value("${ludo.admin.token-ttl-hours:24}") long tokenTtlHours
   ) {
     this.adminEmail = adminEmail.trim();

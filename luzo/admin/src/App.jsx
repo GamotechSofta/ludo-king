@@ -70,6 +70,9 @@ export default function App() {
     ]);
     setDashboardSummary(summary);
     setDashboardGames(games);
+    // Reuse for P&L overview so we don't fetch summary twice on boot
+    setPlSummary(summary);
+    setPlGames(games);
   }, []);
 
   const loadProfitLoss = useCallback(async (filters, gamesPage = 1, usersPage = 1) => {
@@ -85,6 +88,10 @@ export default function App() {
     setPlSummary(summary);
     setPlGames(games);
     setPlUsers(users);
+    if (!filters.players && !filters.operatorId) {
+      setDashboardSummary(summary);
+      if (gamesPage === 1) setDashboardGames(games);
+    }
   }, []);
 
   const refreshAll = useCallback(
@@ -92,10 +99,8 @@ export default function App() {
       setDataLoading(true);
       setDataError("");
       try {
-        await Promise.all([
-          loadDashboard(),
-          loadProfitLoss(filters, gamesPage, usersPage),
-        ]);
+        // One summary + games pass (not dashboard + P&L duplicate)
+        await loadProfitLoss(filters, gamesPage, usersPage);
       } catch (err) {
         if (err.status !== 401) {
           setDataError(err.message || "Failed to load admin data");
@@ -104,7 +109,7 @@ export default function App() {
         setDataLoading(false);
       }
     },
-    [loadDashboard, loadProfitLoss, plFilters, plGamesPage, plUsersPage]
+    [loadProfitLoss, plFilters, plGamesPage, plUsersPage]
   );
 
   useEffect(() => {
@@ -119,10 +124,21 @@ export default function App() {
         const me = await fetchMe();
         if (cancelled) return;
         setAdmin(me?.admin || me);
-        await refreshAll({}, 1, 1);
+        // Show shell immediately; fill data in background
+        if (!cancelled) setBootstrapping(false);
+        setDataLoading(true);
+        try {
+          await loadDashboard();
+        } catch (err) {
+          if (!cancelled && err.status !== 401) {
+            setDataError(err.message || "Failed to load admin data");
+          }
+          if (err.status === 401 && !cancelled) clearSession();
+        } finally {
+          if (!cancelled) setDataLoading(false);
+        }
       } catch {
         if (!cancelled) clearSession();
-      } finally {
         if (!cancelled) setBootstrapping(false);
       }
     })();
@@ -142,11 +158,20 @@ export default function App() {
       setToken(token);
       setAdmin(res.admin || res.user || { email });
       setBootstrapping(false);
-      await refreshAll({}, 1, 1);
+      setLoginLoading(false);
+      setDataLoading(true);
+      try {
+        await loadDashboard();
+      } catch (err) {
+        if (err.status !== 401) {
+          setDataError(err.message || "Failed to load admin data");
+        }
+      } finally {
+        setDataLoading(false);
+      }
     } catch (err) {
       clearToken();
       setLoginError(err.message || "Login failed");
-    } finally {
       setLoginLoading(false);
     }
   }
@@ -263,7 +288,7 @@ export default function App() {
           >
             Menu
           </button>
-          <div className="topbar-title">PotLudo Admin</div>
+          <div className="topbar-title">Ludo King Admin</div>
         </header>
 
         <main className="main-content">
@@ -285,7 +310,13 @@ export default function App() {
                 setPlFilters(next);
                 setPlSection("overview");
                 setActivePage("profit-loss");
-                void handlePlFiltersChange(next);
+                // Only refetch when filtering; otherwise reuse dashboard data
+                if (opts.operatorId || next.players) {
+                  void handlePlFiltersChange(next);
+                } else if (!plSummary && dashboardSummary) {
+                  setPlSummary(dashboardSummary);
+                  setPlGames(dashboardGames);
+                }
               }}
             />
           )}
@@ -307,8 +338,8 @@ export default function App() {
 
           {activePage === "profit-loss" && (
             <ProfitLossPage
-              summary={plSummary}
-              games={plGames}
+              summary={plSummary || dashboardSummary}
+              games={plGames || dashboardGames}
               users={plUsers}
               filters={plFilters}
               section={plSection}
@@ -316,7 +347,12 @@ export default function App() {
               error={dataError}
               operatorOptions={operatorOptions}
               onFiltersChange={handlePlFiltersChange}
-              onSectionChange={setPlSection}
+              onSectionChange={(id) => {
+                setPlSection(id);
+                if (id === "users" && !plUsers) {
+                  void handlePageChange("users", 1);
+                }
+              }}
               onPageChange={handlePageChange}
               onSelectGame={setSelectedGame}
             />

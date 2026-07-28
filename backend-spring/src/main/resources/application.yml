@@ -46,7 +46,7 @@ ludo:
   admin:
     email: ${ADMIN_EMAIL:admin@ludo.local}
     password: ${ADMIN_PASSWORD:admin123}
-    name: ${ADMIN_NAME:PotLudo Admin}
+    name: ${ADMIN_NAME:Ludo King Admin}
     token-ttl-hours: ${ADMIN_TOKEN_TTL_HOURS:24}
     # House rake per paid seat (bots count as paid for pot math)
     platform-fee-per-player: ${PLATFORM_FEE_PER_PLAYER:10}

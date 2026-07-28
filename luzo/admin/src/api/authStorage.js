@@ -1,4 +1,4 @@
-const TOKEN_KEY = "potludo_admin_token";
+const TOKEN_KEY = "ludo_king_admin_token";
 
 export function getToken() {
   try {

@@ -272,7 +272,15 @@ public class MatchEconomyService {
    * FREE rooms (entryFee=0) use configured {@link #entryFee()} so admin P&amp;L still shows.
    */
   public SettlementMath computeSettlement(Room room) {
-    List<MatchEconomyEntry> rows = repository.findByMatchId(room.getId()).stream()
+    return computeSettlement(room, null);
+  }
+
+  /**
+   * Same as {@link #computeSettlement(Room)} but reuses preloaded ledger rows (avoids N+1).
+   */
+  public SettlementMath computeSettlement(Room room, List<MatchEconomyEntry> preloaded) {
+    List<MatchEconomyEntry> rows = (preloaded != null ? preloaded : repository.findByMatchId(room.getId()))
+        .stream()
         .filter(e -> !MatchEconomyEntry.REFUNDED.equals(e.getStatus()))
         .toList();
     double ledgerIncome = rows.stream().mapToDouble(MatchEconomyEntry::getEntryAmount).sum();
@@ -285,7 +293,6 @@ public class MatchEconomyService {
     if (seatFee <= 0 && ledgerIncome > 0 && humans > 0) {
       seatFee = WalletProperties.money(ledgerIncome / humans);
     }
-    // FREE / missing fee → configured entry fee (admin + local accounting)
     if (seatFee <= 0) {
       seatFee = entryFee();
     }

@@ -2,6 +2,7 @@ package com.ludo.backend.admin;
 
 import java.time.Instant;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -10,6 +11,9 @@ public class AdminSettingsService {
 
   private final AdminSettingsRepository repository;
   private final double defaultPlatformFee;
+  private final AtomicReference<CachedFee> feeCache = new AtomicReference<>();
+
+  private record CachedFee(double fee, long expiresAtMs) {}
 
   public AdminSettingsService(
       AdminSettingsRepository repository,
@@ -27,9 +31,16 @@ public class AdminSettingsService {
     );
   }
 
-  /** Current house rake per paid seat (admin-configurable). */
+  /** Current house rake per paid seat (admin-configurable). Cached ~30s. */
   public double platformFeePerPlayer() {
-    return Math.round(load().getPlatformFeePerPlayer() * 100.0) / 100.0;
+    CachedFee cached = feeCache.get();
+    long now = System.currentTimeMillis();
+    if (cached != null && cached.expiresAtMs() > now) {
+      return cached.fee();
+    }
+    double fee = Math.round(load().getPlatformFeePerPlayer() * 100.0) / 100.0;
+    feeCache.set(new CachedFee(fee, now + 30_000));
+    return fee;
   }
 
   public Map<String, Object> updateSettings(Double platformFeePerPlayer) {
@@ -40,6 +51,10 @@ public class AdminSettingsService {
     s.setPlatformFeePerPlayer(platformFeePerPlayer);
     s.setUpdatedAt(Instant.now());
     repository.save(s);
+    feeCache.set(new CachedFee(
+        Math.round(platformFeePerPlayer * 100.0) / 100.0,
+        System.currentTimeMillis() + 30_000
+    ));
     return getSettings();
   }
 

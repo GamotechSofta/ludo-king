@@ -25,9 +25,9 @@ export default function Sidebar({
       )}
       <aside className={`sidebar ${open ? "sidebar-open" : ""}`}>
         <div className="sidebar-brand">
-          <span className="sidebar-mark">P</span>
+          <span className="sidebar-mark">L</span>
           <div>
-            <div className="sidebar-title">PotLudo</div>
+            <div className="sidebar-title">Ludo King</div>
             <div className="sidebar-sub">Admin</div>
           </div>
         </div>

@@ -13,9 +13,9 @@ export default function LoginPage({ onLogin, error, loading }) {
     <div className="login-screen">
       <form className="login-card" onSubmit={handleSubmit}>
         <div className="login-brand">
-          <span className="sidebar-mark">P</span>
+          <span className="sidebar-mark">L</span>
           <div>
-            <h1>PotLudo Admin</h1>
+            <h1>Ludo King Admin</h1>
             <p>Sign in to manage platforms, P&amp;L, and fees.</p>
           </div>
         </div>
