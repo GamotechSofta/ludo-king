@@ -23,6 +23,7 @@ import Results from "./components/lobby/Results";
 import type { IUser, TTotalPlayers } from "./interfaces";
 import { ETypeGame } from "./utils/constants";
 import { leaveRoom } from "./api/ludoApi";
+import { startBackgroundMusic, stopBackgroundMusic } from "./utils/sounds";
 
 type HistoryState = { screen: TLobbyScreen };
 
@@ -195,6 +196,19 @@ const App = () => {
     if (platformQuery || platformError) return;
     window.history.replaceState({ screen: "home" } satisfies HistoryState, "");
   }, [platformQuery, platformError]);
+
+  useEffect(() => {
+    const lobbyBgm =
+      !!platformQuery ||
+      screen === "home" ||
+      screen === "onlineSetup" ||
+      screen === "onlineLobby";
+    if (lobbyBgm) {
+      startBackgroundMusic();
+    } else {
+      stopBackgroundMusic();
+    }
+  }, [screen, platformQuery]);
 
   useEffect(() => {
     const onPopState = (event: PopStateEvent) => {
