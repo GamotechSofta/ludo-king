@@ -77,6 +77,7 @@ import {
 } from "./onlineSnapshotBoard";
 import {
   buildRollDedupKey,
+  buildHumanOnlineRollGate,
   canRequestOnlineRoll,
   isDuplicateOpponentRollFlash,
   isMoveSnapshot,
@@ -561,6 +562,17 @@ const OnlineGame = ({
       if (isMyRollTurn && !animatingRef.current) {
         setIsBusy(false);
         isBusyRef.current = false;
+        rollingRef.current = false;
+        if (rollRecoveryTimerRef.current != null) {
+          window.clearTimeout(rollRecoveryTimerRef.current);
+          rollRecoveryTimerRef.current = null;
+        }
+        if (!isActionInFlight()) {
+          setActionsTurn((prev) => ({
+            ...prev,
+            disabledDice: onlineDiceDisabled(snap, mySeat),
+          }));
+        }
       }
 
       // MOVE snapshots carry destination tokenPositions — never paint those
@@ -1326,18 +1338,21 @@ const OnlineGame = ({
     (_diceValue?: TDicevalues) => {
       const live = snapshotRef.current ?? snapshot;
       if (
-        !canRequestOnlineRoll(live, {
-          mySeat,
-          isBusy,
-          isAnimating: animatingRef.current,
-          isRolling: rollingRef.current,
-          isActionInFlight: isActionInFlight(),
-          disabledDice: actionsTurnRef.current.disabledDice,
-        })
+        !canRequestOnlineRoll(
+          live,
+          buildHumanOnlineRollGate(live, mySeat, {
+            isBusy: isBusyRef.current,
+            isAnimating: animatingRef.current,
+            isRolling: rollingRef.current,
+            isActionInFlight: isActionInFlight(),
+            disabledDice: actionsTurnRef.current.disabledDice,
+          })
+        )
       ) {
         return;
       }
       rollingRef.current = true;
+      beginDiceRollAnimation();
       ensureBackgroundMusic();
       playSound("diceRolling");
       setActionsTurn((prev) => ({
@@ -1345,6 +1360,7 @@ const OnlineGame = ({
         disabledDice: true,
         timerActivated: false,
       }));
+      rollDice();
       if (rollRecoveryTimerRef.current != null) {
         window.clearTimeout(rollRecoveryTimerRef.current);
       }
@@ -1356,17 +1372,24 @@ const OnlineGame = ({
         const latest = snapshotRef.current;
         if (
           latest?.currentSeatIndex === mySeat &&
-          latest.phase === "AWAITING_ROLL"
+          latest.phase === "AWAITING_ROLL" &&
+          !isActionInFlight()
         ) {
           setActionsTurn((prev) => ({
             ...prev,
             disabledDice: onlineDiceDisabled(latest, mySeat),
           }));
         }
-      }, 4000);
-      rollDice();
+      }, 2500);
     },
-    [snapshot, isBusy, mySeat, rollDice, isActionInFlight, finishDiceRollAnimation]
+    [
+      snapshot,
+      mySeat,
+      rollDice,
+      isActionInFlight,
+      finishDiceRollAnimation,
+      beginDiceRollAnimation,
+    ]
   );
 
   const handleSelectedToken = useCallback(

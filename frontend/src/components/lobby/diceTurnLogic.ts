@@ -88,6 +88,40 @@ export function canRequestOnlineRoll(
   return true;
 }
 
+/**
+ * Human roll gate: do not block the active player on generic isBusy or a stuck
+ * rolling flag after the network request has finished.
+ */
+export function buildHumanOnlineRollGate(
+  snapshot: IGameSnapshot | null,
+  mySeat: number,
+  state: {
+    isBusy: boolean;
+    isAnimating: boolean;
+    isRolling: boolean;
+    isActionInFlight: boolean;
+    disabledDice: boolean;
+  }
+): OnlineRollGate {
+  const humanRollTurn =
+    !!snapshot &&
+    mySeat >= 0 &&
+    snapshot.currentSeatIndex === mySeat &&
+    isAwaitingRoll(snapshot);
+
+  return {
+    mySeat,
+    isBusy: humanRollTurn ? state.isAnimating : state.isBusy,
+    isAnimating: state.isAnimating,
+    isRolling: humanRollTurn
+      ? state.isRolling && state.isActionInFlight
+      : state.isRolling,
+    isActionInFlight: state.isActionInFlight,
+    disabledDice:
+      humanRollTurn && !state.isActionInFlight ? false : state.disabledDice,
+  };
+}
+
 /** Dice button disabled for every non-active player and during AWAITING_MOVE. */
 export function onlineDiceDisabled(
   snapshot: IGameSnapshot,

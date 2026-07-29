@@ -407,9 +407,6 @@ export function useGameSocket(
   const rollDice = useCallback(() => {
     if (!roomId || !userId) return;
     if (inFlightActionRef.current) return;
-    const rollKey = `${lastSeqRef.current}|${roomId}|roll`;
-    if (lastRollKeyRef.current === rollKey) return;
-    lastRollKeyRef.current = rollKey;
     inFlightActionRef.current = true;
     onlinePerf.markActionSent("roll");
     const seqAtSend = lastSeqRef.current;

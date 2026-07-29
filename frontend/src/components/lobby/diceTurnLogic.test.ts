@@ -1,9 +1,35 @@
 import {
+  buildHumanOnlineRollGate,
   isDuplicateOpponentRollFlash,
   opponentRollFlashKey,
   priorOpponentRollVisible,
 } from "./diceTurnLogic";
 import type { IGameSnapshot } from "./types";
+
+describe("buildHumanOnlineRollGate", () => {
+  it("allows human roll when generic isBusy but not animating a move", () => {
+    const snap: IGameSnapshot = {
+      roomId: "r1",
+      phase: "AWAITING_ROLL",
+      currentSeatIndex: 0,
+      currentColor: "YELLOW",
+      diceValue: 0,
+      diceList: [],
+      tokenPositions: { YELLOW: [-1, -1, -1, -1] },
+      legalTokenIndexes: [],
+    };
+    const gate = buildHumanOnlineRollGate(snap, 0, {
+      isBusy: true,
+      isAnimating: false,
+      isRolling: true,
+      isActionInFlight: false,
+      disabledDice: true,
+    });
+    expect(gate.isBusy).toBe(false);
+    expect(gate.isRolling).toBe(false);
+    expect(gate.disabledDice).toBe(false);
+  });
+});
 
 describe("opponent roll flash dedup", () => {
   it("treats ROLL and MOVE actionSeq as one visual roll", () => {
