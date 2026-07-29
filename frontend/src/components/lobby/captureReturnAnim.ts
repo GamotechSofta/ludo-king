@@ -4,8 +4,8 @@
 
 import type { IListTokens } from "../../interfaces";
 import {
+  CAPTURE_RETURN_FRAME_MS,
   CAPTURE_RETURN_MAX_TOTAL_MS,
-  CAPTURE_RETURN_MIN_STEP_MS,
   CAPTURE_RETURN_PAUSE_MS,
   CAPTURE_RETURN_STEP_MS,
 } from "../../utils/constants";
@@ -107,12 +107,22 @@ export async function runReturnToJailAnimations(
     const path = buildReturnToJailPath(token, group.positionGame);
     if (!path.length) continue;
 
-    // A pawn cut far from its start needs ~50 hops; compress the cadence so the
-    // walk ends before the next snapshot cancels it.
-    const perStepMs = Math.max(
-      CAPTURE_RETURN_MIN_STEP_MS,
-      Math.min(stepMs, Math.floor(budgetMs / path.length) - pauseMs)
+    // Every cell costs a frame to paint, so it is the rest on each cell that has
+    // to shrink when the walk is long: a nearby kill strolls, a far one glides,
+    // and either way the pawn is home inside the budget.
+    const framesPerCell = Math.floor(
+      budgetMs / (path.length * CAPTURE_RETURN_FRAME_MS)
     );
+    const perStepMs =
+      framesPerCell > 1
+        ? Math.max(
+            0,
+            Math.min(
+              stepMs,
+              (framesPerCell - 1) * CAPTURE_RETURN_FRAME_MS - pauseMs
+            )
+          )
+        : 0;
 
     working = setVictimReturning(
       working,

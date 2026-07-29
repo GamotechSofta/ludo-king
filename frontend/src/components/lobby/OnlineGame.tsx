@@ -237,6 +237,8 @@ const OnlineGame = ({
   const diceOwnerSeatRef = useRef(-1);
   /** PASS roll-flash: keep die on roller until this time. */
   const passFlashUntilRef = useRef(0);
+  /** Live entry point of the snapshot pipeline, for replaying queued snapshots. */
+  const applyChainRef = useRef<((snap: IGameSnapshot) => void) | null>(null);
   const lastAutoMoveKeyRef = useRef("");
   const autoMoveTimerRef = useRef<number | null>(null);
   const diceRollPendingRef = useRef(false);
@@ -1408,6 +1410,7 @@ const OnlineGame = ({
     const drain = (snap: IGameSnapshot) => {
       void apply(snap).catch(() => abandonAnimation());
     };
+    applyChainRef.current = drain;
 
     drain(snapshot);
     return () => {
@@ -1534,6 +1537,7 @@ const OnlineGame = ({
         live.tokenPositions?.[colors[mySeat]]?.[tokenIndex] ?? null;
       moveToken(tokenIndex, diceIndex);
       let ok = false;
+      let localVictims: CaptureVictim[] = [];
       try {
         ok = await runMoveAnimation(
           live,
@@ -1544,7 +1548,12 @@ const OnlineGame = ({
           true
         );
         if (ok) {
-          await runPostMoveCaptureReturn(mySeat, tokenIndex);
+          localVictims = findCaptureVictims(
+            listTokensRef.current,
+            mySeat,
+            tokenIndex
+          );
+          await runPostMoveCaptureReturn(mySeat, tokenIndex, localVictims);
         } else {
           lastAutoMoveKeyRef.current = "";
         }
@@ -1556,23 +1565,60 @@ const OnlineGame = ({
         suppressMoveAnimRef.current = false;
       }
       const queued = pendingSnapRef.current.splice(0);
-      const latest = queued.length ? queued[queued.length - 1] : null;
-      if (latest) {
-        if (latest.actionSeq) {
-          lastAnimatedMoveSeqRef.current = latest.actionSeq;
+      // Everything the server sent after my own move (a bot move, a kill, a
+      // pass flash) still owes an animation — only my own confirmation may be
+      // collapsed into a straight paint.
+      let ownIdx = -1;
+      for (let i = queued.length - 1; i >= 0; i--) {
+        const s = queued[i];
+        if (s.lastActionType === "MOVE" && s.lastActionSeat === mySeat) {
+          ownIdx = i;
+          break;
+        }
+      }
+      const confirm = ownIdx >= 0 ? queued[ownIdx] : null;
+      const replay = ownIdx >= 0 ? queued.slice(ownIdx + 1) : queued;
+
+      if (confirm) {
+        if (confirm.actionSeq) {
+          lastAnimatedMoveSeqRef.current = confirm.actionSeq;
+        }
+        // The server saw a capture my local board missed — walk it back now.
+        const missed = capturedVictimsFromSnapshots(
+          live,
+          confirm,
+          mySeat
+        ).filter(
+          (v) =>
+            !localVictims.some(
+              (l) =>
+                l.playerIndex === v.playerIndex && l.tokenIndex === v.tokenIndex
+            )
+        );
+        if (missed.length) {
+          await runPostMoveCaptureReturn(mySeat, tokenIndex, missed);
+          animatingRef.current = false;
+          isBusyRef.current = false;
+          setIsBusy(false);
         }
         if (
-          latest.currentSeatIndex !== mySeat &&
-          latest.phase === "AWAITING_ROLL"
+          !replay.length &&
+          confirm.currentSeatIndex !== mySeat &&
+          confirm.phase === "AWAITING_ROLL"
         ) {
           await rafDelay(ONLINE_TURN_PASS_DELAY_MS, animCancelRef.current);
         }
-        syncBoardFromSnapshot(latest, false, true);
+        syncBoardFromSnapshot(confirm, false, true);
       } else if (ok && live) {
         prevSnapRef.current = {
           ...(prevSnapRef.current || live),
           actionSeq: (prevSnapRef.current?.actionSeq || 0) + 1,
         };
+      }
+
+      if (replay.length) {
+        pendingSnapRef.current.unshift(...replay.slice(1));
+        applyChainRef.current?.(replay[0]);
       }
       return ok;
     },

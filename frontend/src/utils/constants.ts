@@ -171,11 +171,13 @@ export const CAPTURE_RETURN_STEP_MS = 55;
 export const CAPTURE_RETURN_PAUSE_MS = 0;
 
 /**
- * A pawn cut far from its own start would need ~50 hops. Compress the cadence
- * so the walk always ends before the next snapshot interrupts it.
+ * A pawn cut far from its own start would need ~50 hops. Walks that cannot fit
+ * this budget glide one cell per frame instead of resting on each cell, so a
+ * kill never drags on (or gets cut off by the next snapshot).
  */
 export const CAPTURE_RETURN_MAX_TOTAL_MS = 1100;
-export const CAPTURE_RETURN_MIN_STEP_MS = 22;
+/** rAF granularity — painting one cell already costs this much. */
+export const CAPTURE_RETURN_FRAME_MS = 16;
 
 /**
  * Dice spin duration (seconds) for react-dice-complete (original).
