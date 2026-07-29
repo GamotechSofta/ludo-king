@@ -305,6 +305,11 @@ const OnlineLobby = ({
     }
   }, [readyBusy, iAmReady, roomId, guest.id]);
 
+  useEffect(() => {
+    if (!isReadyPhase || inCountdown || iAmReady || readyBusy) return;
+    void handleReady();
+  }, [isReadyPhase, inCountdown, iAmReady, readyBusy, handleReady]);
+
   const handleBack = useCallback(() => {
     stopMatchSearchLoop();
     void cancelQueue(guest.id).catch(() => undefined);
@@ -521,24 +526,12 @@ const OnlineLobby = ({
         ) : null}
 
         {isReadyPhase && !inCountdown ? (
-          <>
-            <div
-              className="find-players-status find-players-status-match"
-              aria-live="polite"
-            >
-              {readyStatus.toUpperCase()}
-            </div>
-            {!iAmReady ? (
-              <button
-                type="button"
-                className="find-players-ready"
-                disabled={readyBusy}
-                onClick={() => void handleReady()}
-              >
-                {readyBusy ? "…" : "READY"}
-              </button>
-            ) : null}
-          </>
+          <div
+            className="find-players-status find-players-status-match"
+            aria-live="polite"
+          >
+            {readyStatus.toUpperCase()}
+          </div>
         ) : null}
 
         {error && !networkLost ? (
