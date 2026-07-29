@@ -389,7 +389,8 @@ const OnlineGame = ({
       if (
         diceRollPendingRef.current &&
         diceOwnerSeatRef.current === seat &&
-        actionsTurnRef.current.diceValue === value
+        actionsTurnRef.current.diceValue === value &&
+        (snap.actionSeq ?? 0) === (prevSnapRef.current?.actionSeq ?? -1)
       ) {
         return false;
       }
@@ -1149,6 +1150,7 @@ const OnlineGame = ({
                 : snap.tokenPositions,
           };
           window.setTimeout(() => {
+            finishDiceRollAnimation();
             const next = pendingSnapRef.current.shift();
             if (next) drain(next);
           }, DICE_ROLL_ANIM_MS + 80);
@@ -1177,6 +1179,7 @@ const OnlineGame = ({
       // PASS / TIMEOUT / no-move: show roll (if any), pause, then hand die to next seat
       if (isStableTurnPass(snap, prev)) {
         rollingRef.current = false;
+        finishDiceRollAnimation();
         lastProcessedRollIdRef.current = "";
         lastDiceSigRef.current = diceSig;
         setPlayers(playersForView(snap, mySeat, roomId));
@@ -1239,9 +1242,13 @@ const OnlineGame = ({
           if (seq === applySeqRef.current) abandonAnimation();
           return;
         }
+        await waitForDiceRollAnimation();
+        finishDiceRollAnimation();
         rollingRef.current = false;
         pendingDiceRef.current = null;
         passFlashUntilRef.current = 0;
+        setIsBusy(false);
+        isBusyRef.current = false;
         syncBoardFromSnapshot(snap);
         const nextPass = pendingSnapRef.current.shift();
         if (nextPass) drain(nextPass);

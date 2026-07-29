@@ -55,17 +55,18 @@
 
 .game-token-button {
   position: absolute;
-  width: 72%;
-  height: 72%;
-  left: 14%;
-  bottom: 2%;
-  top: auto;
+  width: 82%;
+  height: 82%;
+  left: 50%;
+  top: 50%;
+  bottom: auto;
   z-index: 1;
   cursor: pointer;
   border: none;
   border-radius: 50%;
   background-color: rgba(0, 0, 0, 0.04);
   border: 2px dashed rgba(0, 0, 0, 0.55);
+  transform: translate(-50%, -50%);
   animation: rotation 5s normal linear infinite;
   -webkit-tap-highlight-color: rgba(255, 255, 255, 0);
   pointer-events: none;
@@ -88,9 +89,9 @@
 
 @keyframes rotation {
   from {
-    transform: rotate(0deg);
+    transform: translate(-50%, -50%) rotate(0deg);
   }
   to {
-    transform: rotate(359deg);
+    transform: translate(-50%, -50%) rotate(359deg);
   }
 }
