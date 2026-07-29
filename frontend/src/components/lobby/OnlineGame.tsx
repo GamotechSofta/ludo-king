@@ -27,11 +27,7 @@ import {
   ONLINE_ENTRY_AMOUNT,
   TOKEN_STEP_PAUSE_MS,
 } from "../../utils/constants";
-<<<<<<< Updated upstream
-import { playSound, preloadGameSounds, stopBackgroundMusic } from "../../utils/sounds";
-=======
 import { playSound, preloadGameSounds, ensureBackgroundMusic, stopBackgroundMusic } from "../../utils/sounds";
->>>>>>> Stashed changes
 import { PageWrapper } from "../wrapper";
 import {
   Board,
@@ -1009,24 +1005,17 @@ const OnlineGame = ({
         snap.phase === "AWAITING_MOVE";
 
       if (diceAppeared) {
-<<<<<<< Updated upstream
         rollingRef.current = false;
         if (rollRecoveryTimerRef.current != null) {
           window.clearTimeout(rollRecoveryTimerRef.current);
           rollRecoveryTimerRef.current = null;
-=======
+        }
         lastDiceSigRef.current = diceSig;
         pendingDiceRef.current = {
           seat: snap.currentSeatIndex,
           diceList: [...snap.diceList],
         };
-        const value = snap.diceList[snap.diceList.length - 1] as TDicevalues;
         ensureBackgroundMusic();
-        if (snap.currentSeatIndex !== mySeat) {
-          playSound("diceRolling");
->>>>>>> Stashed changes
-        }
-        lastDiceSigRef.current = diceSig;
         const value = snap.diceList[snap.diceList.length - 1] as TDicevalues;
         const flashKey = `${snap.actionSeq || 0}|${snap.currentSeatIndex}|${value}`;
 
@@ -1288,7 +1277,6 @@ const OnlineGame = ({
 
   const handleSelectDice = useCallback(
     (_diceValue?: TDicevalues) => {
-<<<<<<< Updated upstream
       const live = snapshotRef.current ?? snapshot;
       if (
         !canRequestOnlineRoll(live, {
@@ -1303,13 +1291,7 @@ const OnlineGame = ({
         return;
       }
       rollingRef.current = true;
-=======
-      if (!snapshot || isBusy || animatingRef.current) return;
-      if (snapshot.currentSeatIndex !== mySeat) return;
-      if (snapshot.phase !== "AWAITING_ROLL") return;
-      if (actionsTurnRef.current.disabledDice) return;
       ensureBackgroundMusic();
->>>>>>> Stashed changes
       playSound("diceRolling");
       setActionsTurn((prev) => {
         const next = applyServerDiceVisual(prev, 1 as TDicevalues);

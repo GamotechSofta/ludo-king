@@ -379,6 +379,15 @@ public class BotService {
     }
   }
 
+  /** Online bot dice — short human-like pause before roll (2–3 s). */
+  private void sleepBeforeDiceRoll() {
+    try {
+      Thread.sleep(ThreadLocalRandom.current().nextInt(2000, 3001));
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+    }
+  }
+
   private void sleepThinking() {
     try {
       Thread.sleep(ThreadLocalRandom.current().nextInt(950, 1401));

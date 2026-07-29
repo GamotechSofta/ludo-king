@@ -21,8 +21,7 @@ import {
   TOKEN_MOVEMENT_INTERVAL_VALUE,
   TOKEN_STEP_PAUSE_MS,
 } from "../../utils/constants";
-<<<<<<< Updated upstream
-import { playSound, preloadGameSounds, stopBackgroundMusic } from "../../utils/sounds";
+import { playSound, preloadGameSounds, ensureBackgroundMusic, stopBackgroundMusic } from "../../utils/sounds";
 import { runReturnToJailAnimations } from "../lobby/captureReturnAnim";
 import { runCellByCellSteps, nextFrame } from "../lobby/onlineAnimate";
 import {
@@ -30,9 +29,6 @@ import {
   partitionResults,
 } from "../lobby/resultHelpers";
 import "../lobby/styles.css";
-=======
-import { playSound, preloadGameSounds, ensureBackgroundMusic, stopBackgroundMusic } from "../../utils/sounds";
->>>>>>> Stashed changes
 import { PageWrapper } from "../wrapper";
 import {
   Board,
