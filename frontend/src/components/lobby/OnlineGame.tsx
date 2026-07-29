@@ -1119,19 +1119,44 @@ const OnlineGame = ({
           rolledValue <= 6 &&
           rollerSeat !== snap.currentSeatIndex
         ) {
-          const flashKey = `${snap.actionSeq || 0}|${rollerSeat}|${rolledValue}`;
-          if (rollerSeat !== mySeat) {
+          if (rollerSeat === mySeat) {
+            if (rollRecoveryTimerRef.current != null) {
+              window.clearTimeout(rollRecoveryTimerRef.current);
+              rollRecoveryTimerRef.current = null;
+            }
+            rollingRef.current = false;
+            applyDiceOwnerTurn(snap, rollerSeat);
+            setActionsTurn((prev) => {
+              const base = actionsTurnFromSnapshot(
+                {
+                  ...snap,
+                  currentSeatIndex: rollerSeat,
+                  phase: "AWAITING_MOVE",
+                  diceList: [rolledValue],
+                },
+                mySeat,
+                prev
+              );
+              return applyServerDiceVisual(base, rolledValue as TDicevalues);
+            });
+            beginDiceRollAnimation();
+            passDelayMs = Math.max(
+              ONLINE_TURN_PASS_DELAY_MS,
+              DICE_ROLL_ANIM_MS + 250
+            );
+          } else {
+            const flashKey = `${snap.actionSeq || 0}|${rollerSeat}|${rolledValue}`;
             playDiceRollingOnce(flashKey);
+            flashDiceOnSeat(
+              snap,
+              rollerSeat,
+              rolledValue as TDicevalues
+            );
+            passDelayMs = Math.max(
+              ONLINE_TURN_PASS_DELAY_MS,
+              DICE_ROLL_ANIM_MS + 250
+            );
           }
-          flashDiceOnSeat(
-            snap,
-            rollerSeat,
-            rolledValue as TDicevalues
-          );
-          passDelayMs = Math.max(
-            ONLINE_TURN_PASS_DELAY_MS,
-            DICE_ROLL_ANIM_MS + 250
-          );
         }
 
         passFlashUntilRef.current = performance.now() + passDelayMs;
@@ -1315,11 +1340,11 @@ const OnlineGame = ({
       rollingRef.current = true;
       ensureBackgroundMusic();
       playSound("diceRolling");
-      setActionsTurn((prev) => {
-        const next = applyServerDiceVisual(prev, 1 as TDicevalues);
-        actionsTurnRef.current = next;
-        return next;
-      });
+      setActionsTurn((prev) => ({
+        ...prev,
+        disabledDice: true,
+        timerActivated: false,
+      }));
       if (rollRecoveryTimerRef.current != null) {
         window.clearTimeout(rollRecoveryTimerRef.current);
       }
