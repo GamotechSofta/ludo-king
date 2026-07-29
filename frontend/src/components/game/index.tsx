@@ -22,7 +22,7 @@ import {
   TOKEN_STEP_PAUSE_MS,
 } from "../../utils/constants";
 import { isStarTile } from "../../config/ludoBoard";
-import { playSound, preloadGameSounds, ensureBackgroundMusic, stopBackgroundMusic } from "../../utils/sounds";
+import { playSound, preloadGameSounds, stopBackgroundMusic } from "../../utils/sounds";
 import { runReturnToJailAnimations } from "../lobby/captureReturnAnim";
 import { runCellByCellSteps, nextFrame } from "../lobby/onlineAnimate";
 import {
@@ -142,6 +142,7 @@ const Game = ({
   useEffect(() => {
     resetDiceKeyCounter();
     preloadGameSounds();
+    playSound("matchStart");
     return () => {
       stopBackgroundMusic();
     };
@@ -471,7 +472,6 @@ const Game = ({
       }
 
       // Sync ref immediately so rollDone can read diceValue without waiting for React
-      ensureBackgroundMusic();
       playSound("diceRolling");
       setActionsTurn((current) => {
         const next = getRandomValueDice(current, diceValue);

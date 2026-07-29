@@ -4,6 +4,7 @@ const SOUND_FILES = {
   inside: "/sounds/inside.mp3",
   capture: "/sounds/fahhh_KcgAXfs.mp3",
   star: "/sounds/star%20sound.mp3",
+  matchStart: "/sounds/match%20start.mp3",
   countdownDing: "/sounds/tunetank.com_scroll-ding-counting-slow.mp3",
 } as const;
 
@@ -19,6 +20,7 @@ const DEFAULT_VOLUME: Record<TGameSound, number> = {
   inside: 0.62,
   capture: 0.85,
   star: 0.72,
+  matchStart: 0.78,
   countdownDing: 0.62,
 };
 
@@ -55,6 +57,7 @@ export const playSound = (name: TGameSound, volume?: number) => {
       name === "passingNext" ||
       name === "capture" ||
       name === "star" ||
+      name === "matchStart" ||
       name === "countdownDing"
         ? (base.cloneNode(true) as HTMLAudioElement)
         : base;

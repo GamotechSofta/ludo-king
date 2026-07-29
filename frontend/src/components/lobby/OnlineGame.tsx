@@ -28,7 +28,7 @@ import {
   TOKEN_STEP_PAUSE_MS,
 } from "../../utils/constants";
 import { isStarTile } from "../../config/ludoBoard";
-import { playSound, preloadGameSounds, ensureBackgroundMusic, stopBackgroundMusic } from "../../utils/sounds";
+import { playSound, preloadGameSounds, stopBackgroundMusic } from "../../utils/sounds";
 import { PageWrapper } from "../wrapper";
 import {
   Board,
@@ -514,6 +514,14 @@ const OnlineGame = ({
       stopBackgroundMusic();
     };
   }, []);
+
+  const matchStartPlayedRef = useRef("");
+  useEffect(() => {
+    if (!boardReady || snapshot?.phase === "FINISHED") return;
+    if (matchStartPlayedRef.current === roomId) return;
+    matchStartPlayedRef.current = roomId;
+    playSound("matchStart");
+  }, [boardReady, roomId, snapshot?.phase]);
 
   useEffect(() => {
     if (snapshot?.phase === "FINISHED") {
@@ -1117,7 +1125,6 @@ const OnlineGame = ({
           seat: snap.currentSeatIndex,
           diceList: [...snap.diceList],
         };
-        ensureBackgroundMusic();
         const value = snap.diceList[snap.diceList.length - 1] as TDicevalues;
         const flashKey = `${snap.actionSeq || 0}|${snap.currentSeatIndex}|${value}`;
 
@@ -1453,7 +1460,6 @@ const OnlineGame = ({
         return;
       }
       rollingRef.current = true;
-      ensureBackgroundMusic();
       playSound("diceRolling");
       setActionsTurn((prev) => ({
         ...prev,
