@@ -78,12 +78,14 @@ import {
 import {
   buildRollDedupKey,
   canRequestOnlineRoll,
+  isDuplicateOpponentRollFlash,
   isMoveSnapshot,
   isStableTurnPass,
   isTurnSeatHandoff,
   isNoMovePassSnapshot,
   moveDiceValueFromSnapshot,
   onlineDiceDisabled,
+  priorOpponentRollVisible,
   shouldClearStuckDice,
   shouldEnableTokenSelection,
 } from "./diceTurnLogic";
@@ -350,12 +352,28 @@ const OnlineGame = ({
     (
       snap: IGameSnapshot,
       seat: number,
-      value: TDicevalues,
-      flashKey: string
+      value: TDicevalues
     ): boolean => {
       if (value < 1 || value > 6) return false;
-      if (lastDiceFlashKeyRef.current === flashKey) return false;
-      lastDiceFlashKeyRef.current = flashKey;
+      const actionSeq = snap.actionSeq ?? 0;
+      if (
+        isDuplicateOpponentRollFlash(
+          lastDiceFlashKeyRef.current,
+          seat,
+          value,
+          actionSeq
+        )
+      ) {
+        return false;
+      }
+      if (
+        diceRollPendingRef.current &&
+        diceOwnerSeatRef.current === seat &&
+        actionsTurnRef.current.diceValue === value
+      ) {
+        return false;
+      }
+      lastDiceFlashKeyRef.current = `${seat}|${value}|${actionSeq}`;
       beginDiceRollAnimation();
       pendingDiceRef.current = {
         seat,
@@ -363,6 +381,13 @@ const OnlineGame = ({
       };
       applyDiceOwnerTurn(snap, seat);
       setActionsTurn((prevActions) => {
+        if (
+          diceRollPendingRef.current &&
+          diceOwnerSeatRef.current === seat &&
+          prevActions.diceValue === value
+        ) {
+          return prevActions;
+        }
         const base = actionsTurnFromSnapshot(
           {
             ...snap,
@@ -1042,7 +1067,7 @@ const OnlineGame = ({
         if (snap.currentSeatIndex !== mySeat) {
           playDiceRollingOnce(flashKey);
           setPlayers(playersForView(snap, mySeat, roomId));
-          flashDiceOnSeat(snap, snap.currentSeatIndex, value, flashKey);
+          flashDiceOnSeat(snap, snap.currentSeatIndex, value);
           prevSnapRef.current = {
             ...snap,
             tokenPositions:
@@ -1101,8 +1126,7 @@ const OnlineGame = ({
           flashDiceOnSeat(
             snap,
             rollerSeat,
-            rolledValue as TDicevalues,
-            flashKey
+            rolledValue as TDicevalues
           );
           passDelayMs = Math.max(
             ONLINE_TURN_PASS_DELAY_MS,
@@ -1172,19 +1196,17 @@ const OnlineGame = ({
 
         // Bot/opponent often emit MOVE without a prior AWAITING_MOVE — flash die first.
         const flashKey = `${snap.actionSeq || 0}|${moved.seat}|${diceValue}`;
-        const priorRollAlreadyVisible =
-          !!prev &&
-          prev.currentSeatIndex === moved.seat &&
-          prev.phase === "AWAITING_MOVE" &&
-          (prev.diceList?.length || 0) > 0 &&
-          (prev.diceList || []).includes(diceValue as number);
+        const priorRollAlreadyVisible = priorOpponentRollVisible(
+          prev,
+          moved.seat,
+          diceValue as number
+        );
 
         if (!diceRollPendingRef.current && !priorRollAlreadyVisible) {
           const flashed = flashDiceOnSeat(
             snap,
             moved.seat,
-            diceValue as TDicevalues,
-            flashKey
+            diceValue as TDicevalues
           );
           if (flashed && moved.seat !== mySeat) {
             playDiceRollingOnce(flashKey);

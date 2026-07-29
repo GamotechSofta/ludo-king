@@ -1,5 +1,41 @@
 import type { IGameSnapshot } from "./types";
 
+/** Dedup key for opponent/bot dice tumble (ROLL seq N and MOVE seq N+1 are one roll). */
+export function opponentRollFlashKey(
+  seat: number,
+  value: number,
+  actionSeq: number
+): string {
+  return `${seat}|${value}|${actionSeq}`;
+}
+
+export function isDuplicateOpponentRollFlash(
+  lastFlashKey: string,
+  seat: number,
+  value: number,
+  actionSeq: number
+): boolean {
+  if (!lastFlashKey) return false;
+  const key = opponentRollFlashKey(seat, value, actionSeq);
+  if (lastFlashKey === key) return true;
+  return lastFlashKey === opponentRollFlashKey(seat, value, actionSeq - 1);
+}
+
+/** True when AWAITING_MOVE already showed this seat's roll before a MOVE event. */
+export function priorOpponentRollVisible(
+  prev: IGameSnapshot | null | undefined,
+  seat: number,
+  diceValue: number
+): boolean {
+  if (!prev) return false;
+  return (
+    prev.currentSeatIndex === seat &&
+    prev.phase === "AWAITING_MOVE" &&
+    (prev.diceList?.length ?? 0) > 0 &&
+    (prev.diceList || []).includes(diceValue)
+  );
+}
+
 /** Gate flags for online roll requests (no UI — logic only). */
 export type OnlineRollGate = {
   mySeat: number;
