@@ -51,8 +51,12 @@ ludo:
     # House rake per paid seat (bots count as paid for pot math)
     platform-fee-per-player: ${PLATFORM_FEE_PER_PLAYER:10}
   bot:
-    # Hard bots: 80% chance to roll exact 1–6 for a legal capture when reachable.
+    # Hard bots: exact capture die when kill reachable within 1–6 (scaled by seats).
     smart-kill-dice-assist: ${SMART_BOT_DICE_ASSIST:true}
+    kill-assist:
+      two-player: ${BOT_KILL_ASSIST_TWO_PLAYER:0.40}
+      three-player: ${BOT_KILL_ASSIST_THREE_PLAYER:0.25}
+      four-player: ${BOT_KILL_ASSIST_FOUR_PLAYER:0.10}
     # Human-like pauses. Raise for slower bots, lower for snappier turns.
     roll-delay-min-ms: ${BOT_ROLL_DELAY_MIN_MS:1100}
     roll-delay-max-ms: ${BOT_ROLL_DELAY_MAX_MS:1700}

@@ -20,13 +20,36 @@ import java.util.concurrent.ThreadLocalRandom;
  * Hard-bot kill dice assist: scans legal capture opportunities within 1–6 pips
  * and usually rolls the exact value needed. Safe stars / blocks are ignored via
  * {@link BotMoveEvaluator#findCaptureVictim}.
+ *
+ * <p>Assist probability scales down with player count so multi-bot tables do not
+ * cascade-eliminate every seat.
  */
 final class BotKillDiceAssist {
 
-  /** Chance (0–100) to roll the exact capture die when a kill is reachable. */
-  static final int CAPTURE_ASSIST_CHANCE_PCT = 80;
+  /** Defaults: 2P 40%, 3P 25%, 4P 10%. */
+  static final double DEFAULT_TWO_PLAYER = 0.40;
+  static final double DEFAULT_THREE_PLAYER = 0.25;
+  static final double DEFAULT_FOUR_PLAYER = 0.10;
 
   private BotKillDiceAssist() {}
+
+  /** Per-player-count assist rates (0.0–1.0). */
+  static final class KillAssistRates {
+    final double twoPlayer;
+    final double threePlayer;
+    final double fourPlayer;
+
+    KillAssistRates(double twoPlayer, double threePlayer, double fourPlayer) {
+      this.twoPlayer = clamp01(twoPlayer);
+      this.threePlayer = clamp01(threePlayer);
+      this.fourPlayer = clamp01(fourPlayer);
+    }
+
+    static KillAssistRates defaults() {
+      return new KillAssistRates(
+          DEFAULT_TWO_PLAYER, DEFAULT_THREE_PLAYER, DEFAULT_FOUR_PLAYER);
+    }
+  }
 
   @FunctionalInterface
   interface MoveLegality {
@@ -72,7 +95,8 @@ final class BotKillDiceAssist {
       int botSeat,
       MoveLegality legality
   ) {
-    return maybePickCaptureDice(snap, botSeat, legality, ThreadLocalRandom.current());
+    return maybePickCaptureDice(
+        snap, botSeat, legality, ThreadLocalRandom.current(), KillAssistRates.defaults());
   }
 
   /**
@@ -84,14 +108,60 @@ final class BotKillDiceAssist {
       MoveLegality legality,
       Random rng
   ) {
+    return maybePickCaptureDice(
+        snap, botSeat, legality, rng, KillAssistRates.defaults());
+  }
+
+  /**
+   * Player-count–scaled assist: 2P / 3P / 4P use different probabilities.
+   * Target selection stays in {@link #pickBestCaptureDice}.
+   */
+  static Integer maybePickCaptureDice(
+      GameSnapshot snap,
+      int botSeat,
+      MoveLegality legality,
+      Random rng,
+      KillAssistRates rates
+  ) {
     Integer best = pickBestCaptureDice(snap, botSeat, legality, rng);
     if (best == null || rng == null) {
       return best;
     }
-    if (rng.nextInt(100) >= CAPTURE_ASSIST_CHANCE_PCT) {
+    KillAssistRates resolved = rates != null ? rates : KillAssistRates.defaults();
+    double chance = probabilityForPlayerCount(playerCount(snap), resolved);
+    if (chance <= 0.0 || rng.nextDouble() >= chance) {
       return null;
     }
     return best;
+  }
+
+  /** Resolve assist probability from seat count (Bot vs Human and Bot vs Bot). */
+  static double probabilityForPlayerCount(int playerCount, KillAssistRates rates) {
+    KillAssistRates resolved = rates != null ? rates : KillAssistRates.defaults();
+    if (playerCount <= 2) {
+      return resolved.twoPlayer;
+    }
+    if (playerCount == 3) {
+      return resolved.threePlayer;
+    }
+    return resolved.fourPlayer;
+  }
+
+  private static int playerCount(GameSnapshot snap) {
+    if (snap.getSeatColors() != null && !snap.getSeatColors().isEmpty()) {
+      return snap.getSeatColors().size();
+    }
+    if (snap.getIsBot() != null) {
+      return snap.getIsBot().length;
+    }
+    return 4;
+  }
+
+  private static double clamp01(double value) {
+    if (Double.isNaN(value)) {
+      return 0.0;
+    }
+    return Math.max(0.0, Math.min(1.0, value));
   }
 
   /** Always picks the highest-priority capture die when one exists. */

@@ -40,6 +40,7 @@ public class BotService {
 
   private final GameEngineService gameEngineService;
   private final boolean smartKillDiceAssist;
+  private final BotKillDiceAssist.KillAssistRates killAssistRates;
   private final int rollDelayMinMs;
   private final int rollDelayMaxMs;
   private final int thinkDelayMinMs;
@@ -48,6 +49,9 @@ public class BotService {
   public BotService(
       GameEngineService gameEngineService,
       @Value("${ludo.bot.smart-kill-dice-assist:true}") boolean smartKillDiceAssist,
+      @Value("${ludo.bot.kill-assist.two-player:0.40}") double killAssistTwoPlayer,
+      @Value("${ludo.bot.kill-assist.three-player:0.25}") double killAssistThreePlayer,
+      @Value("${ludo.bot.kill-assist.four-player:0.10}") double killAssistFourPlayer,
       @Value("${ludo.bot.roll-delay-min-ms:1100}") int rollDelayMinMs,
       @Value("${ludo.bot.roll-delay-max-ms:1700}") int rollDelayMaxMs,
       @Value("${ludo.bot.think-delay-min-ms:450}") int thinkDelayMinMs,
@@ -55,6 +59,9 @@ public class BotService {
   ) {
     this.gameEngineService = gameEngineService;
     this.smartKillDiceAssist = smartKillDiceAssist;
+    this.killAssistRates =
+        new BotKillDiceAssist.KillAssistRates(
+            killAssistTwoPlayer, killAssistThreePlayer, killAssistFourPlayer);
     this.rollDelayMinMs = Math.max(0, rollDelayMinMs);
     this.rollDelayMaxMs = Math.max(this.rollDelayMinMs + 1, rollDelayMaxMs);
     this.thinkDelayMinMs = Math.max(0, thinkDelayMinMs);
@@ -107,7 +114,9 @@ public class BotService {
                     snap,
                     seat,
                     (token, dice) ->
-                        gameEngineService.canBotUseDiceForAssist(roomId, seat, token, dice));
+                        gameEngineService.canBotUseDiceForAssist(roomId, seat, token, dice),
+                    ThreadLocalRandom.current(),
+                    killAssistRates);
           }
           snap = gameEngineService.rollDiceAsSeat(roomId, seat, assistDice);
           publish(onStep, snap);

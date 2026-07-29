@@ -104,18 +104,22 @@ class BotKillDiceAssistTest {
                 Arrays.asList(16, JAIL, JAIL, JAIL)),
             List.of("GREEN", "YELLOW"));
 
-    // nextInt(100) = 10 → assist (< 80)
+    // 2P rate 0.40; nextDouble 0.10 → assist
     Random assistRng = new Random() {
       @Override
-      public int nextInt(int bound) {
-        return bound == 100 ? 10 : 0;
+      public double nextDouble() {
+        return 0.10;
       }
     };
 
     assertEquals(
         3,
         BotKillDiceAssist.maybePickCaptureDice(
-            snap, 0, (token, d) -> token == 0 && d == 3, assistRng));
+            snap,
+            0,
+            (token, d) -> token == 0 && d == 3,
+            assistRng,
+            BotKillDiceAssist.KillAssistRates.defaults()));
   }
 
   @Test
@@ -131,17 +135,29 @@ class BotKillDiceAssistTest {
                 Arrays.asList(16, JAIL, JAIL, JAIL)),
             List.of("GREEN", "YELLOW"));
 
-    // nextInt(100) = 85 → random branch (>= 80)
+    // 2P rate 0.40; nextDouble 0.50 → random
     Random missRng = new Random() {
       @Override
-      public int nextInt(int bound) {
-        return bound == 100 ? 85 : 0;
+      public double nextDouble() {
+        return 0.50;
       }
     };
 
     assertNull(
         BotKillDiceAssist.maybePickCaptureDice(
-            snap, 0, (token, d) -> token == 0 && d == 3, missRng));
+            snap,
+            0,
+            (token, d) -> token == 0 && d == 3,
+            missRng,
+            BotKillDiceAssist.KillAssistRates.defaults()));
+  }
+
+  @Test
+  void probabilityScalesByPlayerCount() {
+    var rates = BotKillDiceAssist.KillAssistRates.defaults();
+    assertEquals(0.40, BotKillDiceAssist.probabilityForPlayerCount(2, rates));
+    assertEquals(0.25, BotKillDiceAssist.probabilityForPlayerCount(3, rates));
+    assertEquals(0.10, BotKillDiceAssist.probabilityForPlayerCount(4, rates));
   }
 
   private static GameSnapshot snapshot(
