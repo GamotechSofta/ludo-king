@@ -1,6 +1,7 @@
 import {
   buildHumanOnlineRollGate,
   isDuplicateOpponentRollFlash,
+  isStableTurnPass,
   opponentRollFlashKey,
   priorOpponentRollVisible,
 } from "./diceTurnLogic";
@@ -60,5 +61,68 @@ describe("opponent roll flash dedup", () => {
     };
     expect(priorOpponentRollVisible(prev, 1, 5)).toBe(true);
     expect(priorOpponentRollVisible(prev, 1, 6)).toBe(false);
+  });
+});
+
+describe("isStableTurnPass", () => {
+  const base: IGameSnapshot = {
+    roomId: "r1",
+    phase: "AWAITING_ROLL",
+    currentSeatIndex: 0,
+    currentColor: "YELLOW",
+    diceValue: 0,
+    diceList: [],
+    tokenPositions: { YELLOW: [-1, -1, -1, -1], RED: [-1, -1, -1, -1] },
+    legalTokenIndexes: [],
+  };
+
+  it("shows a jail non-6 pass even when prev still points at the same seat", () => {
+    // Human (seat 0) passed too; its own flash delayed prevSnap by one action
+    const prev: IGameSnapshot = { ...base, currentSeatIndex: 0, actionSeq: 1 };
+    const botPass: IGameSnapshot = {
+      ...base,
+      currentSeatIndex: 0,
+      actionSeq: 2,
+      lastActionType: "PASS",
+      lastActionSeat: 1,
+      lastActionDice: 3,
+    };
+    expect(isStableTurnPass(botPass, prev)).toBe(true);
+  });
+
+  it("ignores a pass whose roller still holds the turn", () => {
+    const prev: IGameSnapshot = { ...base, currentSeatIndex: 1, actionSeq: 4 };
+    const samSeat: IGameSnapshot = {
+      ...base,
+      currentSeatIndex: 1,
+      actionSeq: 5,
+      lastActionType: "PASS",
+      lastActionSeat: 1,
+      lastActionDice: 2,
+    };
+    expect(isStableTurnPass(samSeat, prev)).toBe(false);
+  });
+
+  it("ignores repeats of the same action and non-pass snapshots", () => {
+    const prev: IGameSnapshot = { ...base, currentSeatIndex: 1, actionSeq: 7 };
+    const same: IGameSnapshot = {
+      ...base,
+      actionSeq: 7,
+      lastActionType: "PASS",
+      lastActionSeat: 1,
+      lastActionDice: 2,
+    };
+    expect(isStableTurnPass(same, prev)).toBe(false);
+
+    const rolled: IGameSnapshot = {
+      ...base,
+      actionSeq: 8,
+      phase: "AWAITING_MOVE",
+      diceList: [4],
+      lastActionType: "ROLL",
+      lastActionSeat: 1,
+      lastActionDice: 4,
+    };
+    expect(isStableTurnPass(rolled, prev)).toBe(false);
   });
 });

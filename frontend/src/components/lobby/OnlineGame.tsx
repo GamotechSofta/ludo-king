@@ -1232,7 +1232,8 @@ const OnlineGame = ({
 
         passFlashUntilRef.current = performance.now() + passDelayMs;
         await rafDelay(passDelayMs, animCancelRef.current);
-        if (cancelled) {
+        // A newer snapshot already owns the die — finishing here would erase its flash.
+        if (cancelled || seq !== applySeqRef.current) {
           if (seq === applySeqRef.current) abandonAnimation();
           return;
         }

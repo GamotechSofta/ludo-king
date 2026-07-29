@@ -185,9 +185,17 @@ export function isStableTurnPass(
   if (!prev || (snap.actionSeq ?? 0) === (prev.actionSeq ?? 0)) return false;
   if (snap.phase !== "AWAITING_ROLL") return false;
   if ((snap.diceList?.length ?? 0) > 0) return false;
-  if (prev.currentSeatIndex === snap.currentSeatIndex) return false;
   const passType = snap.lastActionType;
-  return passType === "PASS" || passType === "TIMEOUT" || passType === "ELIMINATED";
+  if (passType !== "PASS" && passType !== "TIMEOUT" && passType !== "ELIMINATED") {
+    return false;
+  }
+  // The snapshot itself says who lost the turn. `prev` can still lag a full
+  // action behind (its own pass flash is mid-delay), and comparing seats
+  // against it silently swallowed the roller's die.
+  if (snap.lastActionSeat != null) {
+    return snap.lastActionSeat !== snap.currentSeatIndex;
+  }
+  return prev.currentSeatIndex !== snap.currentSeatIndex;
 }
 
 /** Jail / no-move pass — rolled value shown, then turn hands off. */
