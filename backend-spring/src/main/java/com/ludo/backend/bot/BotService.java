@@ -85,7 +85,6 @@ public class BotService {
         && snap.getCurrentSeatIndex() == seat
         && !GameEngineService.PHASE_FINISHED.equals(snap.getPhase())) {
 
-<<<<<<< Updated upstream
       try {
         if (GameEngineService.PHASE_ROLL.equals(snap.getPhase())) {
           sleepBeforeDiceRoll();
@@ -106,14 +105,6 @@ public class BotService {
           }
           continue;
         }
-=======
-      if (GameEngineService.PHASE_ROLL.equals(snap.getPhase())) {
-        sleepBeforeDiceRoll();
-        snap = gameEngineService.rollDiceAsSeat(roomId, seat);
-        publish(onStep, snap);
-        continue;
-      }
->>>>>>> Stashed changes
 
         if (GameEngineService.PHASE_MOVE.equals(snap.getPhase())) {
           List<int[]> moves = gameEngineService.legalMoves(roomId);

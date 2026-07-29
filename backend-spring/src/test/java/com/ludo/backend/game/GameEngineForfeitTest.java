@@ -18,7 +18,8 @@ class GameEngineForfeitTest {
         new HumanJailDiceAssist(
             new HumanJailAssistProperties(false, 6, 2, 0.05, 0.45));
     HumanJailExitAssist exitAssist = new HumanJailExitAssist(false, 70);
-    engine = new GameEngineService(jailAssist, exitAssist);
+    HumanCaptureDiceAssist captureAssist = new HumanCaptureDiceAssist(false, 60);
+    engine = new GameEngineService(jailAssist, exitAssist, captureAssist);
   }
 
   @Test

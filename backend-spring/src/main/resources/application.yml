@@ -63,6 +63,10 @@ ludo:
     normal-rolls-before-boost: ${JAIL_ASSIST_NORMAL_ROLLS:2}
     boost-step: ${JAIL_ASSIST_BOOST_STEP:0.05}
     max-six-probability: ${JAIL_ASSIST_MAX_SIX_PROB:0.45}
+  human-capture-dice-assist:
+    # Human only: ~60% exact capture die when a bot pawn is 1–6 steps ahead on same path.
+    enabled: ${HUMAN_CAPTURE_DICE_ASSIST:true}
+    assist-chance-pct: ${HUMAN_CAPTURE_DICE_ASSIST_CHANCE:60}
 
 logging:
   level:

@@ -64,13 +64,16 @@ public class GameEngineService {
   private final SecureRandom secureRandom = new SecureRandom();
   private final HumanJailDiceAssist humanJailDiceAssist;
   private final HumanJailExitAssist humanJailExitAssist;
+  private final HumanCaptureDiceAssist humanCaptureDiceAssist;
 
   public GameEngineService(
       HumanJailDiceAssist humanJailDiceAssist,
-      HumanJailExitAssist humanJailExitAssist
+      HumanJailExitAssist humanJailExitAssist,
+      HumanCaptureDiceAssist humanCaptureDiceAssist
   ) {
     this.humanJailDiceAssist = humanJailDiceAssist;
     this.humanJailExitAssist = humanJailExitAssist;
+    this.humanCaptureDiceAssist = humanCaptureDiceAssist;
   }
 
   public static class SeatInfo {
@@ -575,6 +578,16 @@ public class GameEngineService {
       value = humanJailExitAssist.rollDice(secureRandom);
     } else if (humanSeat && allJailedBeforeRoll && humanJailDiceAssist.isEnabled()) {
       value = humanJailDiceAssist.rollDice(secureRandom, rt.jailAssistFailedRolls[seat]);
+    } else if (
+        humanSeat
+            && !allJailedBeforeRoll
+            && humanCaptureDiceAssist.isEnabled()
+            && humanCaptureDiceAssist.hasPawnOnBoard(rt, seat)
+    ) {
+      Integer captureDice =
+          humanCaptureDiceAssist.maybePickCaptureDice(
+              rt, seat, (token, dice) -> canUseDice(rt, seat, token, dice), secureRandom);
+      value = captureDice != null ? captureDice : secureRandom.nextInt(6) + 1;
     } else {
       value = secureRandom.nextInt(6) + 1;
     }
