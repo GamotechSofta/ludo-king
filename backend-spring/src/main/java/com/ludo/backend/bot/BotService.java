@@ -40,6 +40,8 @@ public class BotService {
 
   private final GameEngineService gameEngineService;
   private final boolean smartKillDiceAssist;
+  private final boolean smartHomeDiceAssist;
+  private final double homeAssistProbability;
   private final BotKillDiceAssist.KillAssistRates killAssistRates;
   private final int rollDelayMinMs;
   private final int rollDelayMaxMs;
@@ -49,6 +51,8 @@ public class BotService {
   public BotService(
       GameEngineService gameEngineService,
       @Value("${ludo.bot.smart-kill-dice-assist:true}") boolean smartKillDiceAssist,
+      @Value("${ludo.bot.smart-home-dice-assist:true}") boolean smartHomeDiceAssist,
+      @Value("${ludo.bot.home-assist.probability:0.75}") double homeAssistProbability,
       @Value("${ludo.bot.kill-assist.two-player:0.40}") double killAssistTwoPlayer,
       @Value("${ludo.bot.kill-assist.three-player:0.25}") double killAssistThreePlayer,
       @Value("${ludo.bot.kill-assist.four-player:0.10}") double killAssistFourPlayer,
@@ -59,6 +63,8 @@ public class BotService {
   ) {
     this.gameEngineService = gameEngineService;
     this.smartKillDiceAssist = smartKillDiceAssist;
+    this.smartHomeDiceAssist = smartHomeDiceAssist;
+    this.homeAssistProbability = Math.max(0.0, Math.min(1.0, homeAssistProbability));
     this.killAssistRates =
         new BotKillDiceAssist.KillAssistRates(
             killAssistTwoPlayer, killAssistThreePlayer, killAssistFourPlayer);
@@ -108,15 +114,27 @@ public class BotService {
         if (GameEngineService.PHASE_ROLL.equals(snap.getPhase())) {
           sleepBeforeDiceRoll();
           Integer assistDice = null;
-          if (smartKillDiceAssist && diff == BotDifficulty.HARD) {
-            assistDice =
-                BotKillDiceAssist.maybePickCaptureDice(
-                    snap,
-                    seat,
-                    (token, dice) ->
-                        gameEngineService.canBotUseDiceForAssist(roomId, seat, token, dice),
-                    ThreadLocalRandom.current(),
-                    killAssistRates);
+          if (diff == BotDifficulty.HARD) {
+            if (smartHomeDiceAssist) {
+              assistDice =
+                  BotHomeDiceAssist.maybePickHomeDice(
+                      snap,
+                      seat,
+                      (token, dice) ->
+                          gameEngineService.canBotUseDiceForAssist(roomId, seat, token, dice),
+                      ThreadLocalRandom.current(),
+                      homeAssistProbability);
+            }
+            if (assistDice == null && smartKillDiceAssist) {
+              assistDice =
+                  BotKillDiceAssist.maybePickCaptureDice(
+                      snap,
+                      seat,
+                      (token, dice) ->
+                          gameEngineService.canBotUseDiceForAssist(roomId, seat, token, dice),
+                      ThreadLocalRandom.current(),
+                      killAssistRates);
+            }
           }
           snap = gameEngineService.rollDiceAsSeat(roomId, seat, assistDice);
           publish(onStep, snap);
