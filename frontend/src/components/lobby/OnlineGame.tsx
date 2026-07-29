@@ -235,6 +235,8 @@ const OnlineGame = ({
   const diceRollPendingRef = useRef(false);
   const diceRollWaitersRef = useRef<Array<() => void>>([]);
   const diceRollFallbackRef = useRef<number | null>(null);
+  /** Human AWAITING_MOVE: ensure handleDoneDice runs if ReactDice skips rollDone. */
+  const humanMoveDoneFallbackRef = useRef<number | null>(null);
   const rollRecoveryTimerRef = useRef<number | null>(null);
   /** Dedup bot/opponent roll flash (bots often skip AWAITING_MOVE). */
   const lastDiceFlashKeyRef = useRef("");
@@ -274,6 +276,10 @@ const OnlineGame = ({
     if (diceRollFallbackRef.current != null) {
       window.clearTimeout(diceRollFallbackRef.current);
       diceRollFallbackRef.current = null;
+    }
+    if (humanMoveDoneFallbackRef.current != null) {
+      window.clearTimeout(humanMoveDoneFallbackRef.current);
+      humanMoveDoneFallbackRef.current = null;
     }
     diceRollPendingRef.current = false;
     setDiceRolling(false);
@@ -559,19 +565,27 @@ const OnlineGame = ({
 
       const isMyRollTurn =
         snap.currentSeatIndex === mySeat && snap.phase === "AWAITING_ROLL";
-      if (isMyRollTurn && !animatingRef.current) {
-        setIsBusy(false);
-        isBusyRef.current = false;
-        rollingRef.current = false;
-        if (rollRecoveryTimerRef.current != null) {
-          window.clearTimeout(rollRecoveryTimerRef.current);
-          rollRecoveryTimerRef.current = null;
+      const isMyMoveTurn =
+        snap.currentSeatIndex === mySeat && snap.phase === "AWAITING_MOVE";
+      if ((isMyRollTurn || isMyMoveTurn) && !animatingRef.current) {
+        if (isMyMoveTurn && !diceRollPendingRef.current) {
+          setIsBusy(false);
+          isBusyRef.current = false;
         }
-        if (!isActionInFlight()) {
-          setActionsTurn((prev) => ({
-            ...prev,
-            disabledDice: onlineDiceDisabled(snap, mySeat),
-          }));
+        if (isMyRollTurn) {
+          setIsBusy(false);
+          isBusyRef.current = false;
+          rollingRef.current = false;
+          if (rollRecoveryTimerRef.current != null) {
+            window.clearTimeout(rollRecoveryTimerRef.current);
+            rollRecoveryTimerRef.current = null;
+          }
+          if (!isActionInFlight()) {
+            setActionsTurn((prev) => ({
+              ...prev,
+              disabledDice: onlineDiceDisabled(snap, mySeat),
+            }));
+          }
         }
       }
 
@@ -1065,6 +1079,13 @@ const OnlineGame = ({
             return applyServerDiceVisual(base, value);
           });
           beginDiceRollAnimation();
+          if (humanMoveDoneFallbackRef.current != null) {
+            window.clearTimeout(humanMoveDoneFallbackRef.current);
+          }
+          humanMoveDoneFallbackRef.current = window.setTimeout(() => {
+            humanMoveDoneFallbackRef.current = null;
+            handleDoneDiceRef.current();
+          }, DICE_ROLL_ANIM_MS + 300);
           prevSnapRef.current = {
             ...snap,
             tokenPositions:
@@ -1352,7 +1373,6 @@ const OnlineGame = ({
         return;
       }
       rollingRef.current = true;
-      beginDiceRollAnimation();
       ensureBackgroundMusic();
       playSound("diceRolling");
       setActionsTurn((prev) => ({
@@ -1388,14 +1408,14 @@ const OnlineGame = ({
       rollDice,
       isActionInFlight,
       finishDiceRollAnimation,
-      beginDiceRollAnimation,
     ]
   );
 
   const handleSelectedToken = useCallback(
     async (
       select: ISelectTokenValues,
-      snapOverride?: IGameSnapshot
+      snapOverride?: IGameSnapshot,
+      fromAuto = false
     ): Promise<boolean> => {
       const live = snapOverride ?? snapshotRef.current ?? snapshot;
       if (!live) return false;
@@ -1423,10 +1443,23 @@ const OnlineGame = ({
 
       if (animatingRef.current) return false;
 
-      if (diceRollPendingRef.current) return false;
+      if (diceRollPendingRef.current) {
+        const diceFace = (actionsTurnRef.current.diceValue || 0) as number;
+        if (
+          shouldEnableTokenSelection(live, mySeat) &&
+          diceFace >= 1 &&
+          diceFace <= 6
+        ) {
+          finishDiceRollAnimation();
+        } else {
+          return false;
+        }
+      }
 
-      if (lastAutoMoveKeyRef.current === moveKey) return false;
-      lastAutoMoveKeyRef.current = moveKey;
+      if (fromAuto) {
+        if (lastAutoMoveKeyRef.current === moveKey) return false;
+        lastAutoMoveKeyRef.current = moveKey;
+      }
 
       animatingRef.current = true;
       isBusyRef.current = true;
@@ -1478,7 +1511,7 @@ const OnlineGame = ({
       }
       return ok;
     },
-    [snapshot, mySeat, isActionInFlight, runMoveAnimation, runPostMoveCaptureReturn, moveToken, syncBoardFromSnapshot]
+    [snapshot, mySeat, isActionInFlight, runMoveAnimation, runPostMoveCaptureReturn, moveToken, syncBoardFromSnapshot, finishDiceRollAnimation]
   );
 
   const scheduleHumanAutoMove = useCallback(
@@ -1506,7 +1539,7 @@ const OnlineGame = ({
         }
         const autoMove = pickHumanAutoMoveFromSnapshot(live, mySeat);
         if (!autoMove) return;
-        void handleSelectedToken(autoMove, live).then((started) => {
+        void handleSelectedToken(autoMove, live, true).then((started) => {
           if (!started && attempts < 40) {
             lastAutoMoveKeyRef.current = "";
             autoMoveTimerRef.current = window.setTimeout(attempt, 50);
@@ -1573,6 +1606,10 @@ const OnlineGame = ({
 
   const handleDoneDice = useCallback(() => {
     finishDiceRollAnimation();
+    if (humanMoveDoneFallbackRef.current != null) {
+      window.clearTimeout(humanMoveDoneFallbackRef.current);
+      humanMoveDoneFallbackRef.current = null;
+    }
     if (!snapshot) return;
 
     const live = snapshotRef.current ?? snapshot;
@@ -1654,6 +1691,10 @@ const OnlineGame = ({
     if (diceRollFallbackRef.current != null) {
       window.clearTimeout(diceRollFallbackRef.current);
       diceRollFallbackRef.current = null;
+    }
+    if (humanMoveDoneFallbackRef.current != null) {
+      window.clearTimeout(humanMoveDoneFallbackRef.current);
+      humanMoveDoneFallbackRef.current = null;
     }
     diceRollPendingRef.current = false;
     setDiceRolling(false);
@@ -1765,6 +1806,11 @@ const OnlineGame = ({
   const boardColor =
     lockedBoardColorRef.current ??
     boardColorForSnapshot(snapshot, mySeat);
+
+  const isHumanAwaitingMove =
+    snapshot?.phase === "AWAITING_MOVE" &&
+    snapshot.currentSeatIndex === mySeat &&
+    mySeat >= 0;
 
   const profileHandlers = {
     handleTimer: () => undefined,
@@ -1960,7 +2006,11 @@ const OnlineGame = ({
         >
           <Board boardColor={boardColor}>
             <Tokens
-              isDisabledUI={actionsTurn.isDisabledUI || isBusy || diceRolling}
+              isDisabledUI={
+                actionsTurn.isDisabledUI ||
+                diceRolling ||
+                (isBusy && !isHumanAwaitingMove)
+              }
               listTokens={listTokens}
               diceList={actionsTurn.diceList}
               handleSelectedToken={handleSelectedToken}
