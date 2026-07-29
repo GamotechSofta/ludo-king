@@ -171,6 +171,13 @@ export const CAPTURE_RETURN_STEP_MS = 55;
 export const CAPTURE_RETURN_PAUSE_MS = 0;
 
 /**
+ * A pawn cut far from its own start would need ~50 hops. Compress the cadence
+ * so the walk always ends before the next snapshot interrupts it.
+ */
+export const CAPTURE_RETURN_MAX_TOTAL_MS = 1100;
+export const CAPTURE_RETURN_MIN_STEP_MS = 22;
+
+/**
  * Dice spin duration (seconds) for react-dice-complete (original).
  */
 export const ROLL_TIME_VALUE = 0.65;

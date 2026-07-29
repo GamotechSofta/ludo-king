@@ -24,6 +24,9 @@ public class BotTurnCoordinator {
   private final ExecutorService botExecutor = Executors.newCachedThreadPool();
   private final ConcurrentHashMap<String, AtomicBoolean> running =
       new ConcurrentHashMap<>();
+  /** A schedule() that arrived while the room was busy — replayed, never dropped. */
+  private final ConcurrentHashMap<String, AtomicBoolean> requested =
+      new ConcurrentHashMap<>();
 
   public BotTurnCoordinator(
       GameEngineService gameEngineService,
@@ -46,18 +49,50 @@ public class BotTurnCoordinator {
 
   private void runBotChain(String roomId) {
     AtomicBoolean flag = running.computeIfAbsent(roomId, k -> new AtomicBoolean(false));
-    if (!flag.compareAndSet(false, true)) {
-      return;
+    AtomicBoolean want = requested.computeIfAbsent(roomId, k -> new AtomicBoolean(false));
+    // Claim the request before the lock so a chain about to finish still sees it.
+    want.set(true);
+
+    while (true) {
+      if (!flag.compareAndSet(false, true)) {
+        return;
+      }
+      try {
+        while (want.compareAndSet(true, false)) {
+          driveBots(roomId);
+        }
+      } finally {
+        flag.set(false);
+      }
+      // Lost a request in the window between the last check and the release.
+      if (!want.get()) {
+        return;
+      }
     }
+  }
+
+  private void driveBots(String roomId) {
     try {
       if (!gameEngineService.hasMatch(roomId)) {
         return;
       }
       GameSnapshot snap = gameEngineService.getSnapshot(roomId);
+      long lastSeq = -1;
+      int stalledRounds = 0;
       while (snap.getIsBot() != null
           && snap.getCurrentSeatIndex() < snap.getIsBot().length
           && snap.getIsBot()[snap.getCurrentSeatIndex()]
           && !GameEngineService.PHASE_FINISHED.equals(snap.getPhase())) {
+
+        // A bot seat that cannot progress must not spin the CPU.
+        if (snap.getActionSeq() == lastSeq) {
+          if (++stalledRounds > 3) {
+            break;
+          }
+        } else {
+          stalledRounds = 0;
+          lastSeq = snap.getActionSeq();
+        }
 
         BotDifficulty diff = BotDifficulty.HARD;
         Room room = roomService.getRoom(roomId).orElse(null);
@@ -84,8 +119,6 @@ public class BotTurnCoordinator {
       } catch (Exception ignored2) {
         // non-fatal
       }
-    } finally {
-      flag.set(false);
     }
   }
 }

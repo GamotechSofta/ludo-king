@@ -26,6 +26,9 @@ public class GameEventBus {
   private final RoomService roomService;
   private final Optional<RedisGameBridge> redisBridge;
   private final ConcurrentHashMap<String, Long> lastPublishedSeq = new ConcurrentHashMap<>();
+  /** Only the newest snapshot per room needs persisting — older writes are dropped. */
+  private final ConcurrentHashMap<String, GameSnapshot> pendingPersist =
+      new ConcurrentHashMap<>();
   private final ExecutorService asyncIo = Executors.newFixedThreadPool(2, r -> {
     Thread t = new Thread(r, "ludo-game-async-io");
     t.setDaemon(true);
@@ -85,7 +88,15 @@ public class GameEventBus {
           log.debug("async redis publish: {}", e.getMessage());
         }
       }));
-      asyncIo.execute(() -> roomService.persistLiveSnapshot(roomId, snap));
+      // Coalesce: Mongo Atlas round-trips are slow enough to back up this pool.
+      if (pendingPersist.put(roomId, snap) == null) {
+        asyncIo.execute(() -> {
+          GameSnapshot latest = pendingPersist.remove(roomId);
+          if (latest != null) {
+            roomService.persistLiveSnapshot(roomId, latest);
+          }
+        });
+      }
     }
   }
 
@@ -101,5 +112,6 @@ public class GameEventBus {
 
   public void clearRoom(String roomId) {
     lastPublishedSeq.remove(roomId);
+    pendingPersist.remove(roomId);
   }
 }

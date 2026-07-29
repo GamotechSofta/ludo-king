@@ -5,6 +5,7 @@ import static com.ludo.backend.game.BoardConstants.isMain;
 
 import com.ludo.backend.config.HumanJailExitAssistProperties;
 import java.util.Random;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -20,6 +21,7 @@ public class HumanJailExitAssist {
 
   private final HumanJailExitAssistProperties props;
 
+  @Autowired
   public HumanJailExitAssist(HumanJailExitAssistProperties props) {
     this.props = props;
   }

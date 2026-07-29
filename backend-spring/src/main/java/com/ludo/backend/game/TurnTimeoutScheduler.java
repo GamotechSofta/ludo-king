@@ -48,9 +48,7 @@ public class TurnTimeoutScheduler {
         }
         gameEventBus.publishSnapshot(roomId, after);
         if (GameEngineService.PHASE_FINISHED.equals(after.getPhase())) {
-          roomService.getRoom(roomId).ifPresent(
-              room -> roomService.settleIfFinished(room, after)
-          );
+          roomService.settleIfFinishedAsync(roomId, after);
         } else {
           botTurnCoordinator.schedule(roomId);
         }

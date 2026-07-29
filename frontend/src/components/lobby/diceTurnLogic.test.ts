@@ -33,11 +33,18 @@ describe("buildHumanOnlineRollGate", () => {
 
 describe("opponent roll flash dedup", () => {
   it("treats ROLL and MOVE actionSeq as one visual roll", () => {
-    const rollKey = opponentRollFlashKey(1, 4, 10);
-    expect(isDuplicateOpponentRollFlash(rollKey, 1, 4, 11)).toBe(true);
-    expect(isDuplicateOpponentRollFlash(rollKey, 1, 4, 10)).toBe(true);
-    expect(isDuplicateOpponentRollFlash(rollKey, 1, 4, 12)).toBe(false);
-    expect(isDuplicateOpponentRollFlash(rollKey, 1, 6, 11)).toBe(false);
+    const rollKey = opponentRollFlashKey(1, 4, 10, "ROLL");
+    expect(isDuplicateOpponentRollFlash(rollKey, 1, 4, 11, "MOVE")).toBe(true);
+    expect(isDuplicateOpponentRollFlash(rollKey, 1, 4, 10, "ROLL")).toBe(true);
+    expect(isDuplicateOpponentRollFlash(rollKey, 1, 4, 12, "MOVE")).toBe(false);
+    expect(isDuplicateOpponentRollFlash(rollKey, 1, 6, 11, "MOVE")).toBe(false);
+  });
+
+  it("still flashes a bonus roll that repeats the value after a MOVE", () => {
+    // Bot rolled 6 (flashed on the MOVE event), bonus roll is another 6
+    const moveKey = opponentRollFlashKey(1, 6, 11, "MOVE");
+    expect(isDuplicateOpponentRollFlash(moveKey, 1, 6, 12, "ROLL")).toBe(false);
+    expect(isDuplicateOpponentRollFlash(moveKey, 1, 6, 13, "MOVE")).toBe(false);
   });
 
   it("detects prior AWAITING_MOVE roll before MOVE", () => {

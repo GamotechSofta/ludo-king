@@ -13,6 +13,9 @@ import { onlinePerf } from "../utils/onlinePerf";
 const STOMP_JSON = { "content-type": "application/json" };
 const POLL_DISCONNECTED_MS = 800;
 const POLL_CONNECTED_MS = 6000;
+const ACTION_HTTP_FALLBACK_MS = 2500;
+/** Never gate roll/move longer than this, even if no snapshot ever lands. */
+const ACTION_GATE_MAX_MS = 4500;
 
 /** Compact server event (GameEvent) or legacy bare GameSnapshot. */
 export interface IGameEvent {
@@ -171,6 +174,16 @@ export function useGameSocket(
     diceList?: number[];
   }>({});
 
+  const releaseActionGate = useCallback(() => {
+    inFlightActionRef.current = false;
+    lastRollKeyRef.current = "";
+    lastMoveKeyRef.current = "";
+    if (fallbackTimerRef.current != null) {
+      window.clearTimeout(fallbackTimerRef.current);
+      fallbackTimerRef.current = null;
+    }
+  }, []);
+
   const applySnapshot = useCallback((snap: unknown, fromWs = false) => {
     const event =
       snap && typeof snap === "object" && "type" in (snap as object)
@@ -240,6 +253,9 @@ export function useGameSocket(
 
     if (sig === lastSigRef.current) {
       if (fromWs) lastWsAtRef.current = Date.now();
+      // Server re-published the same state (rejected/duplicate action) — the
+      // action is settled, so the gate must not stay closed.
+      releaseActionGate();
       return true;
     }
     // Strict ordering: ignore stale actionSeq
@@ -261,15 +277,9 @@ export function useGameSocket(
     if (event) setLastEvent(event);
     setSnapshot(merged);
     setLoadError("");
-    inFlightActionRef.current = false;
-    lastRollKeyRef.current = "";
-    lastMoveKeyRef.current = "";
-    if (fallbackTimerRef.current != null) {
-      window.clearTimeout(fallbackTimerRef.current);
-      fallbackTimerRef.current = null;
-    }
+    releaseActionGate();
     return true;
-  }, []);
+  }, [releaseActionGate]);
 
   useEffect(() => {
     if (!roomId) return;
@@ -384,23 +394,21 @@ export function useGameSocket(
         void fn()
           .then((g) => applySnapshot(g, false))
           .catch(() => {
-            inFlightActionRef.current = false;
+            releaseActionGate();
             if (!roomId) return;
             void ensureGameSnapshot(roomId)
               .then((g) => applySnapshot(g, false))
               .catch(() => undefined);
           });
-      }, 2500);
+      }, ACTION_HTTP_FALLBACK_MS);
       // Absolute safety: never leave roll/move gated forever
       window.setTimeout(() => {
         if (inFlightActionRef.current && lastSeqRef.current <= seqAtSend) {
-          inFlightActionRef.current = false;
-          lastRollKeyRef.current = "";
-          lastMoveKeyRef.current = "";
+          releaseActionGate();
         }
-      }, 8000);
+      }, ACTION_GATE_MAX_MS);
     },
-    [applySnapshot, roomId]
+    [applySnapshot, releaseActionGate, roomId]
   );
 
   /** Primary: WebSocket. HTTP only if no newer actionSeq arrives. */
@@ -424,10 +432,9 @@ export function useGameSocket(
     void httpRollDice(roomId, userId)
       .then((g) => applySnapshot(g, false))
       .catch(() => {
-        inFlightActionRef.current = false;
-        lastRollKeyRef.current = "";
+        releaseActionGate();
       });
-  }, [roomId, userId, applySnapshot, scheduleHttpFallback]);
+  }, [roomId, userId, applySnapshot, releaseActionGate, scheduleHttpFallback]);
 
   const moveToken = useCallback(
     (tokenIndex: number, diceIndex: number) => {
@@ -456,10 +463,10 @@ export function useGameSocket(
       void httpMoveToken(roomId, userId, tokenIndex, diceIndex)
         .then((g) => applySnapshot(g, false))
         .catch(() => {
-          inFlightActionRef.current = false;
+          releaseActionGate();
         });
     },
-    [roomId, userId, applySnapshot, scheduleHttpFallback]
+    [roomId, userId, applySnapshot, releaseActionGate, scheduleHttpFallback]
   );
 
   return {

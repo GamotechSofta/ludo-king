@@ -1,24 +1,45 @@
 import type { IGameSnapshot } from "./types";
 
+/** Which server event a dice flash came from — a ROLL and its MOVE are one roll. */
+export type RollFlashKind = "ROLL" | "MOVE" | "OTHER";
+
+export function rollFlashKind(snap: IGameSnapshot): RollFlashKind {
+  if (snap.lastActionType === "MOVE") return "MOVE";
+  if (snap.lastActionType === "ROLL") return "ROLL";
+  return "OTHER";
+}
+
 /** Dedup key for opponent/bot dice tumble (ROLL seq N and MOVE seq N+1 are one roll). */
 export function opponentRollFlashKey(
   seat: number,
   value: number,
-  actionSeq: number
+  actionSeq: number,
+  kind: RollFlashKind = "OTHER"
 ): string {
-  return `${seat}|${value}|${actionSeq}`;
+  return `${seat}|${value}|${actionSeq}|${kind}`;
 }
 
+/**
+ * A bonus roll (six / capture) can repeat the same value on the very next
+ * actionSeq, so seq proximity alone must not swallow it — only the MOVE that
+ * belongs to an already flashed ROLL counts as a duplicate.
+ */
 export function isDuplicateOpponentRollFlash(
   lastFlashKey: string,
   seat: number,
   value: number,
-  actionSeq: number
+  actionSeq: number,
+  kind: RollFlashKind = "OTHER"
 ): boolean {
   if (!lastFlashKey) return false;
-  const key = opponentRollFlashKey(seat, value, actionSeq);
-  if (lastFlashKey === key) return true;
-  return lastFlashKey === opponentRollFlashKey(seat, value, actionSeq - 1);
+  const [lastSeat, lastValue, lastSeq, lastKind] = lastFlashKey.split("|");
+  if (Number(lastSeat) !== seat || Number(lastValue) !== value) return false;
+  if (Number(lastSeq) === actionSeq) return true;
+  return (
+    kind === "MOVE" &&
+    lastKind === "ROLL" &&
+    actionSeq === Number(lastSeq) + 1
+  );
 }
 
 /** True when AWAITING_MOVE already showed this seat's roll before a MOVE event. */

@@ -598,6 +598,8 @@ public class GameEngineService {
         rt.jailAssistFailedRolls[seat] += 1;
       }
     }
+    // Rolling proves the seat is present — the AFK streak must not carry over
+    rt.consecutiveTimeouts[seat] = 0;
     rt.lastDice = value;
     rt.diceList.clear();
     rt.diceList.add(value);
@@ -658,6 +660,7 @@ public class GameEngineService {
     }
 
     boolean usedSix = dice == 6;
+    rt.consecutiveTimeouts[seat] = 0;
     int from = rt.tokens[seat][tokenIndex];
     int to = applySteps(rt.colors[seat], from, dice);
     rt.tokens[seat][tokenIndex] = to;

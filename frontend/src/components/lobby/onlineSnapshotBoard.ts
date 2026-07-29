@@ -40,6 +40,8 @@ export {
   perspectiveKey,
 } from "./onlineViewMapping";
 
+const JAIL_POSITION = -1;
+
 const isGenericBotLabel = (name?: string) =>
   !!name && /^Bot\s*\d+$/i.test(name.trim());
 const isGenericPlayerLabel = (name?: string) =>
@@ -112,6 +114,32 @@ export function viewTileFromServerPos(
     typeTile: decoded.typeTile as TtypeTile,
     positionTile: decoded.positionTile,
   };
+}
+
+/**
+ * Pawns the server just sent back to the yard, keyed by server seat. Derived
+ * from the snapshot diff so the walk-back never animates the wrong pawn.
+ */
+export function capturedVictimsFromSnapshots(
+  prev: IGameSnapshot | null | undefined,
+  snapshot: IGameSnapshot,
+  moverSeat: number
+): Array<{ playerIndex: number; tokenIndex: number }> {
+  if (!prev) return [];
+  const victims: Array<{ playerIndex: number; tokenIndex: number }> = [];
+  seatColorsFromSnapshot(snapshot).forEach((color, seat) => {
+    if (seat === moverSeat) return;
+    const before = prev.tokenPositions?.[color];
+    const after = snapshot.tokenPositions?.[color];
+    if (!before || !after) return;
+    after.forEach((pos, tokenIndex) => {
+      const wasAt = before[tokenIndex];
+      if (pos === JAIL_POSITION && wasAt != null && wasAt !== JAIL_POSITION) {
+        victims.push({ playerIndex: seat, tokenIndex });
+      }
+    });
+  });
+  return victims;
 }
 
 export function playersFromSnapshot(

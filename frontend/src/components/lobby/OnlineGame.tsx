@@ -49,6 +49,7 @@ import LostSummaryPopup from "./LostSummaryPopup";
 import LeaveMatchConfirmPopup from "./LeaveMatchConfirmPopup";
 import { fetchWalletBalance, leaveRoom, ensureGameSnapshot } from "../../api/ludoApi";
 import {
+  placeVictimsInJail,
   runReturnToJailAnimations,
   type CaptureVictim,
 } from "./captureReturnAnim";
@@ -62,6 +63,7 @@ import { onlinePerf } from "../../utils/onlinePerf";
 import {
   actionsTurnFromSnapshot,
   boardColorForSnapshot,
+  capturedVictimsFromSnapshots,
   clearDisplayNameCache,
   displayPlayerName,
   listTokensFromSnapshot,
@@ -86,7 +88,9 @@ import {
   isNoMovePassSnapshot,
   moveDiceValueFromSnapshot,
   onlineDiceDisabled,
+  opponentRollFlashKey,
   priorOpponentRollVisible,
+  rollFlashKind,
   shouldClearStuckDice,
   shouldEnableTokenSelection,
 } from "./diceTurnLogic";
@@ -101,6 +105,9 @@ function flushSyncAfterRender(update: () => void): Promise<void> {
     });
   });
 }
+
+/** Last resort unlock for a MOVE whose animation never completed. */
+const STUCK_MOVE_FORCE_UNLOCK_MS = 7000;
 
 interface OnlineGameProps {
   guest: IGuestUser;
@@ -251,6 +258,8 @@ const OnlineGame = ({
   const snapshotRef = useRef<IGameSnapshot | null>(snapshot);
   const prevConnectedRef = useRef(false);
   const lockSeqRef = useRef<{ seq: number; at: number }>({ seq: 0, at: Date.now() });
+  /** Bumped when an interrupted animation released its locks — re-runs apply(). */
+  const [resyncTick, setResyncTick] = useState(0);
 
   useEffect(() => {
     snapshotRef.current = snapshot;
@@ -363,12 +372,14 @@ const OnlineGame = ({
     ): boolean => {
       if (value < 1 || value > 6) return false;
       const actionSeq = snap.actionSeq ?? 0;
+      const kind = rollFlashKind(snap);
       if (
         isDuplicateOpponentRollFlash(
           lastDiceFlashKeyRef.current,
           seat,
           value,
-          actionSeq
+          actionSeq,
+          kind
         )
       ) {
         return false;
@@ -380,7 +391,12 @@ const OnlineGame = ({
       ) {
         return false;
       }
-      lastDiceFlashKeyRef.current = `${seat}|${value}|${actionSeq}`;
+      lastDiceFlashKeyRef.current = opponentRollFlashKey(
+        seat,
+        value,
+        actionSeq,
+        kind
+      );
       beginDiceRollAnimation();
       pendingDiceRef.current = {
         seat,
@@ -970,27 +986,33 @@ const OnlineGame = ({
 
   /** Only the captured pawn walks back — never other pawns on the board. */
   const runPostMoveCaptureReturn = useCallback(
-    async (moverSeat: number, moverToken: number): Promise<boolean> => {
-      const captives: CaptureVictim[] = findCaptureVictims(
-        listTokensRef.current,
-        moverSeat,
-        moverToken
-      );
+    async (
+      moverSeat: number,
+      moverToken: number,
+      /** Server-derived victims; local detection is only a fallback. */
+      serverVictims?: CaptureVictim[]
+    ): Promise<boolean> => {
+      const captives: CaptureVictim[] =
+        serverVictims ??
+        findCaptureVictims(listTokensRef.current, moverSeat, moverToken);
       if (!captives.length) {
         return false;
       }
       playSound("capture");
       animatingRef.current = true;
       setIsBusy(true);
+      const paint = (next: IListTokens[]) => {
+        listTokensRef.current = next;
+        setListTokens(next);
+      };
       await runReturnToJailAnimations(
         listTokensRef.current,
         captives,
-        (next) => {
-          listTokensRef.current = next;
-          setListTokens(next);
-        },
+        paint,
         { cancel: animCancelRef.current }
       );
+      // An interrupted walk must still seat every captive in its yard.
+      paint(placeVictimsInJail(listTokensRef.current, captives));
       return true;
     },
     []
@@ -1008,6 +1030,22 @@ const OnlineGame = ({
   }, [snapshot]);
 
   const handleDoneDiceRef = useRef<() => void>(() => undefined);
+
+  /**
+   * A new snapshot cancels the running apply(). If that apply owned the
+   * animation locks, releasing them here and re-running the effect is what
+   * keeps the board from freezing mid-hop.
+   */
+  const abandonAnimation = useCallback(() => {
+    if (exitingRef.current) return;
+    animatingRef.current = false;
+    suppressMoveAnimRef.current = false;
+    rollingRef.current = false;
+    isBusyRef.current = false;
+    passFlashUntilRef.current = 0;
+    setIsBusy(false);
+    setResyncTick((t) => t + 1);
+  }, []);
 
   // Apply snapshot → board (dice + opponent/bot move animations)
   useEffect(() => {
@@ -1110,7 +1148,7 @@ const OnlineGame = ({
           };
           window.setTimeout(() => {
             const next = pendingSnapRef.current.shift();
-            if (next) void apply(next);
+            if (next) drain(next);
           }, DICE_ROLL_ANIM_MS + 80);
         }
         return;
@@ -1194,13 +1232,16 @@ const OnlineGame = ({
 
         passFlashUntilRef.current = performance.now() + passDelayMs;
         await rafDelay(passDelayMs, animCancelRef.current);
-        if (cancelled) return;
+        if (cancelled) {
+          if (seq === applySeqRef.current) abandonAnimation();
+          return;
+        }
         rollingRef.current = false;
         pendingDiceRef.current = null;
         passFlashUntilRef.current = 0;
         syncBoardFromSnapshot(snap);
         const nextPass = pendingSnapRef.current.shift();
-        if (nextPass) void apply(nextPass);
+        if (nextPass) drain(nextPass);
         return;
       }
 
@@ -1241,7 +1282,7 @@ const OnlineGame = ({
         lastAnimatedMoveSeqRef.current = moveSeq;
         syncBoardFromSnapshot(snap, false, true);
         const next = pendingSnapRef.current.shift();
-        if (next) void apply(next);
+        if (next) drain(next);
         return;
       }
 
@@ -1272,7 +1313,10 @@ const OnlineGame = ({
         }
 
         await waitForDiceRollAnimation();
-        if (cancelled) return;
+        if (cancelled) {
+          if (seq === applySeqRef.current) abandonAnimation();
+          return;
+        }
         // Freeze board BEFORE any paint of destination positions
         animatingRef.current = true;
         lastDiceSigRef.current = diceSig;
@@ -1305,15 +1349,25 @@ const OnlineGame = ({
           null,
           true
         );
-        if (cancelled) return;
-        if (seq !== applySeqRef.current) return;
+        if (cancelled || seq !== applySeqRef.current) {
+          if (seq === applySeqRef.current) abandonAnimation();
+          return;
+        }
         lastAnimatedMoveSeqRef.current = moveSeq;
         pendingDiceRef.current = null;
         suppressMoveAnimRef.current = false;
         if (ok) {
-          await runPostMoveCaptureReturn(moved.seat, moved.tokenIndex);
-          if (cancelled) return;
-          if (seq !== applySeqRef.current) return;
+          await runPostMoveCaptureReturn(
+            moved.seat,
+            moved.tokenIndex,
+            prev
+              ? capturedVictimsFromSnapshots(prev, snap, moved.seat)
+              : undefined
+          );
+          if (cancelled || seq !== applySeqRef.current) {
+            if (seq === applySeqRef.current) abandonAnimation();
+            return;
+          }
         }
         animatingRef.current = false;
         setIsBusy(false);
@@ -1329,7 +1383,7 @@ const OnlineGame = ({
         }
         syncBoardFromSnapshot(snap, false, true);
         const next = pendingSnapRef.current.shift();
-        if (next) void apply(next);
+        if (next) drain(next);
         return;
       }
 
@@ -1346,14 +1400,19 @@ const OnlineGame = ({
       lastDiceSigRef.current = diceSig;
       syncBoardFromSnapshot(snap);
       const nextQueued = pendingSnapRef.current.shift();
-      if (nextQueued) void apply(nextQueued);
+      if (nextQueued) drain(nextQueued);
     };
 
-    void apply(snapshot);
+    /** A thrown animation must release the locks, not freeze the board. */
+    const drain = (snap: IGameSnapshot) => {
+      void apply(snap).catch(() => abandonAnimation());
+    };
+
+    drain(snapshot);
     return () => {
       cancelled = true;
     };
-  }, [snapshot, mySeat, syncBoardFromSnapshot, runMoveAnimation, runPostMoveCaptureReturn, beginDiceRollAnimation, waitForDiceRollAnimation, flashDiceOnSeat, playDiceRollingOnce]);
+  }, [snapshot, mySeat, resyncTick, abandonAnimation, syncBoardFromSnapshot, runMoveAnimation, runPostMoveCaptureReturn, beginDiceRollAnimation, waitForDiceRollAnimation, flashDiceOnSeat, playDiceRollingOnce]);
 
   const handleSelectDice = useCallback(
     (_diceValue?: TDicevalues) => {
@@ -1473,23 +1532,28 @@ const OnlineGame = ({
       const startPos =
         live.tokenPositions?.[colors[mySeat]]?.[tokenIndex] ?? null;
       moveToken(tokenIndex, diceIndex);
-      const ok = await runMoveAnimation(
-        live,
-        mySeat,
-        tokenIndex,
-        diceValue,
-        startPos,
-        true
-      );
-      if (ok) {
-        await runPostMoveCaptureReturn(mySeat, tokenIndex);
-      } else {
-        lastAutoMoveKeyRef.current = "";
+      let ok = false;
+      try {
+        ok = await runMoveAnimation(
+          live,
+          mySeat,
+          tokenIndex,
+          diceValue,
+          startPos,
+          true
+        );
+        if (ok) {
+          await runPostMoveCaptureReturn(mySeat, tokenIndex);
+        } else {
+          lastAutoMoveKeyRef.current = "";
+        }
+      } finally {
+        // A throw here must never leave the board locked.
+        animatingRef.current = false;
+        isBusyRef.current = false;
+        setIsBusy(false);
+        suppressMoveAnimRef.current = false;
       }
-      animatingRef.current = false;
-      isBusyRef.current = false;
-      setIsBusy(false);
-      suppressMoveAnimRef.current = false;
       const queued = pendingSnapRef.current.splice(0);
       const latest = queued.length ? queued[queued.length - 1] : null;
       if (latest) {
@@ -1582,7 +1646,14 @@ const OnlineGame = ({
         rollingRef.current && !diceRollPendingRef.current ? 2800 : 4500;
       if (elapsed < unlockMs) return;
       if (isActionInFlight()) return;
-      if (isMoveSnapshot(live, lastAnimatedMoveSeqRef.current)) return;
+
+      // A MOVE still waiting to animate normally blocks the unlock, but an
+      // interrupted animation would otherwise keep the board frozen forever.
+      const movePending = isMoveSnapshot(live, lastAnimatedMoveSeqRef.current);
+      if (movePending) {
+        if (elapsed < STUCK_MOVE_FORCE_UNLOCK_MS) return;
+        lastAnimatedMoveSeqRef.current = live.actionSeq || 0;
+      }
 
       animatingRef.current = false;
       suppressMoveAnimRef.current = false;
@@ -1597,6 +1668,42 @@ const OnlineGame = ({
 
     return () => window.clearInterval(id);
   }, [finishDiceRollAnimation, syncBoardFromSnapshot, isActionInFlight]);
+
+  /**
+   * The dice must be clickable on every one of my AWAITING_ROLL turns. A stale
+   * disabled flag left by a previous animation would silently cost the turn,
+   * so re-enable it whenever nothing is actually pending.
+   */
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const live = snapshotRef.current;
+      if (!live || mySeat < 0) return;
+      if (live.currentSeatIndex !== mySeat) return;
+      if (live.phase !== "AWAITING_ROLL") return;
+      if (live.eliminated?.[mySeat] || live.finished?.[mySeat]) return;
+      if (animatingRef.current || rollingRef.current) return;
+      if (diceRollPendingRef.current || isActionInFlight()) return;
+      // Let a PASS roll-flash finish on the previous seat first
+      if (passFlashUntilRef.current > performance.now()) return;
+      if (onlineDiceDisabled(live, mySeat)) return;
+
+      const stale =
+        actionsTurnRef.current.disabledDice ||
+        actionsTurnRef.current.isDisabledUI ||
+        isBusyRef.current;
+      if (!stale) return;
+
+      isBusyRef.current = false;
+      setIsBusy(false);
+      setActionsTurn((prev) => ({
+        ...prev,
+        disabledDice: false,
+        isDisabledUI: false,
+      }));
+    }, 400);
+
+    return () => window.clearInterval(id);
+  }, [mySeat, isActionInFlight]);
 
   useEffect(() => {
     if (!snapshot || mySeat < 0) return;

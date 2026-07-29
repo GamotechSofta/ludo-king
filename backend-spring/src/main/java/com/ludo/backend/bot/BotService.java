@@ -40,13 +40,25 @@ public class BotService {
 
   private final GameEngineService gameEngineService;
   private final boolean smartKillDiceAssist;
+  private final int rollDelayMinMs;
+  private final int rollDelayMaxMs;
+  private final int thinkDelayMinMs;
+  private final int thinkDelayMaxMs;
 
   public BotService(
       GameEngineService gameEngineService,
-      @Value("${ludo.bot.smart-kill-dice-assist:true}") boolean smartKillDiceAssist
+      @Value("${ludo.bot.smart-kill-dice-assist:true}") boolean smartKillDiceAssist,
+      @Value("${ludo.bot.roll-delay-min-ms:1100}") int rollDelayMinMs,
+      @Value("${ludo.bot.roll-delay-max-ms:1700}") int rollDelayMaxMs,
+      @Value("${ludo.bot.think-delay-min-ms:450}") int thinkDelayMinMs,
+      @Value("${ludo.bot.think-delay-max-ms:750}") int thinkDelayMaxMs
   ) {
     this.gameEngineService = gameEngineService;
     this.smartKillDiceAssist = smartKillDiceAssist;
+    this.rollDelayMinMs = Math.max(0, rollDelayMinMs);
+    this.rollDelayMaxMs = Math.max(this.rollDelayMinMs + 1, rollDelayMaxMs);
+    this.thinkDelayMinMs = Math.max(0, thinkDelayMinMs);
+    this.thinkDelayMaxMs = Math.max(this.thinkDelayMinMs + 1, thinkDelayMaxMs);
   }
 
   public GameSnapshot takeTurnIfBot(String roomId, BotDifficulty difficulty) {
@@ -353,35 +365,18 @@ public class BotService {
     return snap.getCurrentColor();
   }
 
+  /** Online bot dice — short human-like pause before roll. */
   private void sleepBeforeDiceRoll() {
-    try {
-      Thread.sleep(ThreadLocalRandom.current().nextInt(2000, 3001));
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-    }
-  }
-
-  /** Online bot dice — short human-like pause before roll (2–3 s). */
-  private void sleepBeforeDiceRoll() {
-    try {
-      Thread.sleep(ThreadLocalRandom.current().nextInt(2000, 3001));
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-    }
-  }
-
-  /** Online bot dice — short human-like pause before roll (2–3 s). */
-  private void sleepBeforeDiceRoll() {
-    try {
-      Thread.sleep(ThreadLocalRandom.current().nextInt(2000, 3001));
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-    }
+    sleepRandom(rollDelayMinMs, rollDelayMaxMs);
   }
 
   private void sleepThinking() {
+    sleepRandom(thinkDelayMinMs, thinkDelayMaxMs);
+  }
+
+  private void sleepRandom(int minMs, int maxMs) {
     try {
-      Thread.sleep(ThreadLocalRandom.current().nextInt(950, 1401));
+      Thread.sleep(ThreadLocalRandom.current().nextInt(minMs, maxMs + 1));
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
     }

@@ -117,7 +117,7 @@ public class GameSocketController {
   private void broadcast(String roomId, GameSnapshot snap) {
     gameEventBus.publishSnapshotAndMeta(roomId, snap);
     if (GameEngineService.PHASE_FINISHED.equals(snap.getPhase())) {
-      roomService.getRoom(roomId).ifPresent(room -> roomService.settleIfFinished(room, snap));
+      roomService.settleIfFinishedAsync(roomId, snap);
     }
   }
 }

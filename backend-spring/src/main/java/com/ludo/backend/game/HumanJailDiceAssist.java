@@ -2,6 +2,7 @@ package com.ludo.backend.game;
 
 import com.ludo.backend.config.HumanJailAssistProperties;
 import java.util.Random;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -16,6 +17,7 @@ public class HumanJailDiceAssist {
 
   private final HumanJailAssistProperties props;
 
+  @Autowired
   public HumanJailDiceAssist(HumanJailAssistProperties props) {
     this.props = props;
   }

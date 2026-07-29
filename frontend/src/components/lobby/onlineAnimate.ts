@@ -7,9 +7,23 @@ import { flushSync } from "react-dom";
 
 export type AnimCancel = { cancelled: boolean };
 
+/** Backgrounded tabs stop firing rAF — without this the animation never ends. */
+const FRAME_TIMEOUT_MS = 100;
+
 export function nextFrame(): Promise<number> {
   return new Promise((resolve) => {
-    requestAnimationFrame((t) => resolve(t));
+    let settled = false;
+    const finish = (t: number) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      resolve(t);
+    };
+    const timer = window.setTimeout(
+      () => finish(performance.now()),
+      FRAME_TIMEOUT_MS
+    );
+    requestAnimationFrame(finish);
   });
 }
 

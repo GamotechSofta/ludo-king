@@ -3,6 +3,7 @@ package com.ludo.backend.game;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
+import com.ludo.backend.game.HumanCaptureDiceAssist.CaptureScanContext;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
@@ -24,7 +25,7 @@ class HumanCaptureDiceAssistTest {
             LudoColor.YELLOW,
             new LudoColor[] {LudoColor.RED, LudoColor.YELLOW},
             new int[][] {
-              {-1, -1, -1, -1},
+              {14, -1, -1, -1},
               {13, -1, -1, -1},
             },
             new boolean[] {true, false},

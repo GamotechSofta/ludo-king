@@ -22,6 +22,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -57,6 +59,16 @@ public class RoomService {
       new ConcurrentHashMap<>();
   /** Per matchmaking bucket lock so concurrent 2P joins share one WAITING room. */
   private final ConcurrentHashMap<String, Object> joinLocks = new ConcurrentHashMap<>();
+  /**
+   * Wallet settlement does blocking HTTP (up to 15 s). Running it on the turn
+   * scheduler or a socket thread would stall every other live match, so it is
+   * serialized here on its own thread.
+   */
+  private final ExecutorService settleExecutor = Executors.newSingleThreadExecutor(r -> {
+    Thread t = new Thread(r, "ludo-settle");
+    t.setDaemon(true);
+    return t;
+  });
 
   public RoomService(
       RoomRepository roomRepository,
@@ -267,7 +279,7 @@ public class RoomService {
           GameSnapshot snap = gameEngineService.forfeitOnExit(roomId, userId);
           gameEventBus.publishSnapshotAndMeta(roomId, snap);
           if (GameEngineService.PHASE_FINISHED.equals(snap.getPhase())) {
-            settleIfFinished(room, snap);
+            settleIfFinishedAsync(roomId, snap);
           }
           return;
         } catch (RuntimeException ignored) {
@@ -588,6 +600,20 @@ public class RoomService {
       matchEconomy.refundAllHumans(room);
       throw e;
     }
+  }
+
+  /** Settle off the caller's thread — never block gameplay on the wallet API. */
+  public void settleIfFinishedAsync(String roomId, GameSnapshot snap) {
+    if (roomId == null || snap == null) {
+      return;
+    }
+    settleExecutor.execute(() -> {
+      try {
+        getRoom(roomId).ifPresent(room -> settleIfFinished(room, snap));
+      } catch (Exception ignored) {
+        // best-effort; admin P&L reconciliation covers retries
+      }
+    });
   }
 
   public void settleIfFinished(Room room, GameSnapshot snap) {
