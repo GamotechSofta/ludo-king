@@ -21,6 +21,7 @@ import {
   TOKEN_MOVEMENT_INTERVAL_VALUE,
   TOKEN_STEP_PAUSE_MS,
 } from "../../utils/constants";
+import { isStarTile } from "../../config/ludoBoard";
 import { playSound, preloadGameSounds, ensureBackgroundMusic, stopBackgroundMusic } from "../../utils/sounds";
 import { runReturnToJailAnimations } from "../lobby/captureReturnAnim";
 import { runCellByCellSteps, nextFrame } from "../lobby/onlineAnimate";
@@ -304,7 +305,16 @@ const Game = ({
         TOKEN_MOVEMENT_INTERVAL_VALUE,
         (stepIndex) => {
           const step = path[stepIndex];
-          playSound("passingNext");
+          const isFinalStep = stepIndex === path.length - 1;
+          if (
+            isFinalStep &&
+            step.typeTile === EtypeTile.NORMAL &&
+            isStarTile(step.positionTile)
+          ) {
+            playSound("star");
+          } else {
+            playSound("passingNext");
+          }
           working = working.map((group, pIdx) => {
             if (pIdx !== turn) return group;
             return {

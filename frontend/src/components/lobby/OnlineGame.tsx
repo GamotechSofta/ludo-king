@@ -27,6 +27,7 @@ import {
   ONLINE_ENTRY_AMOUNT,
   TOKEN_STEP_PAUSE_MS,
 } from "../../utils/constants";
+import { isStarTile } from "../../config/ludoBoard";
 import { playSound, preloadGameSounds, ensureBackgroundMusic, stopBackgroundMusic } from "../../utils/sounds";
 import { PageWrapper } from "../wrapper";
 import {
@@ -937,7 +938,16 @@ const OnlineGame = ({
         ONLINE_TOKEN_MOVEMENT_INTERVAL_VALUE,
         (stepIndex) => {
           const step = path[stepIndex];
-          playSound("passingNext");
+          const isFinalStep = stepIndex === path.length - 1;
+          if (
+            isFinalStep &&
+            step.typeTile === EtypeTile.NORMAL &&
+            isStarTile(step.positionTile)
+          ) {
+            playSound("star");
+          } else {
+            playSound("passingNext");
+          }
           const group = working[seat];
           const nextToken = {
             ...applyTokenCell(

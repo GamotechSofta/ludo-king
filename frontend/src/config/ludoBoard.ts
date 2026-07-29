@@ -24,6 +24,9 @@ export const COLOR_BOARD = boardJson.colors;
 export const isSafeTile = (tileIndex: number) =>
   SAFE_TILES.includes(tileIndex);
 
+export const isStarTile = (tileIndex: number) =>
+  STAR_TILES.includes(tileIndex);
+
 export const absoluteFromRelative = (startTile: number, relative: number) =>
   (((startTile + relative) % TOTAL_SHARED_PATH_CELLS) +
     TOTAL_SHARED_PATH_CELLS) %
