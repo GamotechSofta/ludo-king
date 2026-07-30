@@ -1,12 +1,10 @@
 package com.ludo.backend.bot;
 
-import static com.ludo.backend.game.BoardConstants.HOME_STEPS;
 import static com.ludo.backend.game.BoardConstants.JAIL;
-import static com.ludo.backend.game.BoardConstants.TOTAL_TILES;
 import static com.ludo.backend.game.BoardConstants.isHome;
 import static com.ludo.backend.game.BoardConstants.isJail;
 
-import com.ludo.backend.bot.BotMoveEvaluator.VictimInfo;
+import com.ludo.backend.bot.BotBoardMath.VictimInfo;
 import com.ludo.backend.game.GameSnapshot;
 import com.ludo.backend.game.LudoColor;
 import java.util.ArrayList;
@@ -17,39 +15,12 @@ import java.util.Random;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
- * Hard-bot kill dice assist: scans legal capture opportunities within 1–6 pips
- * and usually rolls the exact value needed. Safe stars / blocks are ignored via
- * {@link BotMoveEvaluator#findCaptureVictim}.
- *
- * <p>Assist probability scales down with player count so multi-bot tables do not
- * cascade-eliminate every seat.
+ * Legal capture-die assist only. Probability comes from {@link BotAggressionPolicy}.
+ * Never fabricates illegal dice values.
  */
 final class BotKillDiceAssist {
 
-  /** Defaults: 2P 40%, 3P 25%, 4P 10%. */
-  static final double DEFAULT_TWO_PLAYER = 0.40;
-  static final double DEFAULT_THREE_PLAYER = 0.25;
-  static final double DEFAULT_FOUR_PLAYER = 0.10;
-
   private BotKillDiceAssist() {}
-
-  /** Per-player-count assist rates (0.0–1.0). */
-  static final class KillAssistRates {
-    final double twoPlayer;
-    final double threePlayer;
-    final double fourPlayer;
-
-    KillAssistRates(double twoPlayer, double threePlayer, double fourPlayer) {
-      this.twoPlayer = clamp01(twoPlayer);
-      this.threePlayer = clamp01(threePlayer);
-      this.fourPlayer = clamp01(fourPlayer);
-    }
-
-    static KillAssistRates defaults() {
-      return new KillAssistRates(
-          DEFAULT_TWO_PLAYER, DEFAULT_THREE_PLAYER, DEFAULT_FOUR_PLAYER);
-    }
-  }
 
   @FunctionalInterface
   interface MoveLegality {
@@ -58,158 +29,92 @@ final class BotKillDiceAssist {
 
   static final class CaptureOpportunity {
     final int dice;
-    final int tokenIndex;
-    final int landPos;
     final VictimInfo victim;
     final int victimRemaining;
     final int victimProgress;
-    final boolean safeAfterCapture;
-    final int botAdvance;
+    final boolean victimIsLeader;
+    final boolean safeAfter;
 
     CaptureOpportunity(
         int dice,
-        int tokenIndex,
-        int landPos,
         VictimInfo victim,
         int victimRemaining,
         int victimProgress,
-        boolean safeAfterCapture,
-        int botAdvance
+        boolean victimIsLeader,
+        boolean safeAfter
     ) {
       this.dice = dice;
-      this.tokenIndex = tokenIndex;
-      this.landPos = landPos;
       this.victim = victim;
       this.victimRemaining = victimRemaining;
       this.victimProgress = victimProgress;
-      this.safeAfterCapture = safeAfterCapture;
-      this.botAdvance = botAdvance;
+      this.victimIsLeader = victimIsLeader;
+      this.safeAfter = safeAfter;
     }
   }
 
-  /**
-   * @return dice 1–6 for the best capture, or {@code null} for a normal random roll
-   */
-  static Integer maybePickCaptureDice(
-      GameSnapshot snap,
-      int botSeat,
-      MoveLegality legality
-  ) {
-    return maybePickCaptureDice(
-        snap, botSeat, legality, ThreadLocalRandom.current(), KillAssistRates.defaults());
-  }
-
-  /**
-   * Same as {@link #maybePickCaptureDice(GameSnapshot, int, MoveLegality)} with injectable RNG.
-   */
-  static Integer maybePickCaptureDice(
-      GameSnapshot snap,
-      int botSeat,
-      MoveLegality legality,
-      Random rng
-  ) {
-    return maybePickCaptureDice(
-        snap, botSeat, legality, rng, KillAssistRates.defaults());
-  }
-
-  /**
-   * Player-count–scaled assist: 2P / 3P / 4P use different probabilities.
-   * Target selection stays in {@link #pickBestCaptureDice}.
-   */
   static Integer maybePickCaptureDice(
       GameSnapshot snap,
       int botSeat,
       MoveLegality legality,
       Random rng,
-      KillAssistRates rates
+      BotMatchAnalysis analysis
   ) {
-    Integer best = pickBestCaptureDice(snap, botSeat, legality, rng);
-    if (best == null || rng == null) {
-      return best;
+    CaptureOpportunity best = pickBestOpportunity(snap, botSeat, legality, analysis);
+    if (best == null || rng == null || analysis == null) {
+      return best != null ? best.dice : null;
     }
-    KillAssistRates resolved = rates != null ? rates : KillAssistRates.defaults();
-    double chance = probabilityForPlayerCount(playerCount(snap), resolved);
+    boolean vsHuman = best.victim != null && best.victim.isHuman;
+    double chance = BotAggressionPolicy.captureAssistProbability(analysis, vsHuman);
     if (chance <= 0.0 || rng.nextDouble() >= chance) {
       return null;
     }
-    return best;
-  }
-
-  /** Resolve assist probability from seat count (Bot vs Human and Bot vs Bot). */
-  static double probabilityForPlayerCount(int playerCount, KillAssistRates rates) {
-    KillAssistRates resolved = rates != null ? rates : KillAssistRates.defaults();
-    if (playerCount <= 2) {
-      return resolved.twoPlayer;
-    }
-    if (playerCount == 3) {
-      return resolved.threePlayer;
-    }
-    return resolved.fourPlayer;
-  }
-
-  private static int playerCount(GameSnapshot snap) {
-    if (snap.getSeatColors() != null && !snap.getSeatColors().isEmpty()) {
-      return snap.getSeatColors().size();
-    }
-    if (snap.getIsBot() != null) {
-      return snap.getIsBot().length;
-    }
-    return 4;
-  }
-
-  private static double clamp01(double value) {
-    if (Double.isNaN(value)) {
-      return 0.0;
-    }
-    return Math.max(0.0, Math.min(1.0, value));
-  }
-
-  /** Always picks the highest-priority capture die when one exists. */
-  static Integer pickBestCaptureDice(
-      GameSnapshot snap,
-      int botSeat,
-      MoveLegality legality
-  ) {
-    return pickBestCaptureDice(snap, botSeat, legality, ThreadLocalRandom.current());
+    return best.dice;
   }
 
   static Integer pickBestCaptureDice(
       GameSnapshot snap,
       int botSeat,
       MoveLegality legality,
-      Random rng
+      Random rng,
+      BotMatchAnalysis analysis
+  ) {
+    CaptureOpportunity best = pickBestOpportunity(snap, botSeat, legality, analysis);
+    return best == null ? null : best.dice;
+  }
+
+  private static CaptureOpportunity pickBestOpportunity(
+      GameSnapshot snap,
+      int botSeat,
+      MoveLegality legality,
+      BotMatchAnalysis analysis
   ) {
     if (snap == null || legality == null || botSeat < 0) {
       return null;
     }
     if (snap.getIsBot() == null
         || botSeat >= snap.getIsBot().length
-        || !Boolean.TRUE.equals(snap.getIsBot()[botSeat])) {
+        || !snap.getIsBot()[botSeat]) {
       return null;
     }
 
-    String colorName = seatColor(snap, botSeat);
-    if (colorName == null) {
+    List<String> seatColors = snap.getSeatColors();
+    if (seatColors == null || botSeat >= seatColors.size()) {
       return null;
     }
-    LudoColor color;
-    try {
-      color = LudoColor.valueOf(colorName);
-    } catch (RuntimeException ex) {
-      return null;
-    }
-
+    String colorName = seatColors.get(botSeat);
+    LudoColor color = BotBoardMath.parseColor(colorName);
     List<Integer> own = snap.getTokenPositions().get(colorName);
     Map<String, List<Integer>> all = snap.getTokenPositions();
-    List<String> seatColors = snap.getSeatColors();
-    if (own == null || all == null || seatColors == null) {
+    if (color == null || own == null || all == null) {
       return null;
     }
 
-    List<CaptureOpportunity> opportunities = new ArrayList<>();
+    boolean[] isBot = analysis != null ? analysis.isBot : snap.getIsBot();
+    int leaderSeat = analysis != null ? analysis.leaderSeat : -1;
+
+    List<CaptureOpportunity> ops = new ArrayList<>();
     for (int t = 0; t < own.size(); t++) {
-      Integer fromObj = own.get(t);
-      int from = fromObj == null ? JAIL : fromObj;
+      int from = own.get(t) == null ? JAIL : own.get(t);
       if (isJail(from) || isHome(from)) {
         continue;
       }
@@ -217,80 +122,46 @@ final class BotKillDiceAssist {
         if (!legality.canMove(t, dice)) {
           continue;
         }
-        int land = BotMoveEvaluator.applySteps(color, from, dice);
-        VictimInfo victim =
-            BotMoveEvaluator.findCaptureVictim(botSeat, land, all, seatColors);
+        int land = BotBoardMath.applySteps(color, from, dice);
+        VictimInfo victim = BotBoardMath.findCaptureVictim(botSeat, land, all, seatColors, isBot);
         if (victim == null) {
           continue;
         }
-        int victimRem = BotMoveEvaluator.remainingDistance(victim.color, land);
-        if (victimRem == Integer.MAX_VALUE) {
-          victimRem = TOTAL_TILES + HOME_STEPS;
+        int rem = BotBoardMath.remainingDistance(victim.color, land);
+        if (rem == Integer.MAX_VALUE) {
+          rem = BotBoardMath.MAX_PAWN_PROGRESS;
         }
-        int victimProgress = Math.max(0, TOTAL_TILES + HOME_STEPS - victimRem);
-        boolean safe =
-            !BotMoveEvaluator.isPositionThreatened(botSeat, land, all, seatColors);
-        int botFromRem = BotMoveEvaluator.remainingDistance(color, from);
-        int botToRem = BotMoveEvaluator.remainingDistance(color, land);
-        int botAdvance =
-            botFromRem != Integer.MAX_VALUE && botToRem != Integer.MAX_VALUE
-                ? botFromRem - botToRem
-                : 0;
-        opportunities.add(
+        int prog = Math.max(0, BotBoardMath.MAX_PAWN_PROGRESS - rem);
+        boolean safe = !BotBoardMath.isPositionThreatened(botSeat, land, all, seatColors);
+        ops.add(
             new CaptureOpportunity(
-                dice,
-                t,
-                land,
-                victim,
-                victimRem,
-                victimProgress,
-                safe,
-                botAdvance));
+                dice, victim, rem, prog, victim.seat == leaderSeat, safe));
       }
     }
-
-    if (opportunities.isEmpty()) {
+    if (ops.isEmpty()) {
       return null;
     }
 
-    opportunities.sort(priorityComparator());
-    CaptureOpportunity best = opportunities.get(0);
-    List<CaptureOpportunity> ties = new ArrayList<>();
-    for (CaptureOpportunity o : opportunities) {
-      if (priorityComparator().compare(o, best) == 0) {
-        ties.add(o);
+    // Target priority: leader → closest home → progress → unsafe victim → safe landing
+    ops.sort(
+        Comparator
+            .comparing((CaptureOpportunity o) -> !o.victimIsLeader)
+            .thenComparingInt(o -> o.victimRemaining)
+            .thenComparing(Comparator.comparingInt((CaptureOpportunity o) -> o.victimProgress).reversed())
+            .thenComparing(o -> !o.safeAfter));
+
+    CaptureOpportunity top = ops.get(0);
+    // Anti-gang: if hunting leader human but not designated, pick next non-leader if any
+    if (analysis != null
+        && top.victimIsLeader
+        && top.victim.isHuman
+        && !analysis.allowAggressiveLeaderHunt) {
+      for (CaptureOpportunity o : ops) {
+        if (!o.victimIsLeader) {
+          return o;
+        }
       }
     }
-    Random pickRng = rng != null ? rng : ThreadLocalRandom.current();
-    CaptureOpportunity chosen = ties.get(pickRng.nextInt(ties.size()));
-    return chosen.dice;
-  }
-
-  /** @deprecated use {@link #pickBestCaptureDice} or {@link #maybePickCaptureDice} */
-  @Deprecated
-  static Integer pickCaptureDice(
-      GameSnapshot snap,
-      int botSeat,
-      MoveLegality legality
-  ) {
-    return pickBestCaptureDice(snap, botSeat, legality);
-  }
-
-  private static Comparator<CaptureOpportunity> priorityComparator() {
-    return Comparator
-        // Closest victim to HOME first (lowest remaining steps)
-        .comparingInt((CaptureOpportunity o) -> o.victimRemaining)
-        // Then greatest victim progress on the board
-        .thenComparing(Comparator.comparingInt((CaptureOpportunity o) -> o.victimProgress).reversed())
-        // Prefer landing safe after the capture
-        .thenComparing((CaptureOpportunity o) -> !o.safeAfterCapture);
-  }
-
-  private static String seatColor(GameSnapshot snap, int seat) {
-    List<String> colors = snap.getSeatColors();
-    if (colors != null && seat >= 0 && seat < colors.size()) {
-      return colors.get(seat);
-    }
-    return snap.getCurrentColor();
+    return top;
   }
 }

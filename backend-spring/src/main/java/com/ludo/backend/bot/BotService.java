@@ -4,14 +4,12 @@ import static com.ludo.backend.game.BoardConstants.JAIL;
 import static com.ludo.backend.game.BoardConstants.isHome;
 import static com.ludo.backend.game.BoardConstants.isJail;
 
-import com.ludo.backend.bot.BotMoveEvaluator.Context;
 import com.ludo.backend.game.GameEngineService;
 import com.ludo.backend.game.GameSnapshot;
 import com.ludo.backend.game.LudoColor;
 import com.ludo.backend.room.BotDifficulty;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Consumer;
 import org.slf4j.Logger;
@@ -20,31 +18,16 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
- * Bot turn loop + move selection. Scoring is delegated to {@link BotMoveEvaluator}
- * so every legal move (jail exit, capture, progress, …) is compared on one scale.
- *
- * <p>Difficulty: EASY occasionally ignores the best move; MEDIUM uses core
- * tactics; HARD adds future prediction and stronger danger avoidance.
+ * Bot turn loop. Decision-making is delegated to {@link BotDynamicAiEngine}.
+ * Does not alter dice physics, movement rules, or sync — only chooses among legal options.
  */
 @Service
 public class BotService {
 
   private static final Logger log = LoggerFactory.getLogger(BotService.class);
 
-  /** EASY: chance to ignore the best move. */
-  private static final int EASY_MISTAKE_PCT = 30;
-  /** MEDIUM: smaller strategic mistakes. */
-  private static final int MEDIUM_MISTAKE_PCT = 12;
-  /** HARD: rare blunders only. */
-  private static final int HARD_MISTAKE_PCT = 3;
-
   private final GameEngineService gameEngineService;
-  private final boolean smartKillDiceAssist;
-  private final boolean smartHomeDiceAssist;
-  private final boolean smartLastPawnDiceAssist;
-  private final double homeAssistProbability;
-  private final double lastPawnHighDiceProbability;
-  private final BotKillDiceAssist.KillAssistRates killAssistRates;
+  private final BotDynamicAiEngine aiEngine;
   private final int rollDelayMinMs;
   private final int rollDelayMaxMs;
   private final int thinkDelayMinMs;
@@ -52,29 +35,14 @@ public class BotService {
 
   public BotService(
       GameEngineService gameEngineService,
-      @Value("${ludo.bot.smart-kill-dice-assist:false}") boolean smartKillDiceAssist,
-      @Value("${ludo.bot.smart-home-dice-assist:true}") boolean smartHomeDiceAssist,
-      @Value("${ludo.bot.smart-last-pawn-dice-assist:true}") boolean smartLastPawnDiceAssist,
-      @Value("${ludo.bot.home-assist.probability:0.75}") double homeAssistProbability,
-      @Value("${ludo.bot.last-pawn-assist.probability:0.55}") double lastPawnHighDiceProbability,
-      @Value("${ludo.bot.kill-assist.two-player:0.40}") double killAssistTwoPlayer,
-      @Value("${ludo.bot.kill-assist.three-player:0.25}") double killAssistThreePlayer,
-      @Value("${ludo.bot.kill-assist.four-player:0.10}") double killAssistFourPlayer,
+      BotDynamicAiEngine aiEngine,
       @Value("${ludo.bot.roll-delay-min-ms:450}") int rollDelayMinMs,
       @Value("${ludo.bot.roll-delay-max-ms:750}") int rollDelayMaxMs,
       @Value("${ludo.bot.think-delay-min-ms:180}") int thinkDelayMinMs,
       @Value("${ludo.bot.think-delay-max-ms:350}") int thinkDelayMaxMs
   ) {
     this.gameEngineService = gameEngineService;
-    this.smartKillDiceAssist = smartKillDiceAssist;
-    this.smartHomeDiceAssist = smartHomeDiceAssist;
-    this.smartLastPawnDiceAssist = smartLastPawnDiceAssist;
-    this.homeAssistProbability = Math.max(0.0, Math.min(1.0, homeAssistProbability));
-    this.lastPawnHighDiceProbability =
-        Math.max(0.0, Math.min(1.0, lastPawnHighDiceProbability));
-    this.killAssistRates =
-        new BotKillDiceAssist.KillAssistRates(
-            killAssistTwoPlayer, killAssistThreePlayer, killAssistFourPlayer);
+    this.aiEngine = aiEngine;
     this.rollDelayMinMs = Math.max(0, rollDelayMinMs);
     this.rollDelayMaxMs = Math.max(this.rollDelayMinMs + 1, rollDelayMaxMs);
     this.thinkDelayMinMs = Math.max(0, thinkDelayMinMs);
@@ -85,10 +53,6 @@ public class BotService {
     return takeTurnIfBot(roomId, difficulty, null);
   }
 
-  /**
-   * Plays one bot seat until the turn passes. When {@code onStep} is set, each
-   * roll and each move is published immediately so clients can animate in realtime.
-   */
   public GameSnapshot takeTurnIfBot(
       String roomId,
       BotDifficulty difficulty,
@@ -103,7 +67,7 @@ public class BotService {
     if (snap.getIsBot() == null
         || seat < 0
         || seat >= snap.getIsBot().length
-        || !Boolean.TRUE.equals(snap.getIsBot()[seat])) {
+        || !snap.getIsBot()[seat]) {
       return snap;
     }
 
@@ -113,44 +77,22 @@ public class BotService {
     while (guard++ < 12
         && snap.getIsBot() != null
         && seat < snap.getIsBot().length
-        && Boolean.TRUE.equals(snap.getIsBot()[seat])
+        && snap.getIsBot()[seat]
         && snap.getCurrentSeatIndex() == seat
         && !GameEngineService.PHASE_FINISHED.equals(snap.getPhase())) {
 
       try {
         if (GameEngineService.PHASE_ROLL.equals(snap.getPhase())) {
           sleepBeforeDiceRoll();
-          Integer assistDice = null;
-          if (diff == BotDifficulty.HARD) {
-            if (smartHomeDiceAssist) {
-              assistDice =
-                  BotHomeDiceAssist.maybePickHomeDice(
-                      snap,
-                      seat,
-                      (token, dice) ->
-                          gameEngineService.canBotUseDiceForAssist(roomId, seat, token, dice),
-                      ThreadLocalRandom.current(),
-                      homeAssistProbability);
-            }
-            if (assistDice == null && smartLastPawnDiceAssist) {
-              assistDice =
-                  BotLastPawnDiceAssist.maybePickHighDice(
-                      snap,
-                      seat,
-                      ThreadLocalRandom.current(),
-                      lastPawnHighDiceProbability);
-            }
-            if (assistDice == null && smartKillDiceAssist) {
-              assistDice =
-                  BotKillDiceAssist.maybePickCaptureDice(
-                      snap,
-                      seat,
-                      (token, dice) ->
-                          gameEngineService.canBotUseDiceForAssist(roomId, seat, token, dice),
-                      ThreadLocalRandom.current(),
-                      killAssistRates);
-            }
-          }
+          Integer assistDice =
+              aiEngine.maybeAssistCaptureDice(
+                  roomId,
+                  snap,
+                  seat,
+                  diff,
+                  (token, dice) ->
+                      gameEngineService.canBotUseDiceForAssist(roomId, seat, token, dice),
+                  ThreadLocalRandom.current());
           snap = gameEngineService.rollDiceAsSeat(roomId, seat, assistDice);
           publish(onStep, snap);
           if (snap.getCurrentSeatIndex() != seat
@@ -189,8 +131,7 @@ public class BotService {
             "Bot turn failed roomId={} seat={}: {} — forcing PASS",
             roomId,
             seat,
-            ex.toString()
-        );
+            ex.toString());
         try {
           snap = gameEngineService.skipTurn(roomId);
           publish(onStep, snap);
@@ -211,11 +152,6 @@ public class BotService {
     }
   }
 
-  /**
-   * Evaluates every legal move with {@link BotMoveEvaluator}, then picks the
-   * highest score (random among ties). Sole-active-pawn shortcut only when that
-   * pawn is the unique legal choice (no competing jail exit).
-   */
   private int[] chooseMove(
       String roomId,
       int seat,
@@ -233,88 +169,12 @@ public class BotService {
       return moves.get(0);
     }
 
-    Map<String, List<Integer>> allPositions = snap.getTokenPositions();
-    List<String> seatColors = snap.getSeatColors();
-
-    // Only one active pawn AND no jail-exit alternative → play it immediately
-    List<int[]> soleMoves = soleActivePawnOnlyMoves(moves, ownPositions);
-    if (soleMoves != null) {
-      return pickBestScored(soleMoves, snap, color, seat, ownPositions, allPositions, seatColors, difficulty);
-    }
-
-    return pickBestScored(moves, snap, color, seat, ownPositions, allPositions, seatColors, difficulty);
+    List<int[]> sole = soleActivePawnOnlyMoves(moves, ownPositions);
+    List<int[]> candidates = sole != null ? sole : moves;
+    return aiEngine.pickBestMove(
+        roomId, snap, seat, difficulty, color, ownPositions, candidates);
   }
 
-  private int[] pickBestScored(
-      List<int[]> moves,
-      GameSnapshot snap,
-      LudoColor color,
-      int seat,
-      List<Integer> ownPositions,
-      Map<String, List<Integer>> allPositions,
-      List<String> seatColors,
-      BotDifficulty difficulty
-  ) {
-    Context ctx =
-        new Context(color, seat, ownPositions, allPositions, seatColors, difficulty);
-
-    List<ScoredMove> scored = new ArrayList<>(moves.size());
-    for (int[] m : moves) {
-      MoveEval eval = evaluateMove(m, snap, color, ownPositions);
-      if (eval == null) {
-        continue;
-      }
-      long value =
-          BotMoveEvaluator.scoreMove(
-              ctx, eval.token, eval.from, eval.to, eval.dice);
-      scored.add(new ScoredMove(m, value));
-    }
-
-    if (scored.isEmpty()) {
-      return moves.get(0);
-    }
-
-    scored.sort((a, b) -> Long.compare(b.score, a.score));
-    long best = scored.get(0).score;
-
-    // Difficulty mistakes: occasionally pick a weaker move
-    int mistakePct = mistakePercent(difficulty);
-    if (mistakePct > 0
-        && scored.size() > 1
-        && ThreadLocalRandom.current().nextInt(100) < mistakePct) {
-      int pick = 1 + ThreadLocalRandom.current().nextInt(Math.min(3, scored.size() - 1));
-      return scored.get(pick).move;
-    }
-
-    List<int[]> ties = new ArrayList<>();
-    for (ScoredMove s : scored) {
-      if (s.score == best) {
-        ties.add(s.move);
-      } else {
-        break;
-      }
-    }
-    return ties.get(ThreadLocalRandom.current().nextInt(ties.size()));
-  }
-
-  private static int mistakePercent(BotDifficulty difficulty) {
-    if (difficulty == BotDifficulty.EASY) {
-      return EASY_MISTAKE_PCT;
-    }
-    if (difficulty == BotDifficulty.MEDIUM) {
-      return MEDIUM_MISTAKE_PCT;
-    }
-    if (difficulty == BotDifficulty.HARD) {
-      return HARD_MISTAKE_PCT;
-    }
-    return 0;
-  }
-
-  /**
-   * When exactly one pawn is on the board (not jail, not home) and every legal
-   * move belongs to that pawn, return those moves. If a 6 also opens a jail
-   * exit, returns null so full evaluation can prefer releasing a second pawn.
-   */
   private static List<int[]> soleActivePawnOnlyMoves(
       List<int[]> moves,
       List<Integer> ownPositions
@@ -322,12 +182,10 @@ public class BotService {
     if (moves == null || moves.isEmpty() || ownPositions == null) {
       return null;
     }
-
     int soleToken = -1;
     int activeCount = 0;
     for (int i = 0; i < ownPositions.size(); i++) {
-      Integer posObj = ownPositions.get(i);
-      int pos = posObj == null ? JAIL : posObj;
+      int pos = ownPositions.get(i) == null ? JAIL : ownPositions.get(i);
       if (isJail(pos) || isHome(pos)) {
         continue;
       }
@@ -337,7 +195,6 @@ public class BotService {
     if (activeCount != 1 || soleToken < 0) {
       return null;
     }
-
     List<int[]> soleMoves = new ArrayList<>();
     for (int[] m : moves) {
       if (m == null || m.length < 2) {
@@ -351,54 +208,6 @@ public class BotService {
     return soleMoves.isEmpty() ? null : soleMoves;
   }
 
-  private static final class ScoredMove {
-    final int[] move;
-    final long score;
-
-    ScoredMove(int[] move, long score) {
-      this.move = move;
-      this.score = score;
-    }
-  }
-
-  private static final class MoveEval {
-    final int token;
-    final int dice;
-    final int from;
-    final int to;
-
-    MoveEval(int token, int dice, int from, int to) {
-      this.token = token;
-      this.dice = dice;
-      this.from = from;
-      this.to = to;
-    }
-  }
-
-  private MoveEval evaluateMove(
-      int[] m,
-      GameSnapshot snap,
-      LudoColor color,
-      List<Integer> ownPositions
-  ) {
-    if (m == null || m.length < 2) {
-      return null;
-    }
-    int token = m[0];
-    int diceIndex = m[1];
-    if (diceIndex < 0 || diceIndex >= snap.getDiceList().size()) {
-      return null;
-    }
-    if (token < 0 || token >= ownPositions.size()) {
-      return null;
-    }
-    Integer fromObj = ownPositions.get(token);
-    int from = fromObj == null ? JAIL : fromObj;
-    int dice = snap.getDiceList().get(diceIndex);
-    int to = BotMoveEvaluator.applySteps(color, from, dice);
-    return new MoveEval(token, dice, from, to);
-  }
-
   private static String resolveSeatColor(GameSnapshot snap, int seat) {
     List<String> seatColors = snap.getSeatColors();
     if (seatColors != null && seat >= 0 && seat < seatColors.size()) {
@@ -407,7 +216,6 @@ public class BotService {
     return snap.getCurrentColor();
   }
 
-  /** Online bot dice — short human-like pause before roll. */
   private void sleepBeforeDiceRoll() {
     sleepRandom(rollDelayMinMs, rollDelayMaxMs);
   }

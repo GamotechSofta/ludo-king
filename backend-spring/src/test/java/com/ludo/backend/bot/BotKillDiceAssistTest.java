@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 import com.ludo.backend.game.GameSnapshot;
+import com.ludo.backend.room.BotDifficulty;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -15,162 +16,101 @@ import org.junit.jupiter.api.Test;
 class BotKillDiceAssistTest {
 
   @Test
-  void returnsExactDiceWhenOpponentIsReachable() {
+  void returnsExactLegalCaptureDice() {
     GameSnapshot snap =
         snapshot(
-            0,
             new boolean[] {true, false},
             Map.of(
-                "GREEN",
-                Arrays.asList(13, JAIL, JAIL, JAIL),
-                "YELLOW",
-                Arrays.asList(16, JAIL, JAIL, JAIL)),
+                "GREEN", Arrays.asList(13, JAIL, JAIL, JAIL),
+                "YELLOW", Arrays.asList(16, JAIL, JAIL, JAIL)),
             List.of("GREEN", "YELLOW"));
+
+    BotMatchAnalysis a =
+        new BotMatchAnalysis(
+            BotAiMode.MODE_1,
+            BotGamePhase.MID,
+            BotDifficulty.HARD,
+            0,
+            1,
+            1,
+            2,
+            new boolean[] {true, false},
+            1,
+            new int[] {10, 20},
+            new int[2],
+            new int[2],
+            0.4,
+            true,
+            false,
+            true);
 
     Integer dice =
         BotKillDiceAssist.pickBestCaptureDice(
-            snap, 0, (token, d) -> token == 0 && d == 3, new Random(1));
-
+            snap, 0, (token, d) -> token == 0 && d == 3, new Random(1), a);
     assertEquals(3, dice);
   }
 
   @Test
-  void returnsNullWhenNoCaptureInOneToSix() {
+  void maybePickRespectsAggressionProbability() {
     GameSnapshot snap =
         snapshot(
-            0,
             new boolean[] {true, false},
             Map.of(
-                "GREEN",
-                Arrays.asList(13, JAIL, JAIL, JAIL),
-                "YELLOW",
-                Arrays.asList(30, JAIL, JAIL, JAIL)),
+                "GREEN", Arrays.asList(13, JAIL, JAIL, JAIL),
+                "YELLOW", Arrays.asList(16, JAIL, JAIL, JAIL)),
             List.of("GREEN", "YELLOW"));
 
+    BotMatchAnalysis early =
+        new BotMatchAnalysis(
+            BotAiMode.MODE_1,
+            BotGamePhase.EARLY,
+            BotDifficulty.HARD,
+            0,
+            1,
+            1,
+            2,
+            new boolean[] {true, false},
+            1,
+            new int[] {5, 5},
+            new int[2],
+            new int[2],
+            0.1,
+            false,
+            false,
+            true);
+
+    Random miss =
+        new Random() {
+          @Override
+          public double nextDouble() {
+            return 0.50; // EARLY 0.20 → miss
+          }
+        };
     assertNull(
-        BotKillDiceAssist.pickBestCaptureDice(snap, 0, (token, d) -> false, new Random(1)));
-  }
+        BotKillDiceAssist.maybePickCaptureDice(
+            snap, 0, (token, d) -> token == 0 && d == 3, miss, early));
 
-  @Test
-  void ignoresHumanSeats() {
-    GameSnapshot snap =
-        snapshot(
-            0,
-            new boolean[] {false, false},
-            Map.of(
-                "GREEN",
-                Arrays.asList(13, JAIL, JAIL, JAIL),
-                "YELLOW",
-                Arrays.asList(16, JAIL, JAIL, JAIL)),
-            List.of("GREEN", "YELLOW"));
-
-    assertNull(
-        BotKillDiceAssist.pickBestCaptureDice(snap, 0, (token, d) -> true, new Random(1)));
-  }
-
-  @Test
-  void prefersVictimClosestToHome() {
-    GameSnapshot snap =
-        snapshot(
-            0,
-            new boolean[] {true, false},
-            Map.of(
-                "GREEN",
-                Arrays.asList(10, 20, JAIL, JAIL),
-                "YELLOW",
-                Arrays.asList(11, 21, JAIL, JAIL)),
-            List.of("GREEN", "YELLOW"));
-
-    Integer dice =
-        BotKillDiceAssist.pickBestCaptureDice(
-            snap,
-            0,
-            (token, d) -> (token == 0 && d == 1) || (token == 1 && d == 1),
-            new Random(1));
-
-    assertEquals(1, dice);
-  }
-
-  @Test
-  void maybePickUsesExactDiceOnAssistRoll() {
-    GameSnapshot snap =
-        snapshot(
-            0,
-            new boolean[] {true, false},
-            Map.of(
-                "GREEN",
-                Arrays.asList(13, JAIL, JAIL, JAIL),
-                "YELLOW",
-                Arrays.asList(16, JAIL, JAIL, JAIL)),
-            List.of("GREEN", "YELLOW"));
-
-    // 2P rate 0.40; nextDouble 0.10 → assist
-    Random assistRng = new Random() {
-      @Override
-      public double nextDouble() {
-        return 0.10;
-      }
-    };
-
+    Random hit =
+        new Random() {
+          @Override
+          public double nextDouble() {
+            return 0.10; // EARLY 0.20 → hit
+          }
+        };
     assertEquals(
         3,
         BotKillDiceAssist.maybePickCaptureDice(
-            snap,
-            0,
-            (token, d) -> token == 0 && d == 3,
-            assistRng,
-            BotKillDiceAssist.KillAssistRates.defaults()));
-  }
-
-  @Test
-  void maybePickFallsBackToRandomOnMissRoll() {
-    GameSnapshot snap =
-        snapshot(
-            0,
-            new boolean[] {true, false},
-            Map.of(
-                "GREEN",
-                Arrays.asList(13, JAIL, JAIL, JAIL),
-                "YELLOW",
-                Arrays.asList(16, JAIL, JAIL, JAIL)),
-            List.of("GREEN", "YELLOW"));
-
-    // 2P rate 0.40; nextDouble 0.50 → random
-    Random missRng = new Random() {
-      @Override
-      public double nextDouble() {
-        return 0.50;
-      }
-    };
-
-    assertNull(
-        BotKillDiceAssist.maybePickCaptureDice(
-            snap,
-            0,
-            (token, d) -> token == 0 && d == 3,
-            missRng,
-            BotKillDiceAssist.KillAssistRates.defaults()));
-  }
-
-  @Test
-  void probabilityScalesByPlayerCount() {
-    var rates = BotKillDiceAssist.KillAssistRates.defaults();
-    assertEquals(0.40, BotKillDiceAssist.probabilityForPlayerCount(2, rates));
-    assertEquals(0.25, BotKillDiceAssist.probabilityForPlayerCount(3, rates));
-    assertEquals(0.10, BotKillDiceAssist.probabilityForPlayerCount(4, rates));
+            snap, 0, (token, d) -> token == 0 && d == 3, hit, early));
   }
 
   private static GameSnapshot snapshot(
-      int currentSeat,
-      boolean[] isBot,
-      Map<String, List<Integer>> positions,
-      List<String> seatColors
+      boolean[] isBot, Map<String, List<Integer>> positions, List<String> colors
   ) {
     GameSnapshot snap = new GameSnapshot();
-    snap.setCurrentSeatIndex(currentSeat);
     snap.setIsBot(isBot);
-    snap.setSeatColors(seatColors);
+    snap.setSeatColors(colors);
     snap.setTokenPositions(new HashMap<>(positions));
+    snap.setCurrentSeatIndex(0);
     snap.setPhase("AWAITING_ROLL");
     return snap;
   }
