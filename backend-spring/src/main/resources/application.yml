@@ -61,6 +61,10 @@ ludo:
     smart-home-dice-assist: ${SMART_BOT_HOME_DICE_ASSIST:true}
     home-assist:
       probability: ${BOT_HOME_ASSIST_PROBABILITY:0.75}
+    # Hard bots: when exactly 1 pawn left (not home), bias rolls toward 5 or 6.
+    smart-last-pawn-dice-assist: ${SMART_BOT_LAST_PAWN_DICE_ASSIST:true}
+    last-pawn-assist:
+      probability: ${BOT_LAST_PAWN_HIGH_DICE_PROBABILITY:0.55}
     # Human-like pauses. Raise for slower bots, lower for snappier turns.
     roll-delay-min-ms: ${BOT_ROLL_DELAY_MIN_MS:1100}
     roll-delay-max-ms: ${BOT_ROLL_DELAY_MAX_MS:1700}

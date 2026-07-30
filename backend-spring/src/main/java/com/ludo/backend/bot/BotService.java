@@ -41,7 +41,9 @@ public class BotService {
   private final GameEngineService gameEngineService;
   private final boolean smartKillDiceAssist;
   private final boolean smartHomeDiceAssist;
+  private final boolean smartLastPawnDiceAssist;
   private final double homeAssistProbability;
+  private final double lastPawnHighDiceProbability;
   private final BotKillDiceAssist.KillAssistRates killAssistRates;
   private final int rollDelayMinMs;
   private final int rollDelayMaxMs;
@@ -50,21 +52,26 @@ public class BotService {
 
   public BotService(
       GameEngineService gameEngineService,
-      @Value("${ludo.bot.smart-kill-dice-assist:true}") boolean smartKillDiceAssist,
+      @Value("${ludo.bot.smart-kill-dice-assist:false}") boolean smartKillDiceAssist,
       @Value("${ludo.bot.smart-home-dice-assist:true}") boolean smartHomeDiceAssist,
+      @Value("${ludo.bot.smart-last-pawn-dice-assist:true}") boolean smartLastPawnDiceAssist,
       @Value("${ludo.bot.home-assist.probability:0.75}") double homeAssistProbability,
+      @Value("${ludo.bot.last-pawn-assist.probability:0.55}") double lastPawnHighDiceProbability,
       @Value("${ludo.bot.kill-assist.two-player:0.40}") double killAssistTwoPlayer,
       @Value("${ludo.bot.kill-assist.three-player:0.25}") double killAssistThreePlayer,
       @Value("${ludo.bot.kill-assist.four-player:0.10}") double killAssistFourPlayer,
-      @Value("${ludo.bot.roll-delay-min-ms:1100}") int rollDelayMinMs,
-      @Value("${ludo.bot.roll-delay-max-ms:1700}") int rollDelayMaxMs,
-      @Value("${ludo.bot.think-delay-min-ms:450}") int thinkDelayMinMs,
-      @Value("${ludo.bot.think-delay-max-ms:750}") int thinkDelayMaxMs
+      @Value("${ludo.bot.roll-delay-min-ms:450}") int rollDelayMinMs,
+      @Value("${ludo.bot.roll-delay-max-ms:750}") int rollDelayMaxMs,
+      @Value("${ludo.bot.think-delay-min-ms:180}") int thinkDelayMinMs,
+      @Value("${ludo.bot.think-delay-max-ms:350}") int thinkDelayMaxMs
   ) {
     this.gameEngineService = gameEngineService;
     this.smartKillDiceAssist = smartKillDiceAssist;
     this.smartHomeDiceAssist = smartHomeDiceAssist;
+    this.smartLastPawnDiceAssist = smartLastPawnDiceAssist;
     this.homeAssistProbability = Math.max(0.0, Math.min(1.0, homeAssistProbability));
+    this.lastPawnHighDiceProbability =
+        Math.max(0.0, Math.min(1.0, lastPawnHighDiceProbability));
     this.killAssistRates =
         new BotKillDiceAssist.KillAssistRates(
             killAssistTwoPlayer, killAssistThreePlayer, killAssistFourPlayer);
@@ -124,6 +131,14 @@ public class BotService {
                           gameEngineService.canBotUseDiceForAssist(roomId, seat, token, dice),
                       ThreadLocalRandom.current(),
                       homeAssistProbability);
+            }
+            if (assistDice == null && smartLastPawnDiceAssist) {
+              assistDice =
+                  BotLastPawnDiceAssist.maybePickHighDice(
+                      snap,
+                      seat,
+                      ThreadLocalRandom.current(),
+                      lastPawnHighDiceProbability);
             }
             if (assistDice == null && smartKillDiceAssist) {
               assistDice =
