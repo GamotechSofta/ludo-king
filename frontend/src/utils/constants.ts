@@ -155,19 +155,20 @@ export const TIME_INTERVAL_CHRONOMETER = 100; // was 50 — half the re-renders,
  * Interval between pawn cell steps (ms).
  * One box at a time — slow enough to clearly see each cell.
  */
-export const TOKEN_MOVEMENT_INTERVAL_VALUE = 180;
+export const TOKEN_MOVEMENT_INTERVAL_VALUE = 200;
 
 /** Online: same cell-by-cell cadence as offline. */
-export const ONLINE_TOKEN_MOVEMENT_INTERVAL_VALUE = 180;
+export const ONLINE_TOKEN_MOVEMENT_INTERVAL_VALUE = 200;
 
 /** Extra pause on each cell after the hop lands (ms). */
-export const TOKEN_STEP_PAUSE_MS = 10;
+export const TOKEN_STEP_PAUSE_MS = 0;
 
 /**
  * Captured pawn return-to-yard: still cell-by-cell, much faster than a normal move.
  * Keep ≤ CSS `.game-token.moving.returning` duration so hops don't overlap.
  */
-export const CAPTURE_RETURN_STEP_MS = 40;
+/** Match LudoGame capture flight cadence (28ms samples). */
+export const CAPTURE_RETURN_STEP_MS = 28;
 export const CAPTURE_RETURN_PAUSE_MS = 0;
 
 /**
@@ -175,20 +176,20 @@ export const CAPTURE_RETURN_PAUSE_MS = 0;
  * this budget glide one cell per frame instead of resting on each cell, so a
  * kill never drags on (or gets cut off by the next snapshot).
  */
-export const CAPTURE_RETURN_MAX_TOTAL_MS = 850;
+export const CAPTURE_RETURN_MAX_TOTAL_MS = 1100;
 /** rAF granularity — painting one cell already costs this much. */
 export const CAPTURE_RETURN_FRAME_MS = 16;
 
 /**
- * Dice spin duration (seconds) for react-dice-complete (original).
+ * Dice spin duration (seconds) — LudoGame DICE_ROLL_MIN_SPIN_MS = 500.
  */
 export const ROLL_TIME_VALUE = 0.5;
 
 /** Online: wait for dice spin before pawn hops / rollDone side-effects. */
 export const DICE_ROLL_ANIM_MS = Math.round(ROLL_TIME_VALUE * 1000);
 
-/** Pause before the die handoff to the next player (online). */
-export const ONLINE_TURN_PASS_DELAY_MS = 700;
+/** Pause before the die handoff — LudoGame DICE_PASS_DELAY_MS = 500. */
+export const ONLINE_TURN_PASS_DELAY_MS = 500;
 
 /**
  * Valor para el delay que se aplica antes de enviar la confirmación al socket

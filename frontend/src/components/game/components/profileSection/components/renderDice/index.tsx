@@ -1,7 +1,6 @@
 import "./styles.css";
 import { ROLL_TIME_VALUE } from "../../../../../../utils/constants";
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import ReactDice, { ReactDiceRef } from "react-dice-complete";
+import React, { useEffect, useRef, useState } from "react";
 import type { TDicevalues } from "../../../../../../interfaces";
 
 interface RenderDiceProps {
@@ -15,33 +14,37 @@ interface RenderDiceProps {
   handleSelectDice: () => void;
 }
 
-/**
- * Keep ReactDice props 100% stable so the library does not remount its cube
- * on every parent render (that cancelled the classic tumble).
- */
-const StableReactDice = React.memo(
-  React.forwardRef<
-    ReactDiceRef,
-    { onRollDone: (total: number, values: number[]) => void }
-  >(function StableReactDice({ onRollDone }, ref) {
-    return (
-      <ReactDice
-        ref={ref}
-        disableIndividual
-        defaultRoll={1}
-        dieSize={36}
-        margin={0}
-        dotColor="#111111"
-        faceColor="#ffffff"
-        numDice={1}
-        outline
-        rollTime={ROLL_TIME_VALUE}
-        rollDone={onRollDone}
-        outlineColor="#c8c8c8"
-      />
-    );
-  })
-);
+const DICE_PIPS: Record<number, number[]> = {
+  1: [4],
+  2: [0, 8],
+  3: [0, 4, 8],
+  4: [0, 2, 6, 8],
+  5: [0, 2, 4, 6, 8],
+  6: [0, 2, 3, 5, 6, 8],
+};
+
+const DICE_TRANSFORMS: Record<number, string> = {
+  1: "rotateX(0deg) rotateY(0deg)",
+  2: "rotateX(0deg) rotateY(-90deg)",
+  3: "rotateX(-90deg) rotateY(0deg)",
+  4: "rotateX(90deg) rotateY(0deg)",
+  5: "rotateX(0deg) rotateY(90deg)",
+  6: "rotateX(0deg) rotateY(180deg)",
+};
+
+const DiceFace = React.memo(({ value }: { value: number }) => {
+  const visible = new Set(DICE_PIPS[value]);
+  return (
+    <div className={`smooth-dice-face smooth-dice-face-${value}`}>
+      {Array.from({ length: 9 }, (_, index) => (
+        <span
+          key={index}
+          className={`smooth-dice-pip${visible.has(index) ? "" : " empty"}`}
+        />
+      ))}
+    </div>
+  );
+});
 
 const RenderDice = ({
   hasTurn = false,
@@ -53,7 +56,6 @@ const RenderDice = ({
   handleDoneDice,
   handleSelectDice,
 }: RenderDiceProps) => {
-  const refDice = useRef<ReactDiceRef>(null);
   const handleDoneDiceRef = useRef(handleDoneDice);
   const valueRef = useRef(value);
   const lastAnimatedRollRef = useRef("");
@@ -61,6 +63,7 @@ const RenderDice = ({
   const rollDoneTimerRef = useRef<number | null>(null);
   const holdVisibleTimerRef = useRef<number | null>(null);
   const [holdVisible, setHoldVisible] = useState(false);
+  const [rolling, setRolling] = useState(false);
 
   useEffect(() => {
     handleDoneDiceRef.current = handleDoneDice;
@@ -103,19 +106,8 @@ const RenderDice = ({
     []
   );
 
-  const onRollDone = useCallback((_total: number, _values: number[]) => {
-    // Ignore stale rollDone from an old/aborted die cycle.
-    if (!activeRollRef.current) return;
-    const doneKey = activeRollRef.current;
-    activeRollRef.current = "";
-    if (rollDoneTimerRef.current != null) {
-      window.clearTimeout(rollDoneTimerRef.current);
-      rollDoneTimerRef.current = null;
-    }
-    if (valueRef.current !== 0 && doneKey) handleDoneDiceRef.current();
-  }, []);
-
-  // Same as original: tumble when value + diceRollNumber arrive for this seat.
+  // CSS 3D tumble adapted from the reference game. It is controlled by the
+  // monotonic roll key, so equal consecutive values still animate and finish.
   useEffect(() => {
     if (!hasTurn) return;
     if (value === 0 || diceRollNumber === 0) return;
@@ -123,48 +115,21 @@ const RenderDice = ({
     const rollKey = `${diceRollNumber}:${value}`;
     if (lastAnimatedRollRef.current === rollKey) return;
 
-    let cancelled = false;
-    let started = false;
-
-    const kick = (attempt: number) => {
-      if (cancelled) return;
-      if (refDice.current) {
-        activeRollRef.current = rollKey;
-        refDice.current.rollAll([value]);
-        lastAnimatedRollRef.current = rollKey;
-        if (rollDoneTimerRef.current != null) {
-          window.clearTimeout(rollDoneTimerRef.current);
-        }
-        // Safety net: if library doesn't fire rollDone, unlock flow anyway.
-        rollDoneTimerRef.current = window.setTimeout(() => {
-          if (activeRollRef.current !== rollKey) return;
-          activeRollRef.current = "";
-          if (valueRef.current !== 0) {
-            handleDoneDiceRef.current();
-          }
-        }, Math.round(ROLL_TIME_VALUE * 1000) + 220);
-        started = true;
-        return;
-      }
-      if (attempt < 20) {
-        requestAnimationFrame(() => kick(attempt + 1));
-      } else if (valueRef.current !== 0) {
+    activeRollRef.current = rollKey;
+    lastAnimatedRollRef.current = rollKey;
+    setRolling(true);
+    if (rollDoneTimerRef.current != null) {
+      window.clearTimeout(rollDoneTimerRef.current);
+    }
+    rollDoneTimerRef.current = window.setTimeout(() => {
+      if (activeRollRef.current !== rollKey) return;
+      activeRollRef.current = "";
+      rollDoneTimerRef.current = null;
+      setRolling(false);
+      if (valueRef.current !== 0) {
         handleDoneDiceRef.current();
       }
-    };
-
-    // Die stays mounted (hidden) while !hasTurn, so ref is usually ready;
-    // still retry a few frames for first paint.
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => kick(0));
-    });
-
-    return () => {
-      cancelled = true;
-      if (!started && lastAnimatedRollRef.current === rollKey) {
-        lastAnimatedRollRef.current = "";
-      }
-    };
+    }, Math.round(ROLL_TIME_VALUE * 1000));
   }, [hasTurn, value, diceRollNumber]);
 
   if (!showDice) return null;
@@ -190,7 +155,20 @@ const RenderDice = ({
           showFace ? "" : " game-profile-dice-face-hidden"
         }`}
       >
-        <StableReactDice ref={refDice} onRollDone={onRollDone} />
+        <div className="smooth-dice-scene">
+          <div
+            className={`smooth-dice-cube${rolling ? " rolling" : " settling"}`}
+            style={
+              rolling
+                ? undefined
+                : { transform: DICE_TRANSFORMS[value || 1] }
+            }
+          >
+            {[1, 2, 3, 4, 5, 6].map((face) => (
+              <DiceFace key={face} value={face} />
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );

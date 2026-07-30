@@ -133,8 +133,9 @@ const Token = ({
   const zIndex = getZindexTokenWrapper(calculateTokenStyles);
 
   const styleWrapper: React.CSSProperties = {
-    left: coordinate.x,
-    top: coordinate.y,
+    left: 0,
+    top: 0,
+    transform: `translate3d(${coordinate.x}px, ${coordinate.y}px, 0)`,
     width: SIZE_TILE,
     height: SIZE_TILE,
     zIndex,

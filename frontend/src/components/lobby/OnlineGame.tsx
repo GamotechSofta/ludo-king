@@ -56,7 +56,6 @@ import {
 } from "./captureReturnAnim";
 import {
   afterPaint,
-  nextFrame,
   rafDelay,
   runCellByCellSteps,
   type AnimCancel,
@@ -797,6 +796,13 @@ const OnlineGame = ({
   }, [snapshot, mySeat, applyDiceOwnerTurn]);
 
   const animCancelRef = useRef<AnimCancel>({ cancelled: false });
+  /**
+   * Who started the hop loop that is currently in flight.
+   * The snapshot effect must not cancel a walk it does not own: my own move is
+   * driven from the click handler, and the server's confirmation of that very
+   * move re-runs the effect mid-walk.
+   */
+  const animOwnerRef = useRef<"snapshot" | "local" | null>(null);
 
   /** Put one pawn on a server cell instantly (no CSS slide). */
   const placePawnInstant = (
@@ -846,6 +852,9 @@ const OnlineGame = ({
       // Lock display FIRST — blocks sync from painting destination
       animatingRef.current = true;
       setIsBusy(true);
+      // Mutate the shared cancel token so old hop loops see cancelled=true
+      // before this run resets it (never orphan a live loop on a discarded object).
+      animCancelRef.current.cancelled = true;
       animCancelRef.current = { cancelled: false };
 
       let working = listTokensRef.current;
@@ -1035,6 +1044,9 @@ const OnlineGame = ({
    */
   const abandonAnimation = useCallback(() => {
     if (exitingRef.current) return;
+    // Stop any in-flight hop/capture loop before unlocking the board.
+    animOwnerRef.current = null;
+    animCancelRef.current.cancelled = true;
     animatingRef.current = false;
     suppressMoveAnimRef.current = false;
     rollingRef.current = false;
@@ -1343,6 +1355,7 @@ const OnlineGame = ({
           await paintUpdate(() => setListTokens(placed));
         }
 
+        animOwnerRef.current = "snapshot";
         const ok = await runMoveAnimation(
           snap,
           moved.seat,
@@ -1418,6 +1431,13 @@ const OnlineGame = ({
     drain(snapshot);
     return () => {
       cancelled = true;
+      // Stop hop/capture loops owned by the previous apply() so they cannot
+      // keep writing listTokens after a newer snapshot takes over. A walk the
+      // click handler owns is left alone — the snapshot that just arrived is
+      // usually the confirmation of that same move.
+      if (animOwnerRef.current !== "local") {
+        animCancelRef.current.cancelled = true;
+      }
     };
   }, [snapshot, mySeat, resyncTick, abandonAnimation, syncBoardFromSnapshot, runMoveAnimation, runPostMoveCaptureReturn, beginDiceRollAnimation, waitForDiceRollAnimation, flashDiceOnSeat, playDiceRollingOnce]);
 
@@ -1540,6 +1560,10 @@ const OnlineGame = ({
       moveToken(tokenIndex, diceIndex);
       let ok = false;
       let localVictims: CaptureVictim[] = [];
+      // Claim the walk before the server can confirm it: the confirming
+      // snapshot re-runs the apply effect, whose cleanup would otherwise
+      // cancel this loop and teleport the pawn to its destination.
+      animOwnerRef.current = "local";
       try {
         ok = await runMoveAnimation(
           live,
@@ -1560,7 +1584,9 @@ const OnlineGame = ({
           lastAutoMoveKeyRef.current = "";
         }
       } finally {
-        // A throw here must never leave the board locked.
+        // A throw here must never leave the board locked, nor keep ownership of
+        // the cancel token (that would make later snapshots uncancellable).
+        animOwnerRef.current = null;
         animatingRef.current = false;
         isBusyRef.current = false;
         setIsBusy(false);
@@ -1708,6 +1734,8 @@ const OnlineGame = ({
         lastAnimatedMoveSeqRef.current = live.actionSeq || 0;
       }
 
+      animOwnerRef.current = null;
+      animCancelRef.current.cancelled = true;
       animatingRef.current = false;
       suppressMoveAnimRef.current = false;
       rollingRef.current = false;
@@ -1855,7 +1883,8 @@ const OnlineGame = ({
   );
 
   const clearExitTimers = useCallback(() => {
-    animCancelRef.current = { cancelled: true };
+    animOwnerRef.current = null;
+    animCancelRef.current.cancelled = true;
     if (autoMoveTimerRef.current != null) {
       window.clearTimeout(autoMoveTimerRef.current);
       autoMoveTimerRef.current = null;
