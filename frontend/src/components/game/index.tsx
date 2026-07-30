@@ -608,7 +608,7 @@ const Game = ({
       }
       if (actionsTurnRef.current.diceValue !== 0) return;
       handleSelectDice();
-    }, 650);
+    }, 450);
 
     return () => window.clearTimeout(timer);
   }, [
@@ -640,7 +640,7 @@ const Game = ({
       if (currentTurnRef.current !== currentTurn) return;
       if (gameOverRef.current || busyRef.current) return;
       void runTokenMove(move.tokenIndex, move.diceIndex);
-    }, 500);
+    }, 350);
 
     return () => window.clearTimeout(timer);
   }, [

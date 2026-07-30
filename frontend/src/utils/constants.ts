@@ -155,19 +155,19 @@ export const TIME_INTERVAL_CHRONOMETER = 100; // was 50 — half the re-renders,
  * Interval between pawn cell steps (ms).
  * One box at a time — slow enough to clearly see each cell.
  */
-export const TOKEN_MOVEMENT_INTERVAL_VALUE = 240;
+export const TOKEN_MOVEMENT_INTERVAL_VALUE = 180;
 
 /** Online: same cell-by-cell cadence as offline. */
-export const ONLINE_TOKEN_MOVEMENT_INTERVAL_VALUE = 240;
+export const ONLINE_TOKEN_MOVEMENT_INTERVAL_VALUE = 180;
 
 /** Extra pause on each cell after the hop lands (ms). */
-export const TOKEN_STEP_PAUSE_MS = 20;
+export const TOKEN_STEP_PAUSE_MS = 10;
 
 /**
  * Captured pawn return-to-yard: still cell-by-cell, much faster than a normal move.
  * Keep ≤ CSS `.game-token.moving.returning` duration so hops don't overlap.
  */
-export const CAPTURE_RETURN_STEP_MS = 55;
+export const CAPTURE_RETURN_STEP_MS = 40;
 export const CAPTURE_RETURN_PAUSE_MS = 0;
 
 /**
@@ -175,20 +175,20 @@ export const CAPTURE_RETURN_PAUSE_MS = 0;
  * this budget glide one cell per frame instead of resting on each cell, so a
  * kill never drags on (or gets cut off by the next snapshot).
  */
-export const CAPTURE_RETURN_MAX_TOTAL_MS = 1100;
+export const CAPTURE_RETURN_MAX_TOTAL_MS = 850;
 /** rAF granularity — painting one cell already costs this much. */
 export const CAPTURE_RETURN_FRAME_MS = 16;
 
 /**
  * Dice spin duration (seconds) for react-dice-complete (original).
  */
-export const ROLL_TIME_VALUE = 0.65;
+export const ROLL_TIME_VALUE = 0.5;
 
 /** Online: wait for dice spin before pawn hops / rollDone side-effects. */
 export const DICE_ROLL_ANIM_MS = Math.round(ROLL_TIME_VALUE * 1000);
 
 /** Pause before the die handoff to the next player (online). */
-export const ONLINE_TURN_PASS_DELAY_MS = 1000;
+export const ONLINE_TURN_PASS_DELAY_MS = 700;
 
 /**
  * Valor para el delay que se aplica antes de enviar la confirmación al socket
