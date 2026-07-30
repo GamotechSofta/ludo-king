@@ -73,106 +73,21 @@
   visibility: hidden;
 }
 
+.game-profile-dice-face .dice {
+  margin: 0 !important;
+}
+
+.game-profile-dice-face .die-container {
+  margin: 0 !important;
+}
+
+/* Library transition fights tumble keyframes */
+.game-profile-dice-face .die {
+  transition: none !important;
+}
+
 .game-profile-dice.ready .game-profile-dice-face {
   animation: dice-idle-bob 1.1s ease-in-out infinite;
-}
-
-.smooth-dice-scene {
-  --dice-size: 36px;
-  --dice-half: 18px;
-  width: var(--dice-size);
-  height: var(--dice-size);
-  perspective: 520px;
-  perspective-origin: 50% 42%;
-  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.28));
-}
-
-.smooth-dice-cube {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  transform-style: preserve-3d;
-  will-change: transform;
-}
-
-.smooth-dice-cube.rolling {
-  animation: smooth-dice-tumble 500ms linear infinite;
-}
-
-.smooth-dice-cube.settling {
-  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.smooth-dice-face {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  grid-template-rows: repeat(3, 1fr);
-  box-sizing: border-box;
-  padding: 12%;
-  border: 1.5px solid #b8bec8;
-  border-radius: 7px;
-  background: linear-gradient(155deg, #fff 0%, #eef1f5 100%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.95),
-    0 1px 2px rgba(0, 0, 0, 0.16);
-  backface-visibility: hidden;
-}
-
-.smooth-dice-pip {
-  width: 72%;
-  height: 72%;
-  align-self: center;
-  justify-self: center;
-  border-radius: 50%;
-  background: radial-gradient(circle at 32% 28%, #535d6c 0%, #111 88%);
-}
-
-.smooth-dice-pip.empty {
-  visibility: hidden;
-}
-
-.smooth-dice-face-1 {
-  transform: rotateY(0deg) translateZ(var(--dice-half));
-}
-
-.smooth-dice-face-6 {
-  transform: rotateY(180deg) translateZ(var(--dice-half));
-}
-
-.smooth-dice-face-2 {
-  transform: rotateY(90deg) translateZ(var(--dice-half));
-}
-
-.smooth-dice-face-5 {
-  transform: rotateY(-90deg) translateZ(var(--dice-half));
-}
-
-.smooth-dice-face-3 {
-  transform: rotateX(90deg) translateZ(var(--dice-half));
-}
-
-.smooth-dice-face-4 {
-  transform: rotateX(-90deg) translateZ(var(--dice-half));
-}
-
-@keyframes smooth-dice-tumble {
-  0% {
-    transform: rotateX(0deg) rotateY(0deg) rotateZ(0deg);
-  }
-  25% {
-    transform: rotateX(144deg) rotateY(126deg) rotateZ(36deg);
-  }
-  50% {
-    transform: rotateX(288deg) rotateY(252deg) rotateZ(72deg);
-  }
-  75% {
-    transform: rotateX(432deg) rotateY(378deg) rotateZ(108deg);
-  }
-  100% {
-    transform: rotateX(576deg) rotateY(504deg) rotateZ(144deg);
-  }
 }
 
 @keyframes dice-idle-bob {

@@ -67,17 +67,13 @@ export async function runCellByCellSteps(
   for (let i = 0; i < count; i++) {
     if (cancel?.cancelled) return;
 
-    const stepStartedAt = performance.now();
     onStep(i);
-    // Two frames: React commits this cell, then the browser paints it. A single
-    // frame can run before the commit, letting the next cell overwrite this one
-    // in the same paint (pawn appears to skip cells).
+    // Yield so React commits and the browser paints this cell before waiting
     await afterPaint();
     if (cancel?.cancelled) return;
 
-    // Charge the paint against the step budget so cells stay `stepMs` apart.
-    const elapsed = performance.now() - stepStartedAt;
-    await rafDelay(Math.max(0, stepMs - elapsed), cancel);
+    // Let CSS slide finish on this box only
+    await rafDelay(stepMs, cancel);
     if (cancel?.cancelled) return;
 
     // Brief rest on the box so the eye registers "one step"
