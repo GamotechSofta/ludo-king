@@ -5,6 +5,7 @@ import com.ludo.backend.user.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
@@ -37,10 +38,16 @@ public class PlatformController {
 
   private final MatchEconomyService matchEconomy;
   private final UserService userService;
+  private final GameHistoryService gameHistoryService;
 
-  public PlatformController(MatchEconomyService matchEconomy, UserService userService) {
+  public PlatformController(
+      MatchEconomyService matchEconomy,
+      UserService userService,
+      GameHistoryService gameHistoryService
+  ) {
     this.matchEconomy = matchEconomy;
     this.userService = userService;
+    this.gameHistoryService = gameHistoryService;
   }
 
   public record LaunchRequest(
@@ -161,6 +168,22 @@ public class PlatformController {
     res.put("currency", "INR");
     res.put("walletEnabled", true);
     res.put("mock", false);
+    return res;
+  }
+
+  /** Completed match history for one player (game id, date, bet, win, opponent, result). */
+  @GetMapping("/history")
+  public Map<String, Object> history(
+      @RequestParam String userId,
+      @RequestParam(required = false, defaultValue = "50") int limit
+  ) {
+    String id = requireValidUserId(userId);
+    List<Map<String, Object>> games = gameHistoryService.historyForUser(id, limit);
+    Map<String, Object> res = new LinkedHashMap<>();
+    res.put("success", true);
+    res.put("userId", id);
+    res.put("games", games);
+    res.put("count", games.size());
     return res;
   }
 

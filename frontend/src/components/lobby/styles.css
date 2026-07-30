@@ -217,6 +217,163 @@
   color: #0a3d8f;
 }
 
+.history-overlay {
+  align-items: stretch;
+  background: rgba(4, 24, 64, 0.72);
+  bottom: 0;
+  display: flex;
+  justify-content: center;
+  left: 0;
+  padding: 18px 14px 22px;
+  position: absolute;
+  right: 0;
+  top: 0;
+  z-index: 20;
+}
+
+.history-panel {
+  background: linear-gradient(180deg, #1565c0 0%, #0d47a1 100%);
+  border: 2px solid #90caf9;
+  border-radius: 18px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+  max-height: 100%;
+  max-width: 480px;
+  overflow: hidden;
+  width: 100%;
+}
+
+.history-panel-head {
+  align-items: center;
+  border-bottom: 1px solid rgba(144, 202, 249, 0.35);
+  display: flex;
+  justify-content: space-between;
+  padding: 14px 16px;
+}
+
+.history-panel-head h2 {
+  font-family: "Fredoka", sans-serif;
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.history-close {
+  background: #0d47a1;
+  border: 2px solid #90caf9;
+  border-radius: 999px;
+  color: #fff;
+  cursor: pointer;
+  font-family: "Fredoka", sans-serif;
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 6px 12px;
+}
+
+.history-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 12px 14px 16px;
+}
+
+.history-empty {
+  color: rgba(255, 255, 255, 0.85);
+  font-family: "Fredoka", sans-serif;
+  margin: 24px 0;
+  text-align: center;
+}
+
+.history-card {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(144, 202, 249, 0.35);
+  border-left: 4px solid #90caf9;
+  border-radius: 12px;
+  padding: 12px 12px 10px;
+}
+
+.history-card.win {
+  border-left-color: #ffe56a;
+}
+
+.history-card.loss {
+  border-left-color: #ff8a80;
+}
+
+.history-card-top {
+  align-items: baseline;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.history-result {
+  font-family: "Fredoka", sans-serif;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.history-card.win .history-result {
+  color: #ffe56a;
+}
+
+.history-card.loss .history-result {
+  color: #ffcdd2;
+}
+
+.history-when {
+  color: rgba(255, 255, 255, 0.75);
+  font-family: "Fredoka", sans-serif;
+  font-size: 0.78rem;
+  text-align: right;
+}
+
+.history-opponent {
+  font-family: "Fredoka", sans-serif;
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 6px 0 2px;
+}
+
+.history-reason {
+  color: rgba(255, 255, 255, 0.8);
+  font-family: "Fredoka", sans-serif;
+  font-size: 0.82rem;
+  margin: 0 0 8px;
+}
+
+.history-meta {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr 1fr 1fr;
+  margin: 0;
+}
+
+.history-meta div {
+  min-width: 0;
+}
+
+.history-meta dt {
+  color: rgba(255, 255, 255, 0.55);
+  font-family: "Fredoka", sans-serif;
+  font-size: 0.68rem;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.history-meta dd {
+  font-family: "Fredoka", sans-serif;
+  font-size: 0.78rem;
+  font-weight: 600;
+  margin: 2px 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .lobby-btn.mode {
   background: linear-gradient(180deg, #2d8cff 0%, #1457c7 100%);
   color: #fff;

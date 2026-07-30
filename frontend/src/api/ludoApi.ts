@@ -178,3 +178,25 @@ export const fetchEconomy = () =>
     gameId: string;
   }>("/api/platform/economy");
 
+export interface IGameHistoryItem {
+  gameId: string;
+  roomCode?: string;
+  gameDate: string;
+  gameTime: string;
+  betAmount: number;
+  winAmount: number;
+  opponentName: string;
+  result: "Win" | "Loss" | string;
+  reason: string;
+}
+
+export const fetchGameHistory = (userId: string, limit = 50) =>
+  json<{
+    success: boolean;
+    userId: string;
+    games: IGameHistoryItem[];
+    count: number;
+  }>(
+    `/api/platform/history?userId=${encodeURIComponent(userId)}&limit=${encodeURIComponent(String(limit))}`
+  );
+

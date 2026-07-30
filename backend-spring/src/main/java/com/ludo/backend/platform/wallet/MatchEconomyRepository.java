@@ -8,4 +8,6 @@ public interface MatchEconomyRepository extends MongoRepository<MatchEconomyEntr
   Optional<MatchEconomyEntry> findByMatchIdAndUserId(String matchId, String userId);
 
   List<MatchEconomyEntry> findByMatchId(String matchId);
+
+  List<MatchEconomyEntry> findByUserId(String userId);
 }

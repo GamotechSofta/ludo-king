@@ -393,7 +393,12 @@ const App = () => {
 
   return (
     <AppWrapper>
-      {screen === "home" && <Home onPlay={() => goTo("onlineSetup")} />}
+      {screen === "home" && (
+        <Home
+          onPlay={() => goTo("onlineSetup")}
+          userId={guest?.id}
+        />
+      )}
       {screen === "modes" && (
         <ModeSelect onBack={goBack} onSelect={handleSelectMode} />
       )}

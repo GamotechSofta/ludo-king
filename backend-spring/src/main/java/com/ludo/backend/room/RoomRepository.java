@@ -25,4 +25,7 @@ public interface RoomRepository extends MongoRepository<Room, String> {
           + " 'players.userId': ?0 }"
   )
   List<Room> findActiveRoomsForUser(String userId);
+
+  @Query("{ 'status': 'COMPLETED', 'players.userId': ?0 }")
+  List<Room> findCompletedRoomsForUser(String userId);
 }
