@@ -115,21 +115,6 @@ const Piece = ({ color, style = {}, index = 0, debug = false }: PieceProps) => {
             <stop offset="50%" stopColor={palette.insetMid} />
             <stop offset="100%" stopColor={palette.insetDark} />
           </radialGradient>
-          <filter
-            id={`pawn-shadow-${uid}`}
-            x="-40%"
-            y="-15%"
-            width="180%"
-            height="150%"
-          >
-            <feDropShadow
-              dx="1"
-              dy="2"
-              stdDeviation="1.4"
-              floodColor="#000000"
-              floodOpacity="0.4"
-            />
-          </filter>
         </defs>
 
         {/* Colored base disc under tip */}
@@ -149,35 +134,33 @@ const Piece = ({ color, style = {}, index = 0, debug = false }: PieceProps) => {
           opacity="0.45"
         />
 
-        <g filter={`url(#pawn-shadow-${uid})`}>
-          <path
-            d="M32 4
-               C20.5 4 12 14 12 25.5
-               C12 38 32 70 32 70
-               C32 70 52 38 52 25.5
-               C52 14 43.5 4 32 4 Z"
-            fill={`url(#pawn-pin-${uid})`}
-            stroke="#2a2a2a"
-            strokeWidth="1.35"
-            strokeLinejoin="round"
-          />
-          <circle
-            cx="32"
-            cy="24"
-            r="11.5"
-            fill={`url(#pawn-inset-${uid})`}
-            stroke="rgba(0,0,0,0.28)"
-            strokeWidth="1"
-          />
-          <ellipse
-            cx="27.5"
-            cy="18.5"
-            rx="3.8"
-            ry="2.8"
-            fill="#ffffff"
-            opacity="0.4"
-          />
-        </g>
+        <path
+          d="M32 4
+             C20.5 4 12 14 12 25.5
+             C12 38 32 70 32 70
+             C32 70 52 38 52 25.5
+             C52 14 43.5 4 32 4 Z"
+          fill={`url(#pawn-pin-${uid})`}
+          stroke="#2a2a2a"
+          strokeWidth="1.35"
+          strokeLinejoin="round"
+        />
+        <circle
+          cx="32"
+          cy="24"
+          r="11.5"
+          fill={`url(#pawn-inset-${uid})`}
+          stroke="rgba(0,0,0,0.28)"
+          strokeWidth="1"
+        />
+        <ellipse
+          cx="27.5"
+          cy="18.5"
+          rx="3.8"
+          ry="2.8"
+          fill="#ffffff"
+          opacity="0.4"
+        />
       </svg>
       {debug && <span>{index}</span>}
     </div>

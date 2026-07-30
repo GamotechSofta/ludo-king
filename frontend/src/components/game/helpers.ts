@@ -10,7 +10,6 @@ import {
   POSITION_ELEMENTS_BOARD,
   POSITION_TILES,
 } from "../../utils/positions-board";
-import cloneDeep from "lodash.clonedeep";
 import type {
   IActionsTurn,
   IListTokens,
@@ -272,30 +271,21 @@ export const getRandomValueDice = (
   actionsTurn: IActionsTurn,
   diceValue?: TDicevalues
 ) => {
-  const copyActionsTurn = cloneDeep(actionsTurn);
   /**
    * Se obtiene el valor del dado de forma aleatorio...
    * si el valor del dado llega se toma ese valor, si no se obtiene aleatorio,
    * se hace esto pata el caso de la jugabilidad online, en la cual el valor del dado,
    * es determinado por un cliente remoto.
    */
-  copyActionsTurn.diceValue = diceValue || randomValueDice();
-
-  /**
-   * Se indica que le cronometro se debe detener...
-   */
-  copyActionsTurn.timerActivated = false;
-
-  /**
-   * Se bloquea el botón del dado para prevenir nuevos lanzamientos...
-   */
-  copyActionsTurn.disabledDice = true;
-
-  // Monotonic — wrapping 1..9 reused roll keys and skipped CSS spin.
-  copyActionsTurn.diceRollNumber = (copyActionsTurn.diceRollNumber || 0) + 1;
-  copyActionsTurn.rollId = undefined;
-
-  return copyActionsTurn;
+  return {
+    ...actionsTurn,
+    diceValue: diceValue || randomValueDice(),
+    timerActivated: false,
+    disabledDice: true,
+    // Monotonic — wrapping 1..9 reused roll keys and skipped CSS spin.
+    diceRollNumber: (actionsTurn.diceRollNumber || 0) + 1,
+    rollId: undefined,
+  };
 };
 
 /**
@@ -304,16 +294,15 @@ export const getRandomValueDice = (
 export const applyServerDiceVisual = (
   actionsTurn: IActionsTurn,
   diceValue: TDicevalues
-): IActionsTurn => {
-  const copyActionsTurn = cloneDeep(actionsTurn);
-  copyActionsTurn.diceValue = diceValue;
-  copyActionsTurn.timerActivated = false;
-  copyActionsTurn.disabledDice = true;
+): IActionsTurn => ({
+  ...actionsTurn,
+  diceValue,
+  timerActivated: false,
+  disabledDice: true,
   // Monotonic — never wrap (wrap caused identical roll keys → skipped spin)
-  copyActionsTurn.diceRollNumber = (copyActionsTurn.diceRollNumber || 0) + 1;
-  copyActionsTurn.rollId = undefined;
-  return copyActionsTurn;
-};
+  diceRollNumber: (actionsTurn.diceRollNumber || 0) + 1,
+  rollId: undefined,
+});
 
 /**
  * Función que genera la dada inicial de los tokens,

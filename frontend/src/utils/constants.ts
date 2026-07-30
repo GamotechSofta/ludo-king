@@ -149,7 +149,7 @@ export const MAXIMUM_VISIBLE_TOKENS_PER_CELL = 4;
 /**
  * Intervalo del tiempo para el cronometro del juego...
  */
-export const TIME_INTERVAL_CHRONOMETER = 50; // org (50), debug: 10,5,0.5
+export const TIME_INTERVAL_CHRONOMETER = 100; // was 50 — half the re-renders, same ~5s ring
 
 /**
  * Interval between pawn cell steps (ms).

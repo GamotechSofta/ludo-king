@@ -1,9 +1,8 @@
 /**
  * Cell-by-cell pawn animation.
- * Exactly one board box per step, slowly: hop → land → pause → next box.
+ * Exactly one board box per step: hop → land → pause → next box.
+ * Uses rAF yields (not flushSync) so React can paint without blocking the main thread.
  */
-
-import { flushSync } from "react-dom";
 
 export type AnimCancel = { cancelled: boolean };
 
@@ -25,6 +24,12 @@ export function nextFrame(): Promise<number> {
     );
     requestAnimationFrame(finish);
   });
+}
+
+/** Wait until React has committed and the browser has painted. */
+export async function afterPaint(): Promise<void> {
+  await nextFrame();
+  await nextFrame();
 }
 
 export async function rafDelay(ms: number, cancel?: AnimCancel): Promise<void> {
@@ -62,11 +67,9 @@ export async function runCellByCellSteps(
   for (let i = 0; i < count; i++) {
     if (cancel?.cancelled) return;
 
-    // Paint exactly this one box
-    flushSync(() => {
-      onStep(i);
-    });
-    await nextFrame();
+    onStep(i);
+    // Yield so React commits and the browser paints this cell before waiting
+    await afterPaint();
     if (cancel?.cancelled) return;
 
     // Let CSS slide finish on this box only

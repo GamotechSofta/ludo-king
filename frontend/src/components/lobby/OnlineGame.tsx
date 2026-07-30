@@ -6,7 +6,6 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { flushSync } from "react-dom";
 import { useGameSocket } from "../../hooks/useGameSocket";
 import type {
   IActionsTurn,
@@ -42,6 +41,7 @@ import {
   buildMovePath,
   clearDiceAvailable,
   findCaptureVictims,
+  updateTokenAt,
 } from "../game/rules";
 import { pickHumanAutoMoveFromSnapshot } from "../game/humanAutoMove";
 import type { IGameSnapshot, IGuestUser, IResultEntry } from "./types";
@@ -55,9 +55,10 @@ import {
   type CaptureVictim,
 } from "./captureReturnAnim";
 import {
-  runCellByCellSteps,
+  afterPaint,
   nextFrame,
   rafDelay,
+  runCellByCellSteps,
   type AnimCancel,
 } from "./onlineAnimate";
 import { onlinePerf } from "../../utils/onlinePerf";
@@ -97,14 +98,10 @@ import {
 } from "./diceTurnLogic";
 import { isHumanOnlineMatch } from "./humanMatch";
 
-/** flushSync outside React commit/effects — avoids lifecycle flushSync warning. */
-function flushSyncAfterRender(update: () => void): Promise<void> {
-  return new Promise((resolve) => {
-    queueMicrotask(() => {
-      flushSync(update);
-      resolve();
-    });
-  });
+/** Commit state and wait for the browser paint (no flushSync — avoids main-thread jank). */
+async function paintUpdate(update: () => void): Promise<void> {
+  update();
+  await afterPaint();
 }
 
 /** Last resort unlock for a MOVE whose animation never completed. */
@@ -407,14 +404,9 @@ const OnlineGame = ({
         diceList: [value],
       };
       applyDiceOwnerTurn(snap, seat);
+      // Always bump diceRollNumber — bonus 6 after 6 must not reuse the same
+      // visual key or RenderDice skips tumble / handleDoneDice for bots.
       setActionsTurn((prevActions) => {
-        if (
-          diceRollPendingRef.current &&
-          diceOwnerSeatRef.current === seat &&
-          prevActions.diceValue === value
-        ) {
-          return prevActions;
-        }
         const base = actionsTurnFromSnapshot(
           {
             ...snap,
@@ -821,29 +813,22 @@ const OnlineGame = ({
       snap,
       mySeat
     );
-    return working.map((group, pIdx) => {
-      if (pIdx !== seat) return group;
+    return updateTokenAt(working, seat, tokenIndex, (t) => {
+      const next = applyTokenCell(
+        t,
+        positionGame,
+        typeTile,
+        positionTile,
+        false
+      );
       return {
-        ...group,
-        tokens: group.tokens.map((t, tIdx) => {
-          if (tIdx !== tokenIndex) return t;
-          const next = applyTokenCell(
-            t,
-            positionGame,
-            typeTile,
-            positionTile,
-            false
-          );
-          return {
-            ...next,
-            snapPlace: true,
-            isMoving: false,
-            animated: false,
-            diceAvailable: [],
-            canSelectToken: false,
-            enableTooltip: false,
-          };
-        }),
+        ...next,
+        snapPlace: true,
+        isMoving: false,
+        animated: false,
+        diceAvailable: [],
+        canSelectToken: false,
+        enableTooltip: false,
       };
     });
   };
@@ -882,11 +867,9 @@ const OnlineGame = ({
           snapForLanding
         );
         listTokensRef.current = working;
-        await flushSyncAfterRender(() => {
+        await paintUpdate(() => {
           setListTokens(working);
         });
-        await nextFrame();
-        await nextFrame();
       }
 
       let token = working[seat].tokens[tokenIndex];
@@ -919,11 +902,9 @@ const OnlineGame = ({
       }));
       token = working[seat].tokens[tokenIndex];
       listTokensRef.current = working;
-      await flushSyncAfterRender(() => {
+      await paintUpdate(() => {
         setListTokens(working);
       });
-      await nextFrame();
-      await nextFrame();
 
       const path = buildMovePath(token, positionGame, diceValue);
       if (!path.length) {
@@ -981,17 +962,12 @@ const OnlineGame = ({
         TOKEN_STEP_PAUSE_MS
       );
 
-      working = working.map((group, pIdx) => {
-        if (pIdx !== seat) return group;
-        return {
-          ...group,
-          tokens: group.tokens.map((t, tIdx) =>
-            tIdx === tokenIndex
-              ? { ...t, isMoving: false, animated: false, snapPlace: false }
-              : t
-          ),
-        };
-      });
+      working = updateTokenAt(working, seat, tokenIndex, (t) => ({
+        ...t,
+        isMoving: false,
+        animated: false,
+        snapPlace: false,
+      }));
       setListTokens(working);
       listTokensRef.current = working;
 
@@ -1364,7 +1340,7 @@ const OnlineGame = ({
             snap
           );
           listTokensRef.current = placed;
-          await flushSyncAfterRender(() => setListTokens(placed));
+          await paintUpdate(() => setListTokens(placed));
         }
 
         const ok = await runMoveAnimation(
@@ -1415,7 +1391,7 @@ const OnlineGame = ({
       }
 
       // Local player already animating this move — never paint destination early
-      if (suppressMoveAnimRef.current || animatingRef.current) {
+      if (animatingRef.current) {
         const q = pendingSnapRef.current;
         const last = q[q.length - 1];
         if (!last || (last.actionSeq || 0) !== (snap.actionSeq || 0)) {
@@ -1423,6 +1399,9 @@ const OnlineGame = ({
         }
         return;
       }
+      // suppressMoveAnim survived a finished local move. Queuing on it alone
+      // strands the snapshot: only a running animation drains the queue.
+      suppressMoveAnimRef.current = false;
 
       lastDiceSigRef.current = diceSig;
       syncBoardFromSnapshot(snap);
@@ -1696,11 +1675,15 @@ const OnlineGame = ({
       const live = snapshotRef.current;
       if (!live) return;
       if (live.phase === "FINISHED") return;
+      // A stranded snapshot queue / stale suppress flag freezes the board with
+      // every other lock already clear, so both must count as stalled here.
       if (
         !animatingRef.current &&
         !isBusyRef.current &&
         !diceRollPendingRef.current &&
-        !rollingRef.current
+        !rollingRef.current &&
+        !suppressMoveAnimRef.current &&
+        pendingSnapRef.current.length === 0
       ) {
         return;
       }
@@ -1730,8 +1713,11 @@ const OnlineGame = ({
       rollingRef.current = false;
       pendingDiceRef.current = null;
       passFlashUntilRef.current = 0;
+      // `live` is the newest state, so anything still queued is already stale.
+      pendingSnapRef.current = [];
       finishDiceRollAnimation();
       setIsBusy(false);
+      isBusyRef.current = false;
       syncBoardFromSnapshot(live, false, true);
       lockSeqRef.current = { seq: live.actionSeq || 0, at: Date.now() };
     }, 500);
@@ -1757,14 +1743,23 @@ const OnlineGame = ({
       if (passFlashUntilRef.current > performance.now()) return;
       if (onlineDiceDisabled(live, mySeat)) return;
 
+      // Pawns still carrying an earlier AWAITING_MOVE's selectable rings look
+      // clickable but cannot move, so the board needs the resync too.
+      const staleTokens = listTokensRef.current.some((group) =>
+        group.tokens.some((t) => t.diceAvailable.length > 0)
+      );
       const stale =
         actionsTurnRef.current.disabledDice ||
         actionsTurnRef.current.isDisabledUI ||
-        isBusyRef.current;
+        isBusyRef.current ||
+        staleTokens;
       if (!stale) return;
 
       isBusyRef.current = false;
       setIsBusy(false);
+      if (staleTokens) {
+        syncBoardFromSnapshot(live, false, true);
+      }
       setActionsTurn((prev) => ({
         ...prev,
         disabledDice: false,
@@ -1773,7 +1768,7 @@ const OnlineGame = ({
     }, 400);
 
     return () => window.clearInterval(id);
-  }, [mySeat, isActionInFlight]);
+  }, [mySeat, isActionInFlight, syncBoardFromSnapshot]);
 
   useEffect(() => {
     if (!snapshot || mySeat < 0) return;
@@ -1989,12 +1984,15 @@ const OnlineGame = ({
     snapshot.currentSeatIndex === mySeat &&
     mySeat >= 0;
 
-  const profileHandlers = {
-    handleTimer: () => undefined,
-    handleSelectDice,
-    handleDoneDice,
-    handleMuteChat: (_playerIndex: number) => undefined,
-  };
+  const profileHandlers = useMemo(
+    () => ({
+      handleTimer: () => undefined,
+      handleSelectDice,
+      handleDoneDice,
+      handleMuteChat: (_playerIndex: number) => undefined,
+    }),
+    [handleSelectDice, handleDoneDice]
+  );
 
   const profileProps = {
     players: renderPlayers,

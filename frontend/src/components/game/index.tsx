@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   IActionsTurn,
   IListTokens,
@@ -48,6 +48,7 @@ import {
   appendDiceRoll,
   applyTokenCell,
   buildMovePath,
+  updateTokenAt,
   clearDiceAvailable,
   createTurnActions,
   decideAfterDiceRoll,
@@ -316,24 +317,15 @@ const Game = ({
           } else {
             playSound("passingNext");
           }
-          working = working.map((group, pIdx) => {
-            if (pIdx !== turn) return group;
-            return {
-              ...group,
-              tokens: group.tokens.map((t, tIdx) => {
-                if (tIdx !== tokenIndex) {
-                  return { ...t, diceAvailable: [], animated: false };
-                }
-                return applyTokenCell(
-                  t,
-                  positionGame,
-                  step.typeTile,
-                  step.positionTile,
-                  true
-                );
-              }),
-            };
-          });
+          working = updateTokenAt(working, turn, tokenIndex, (t) =>
+            applyTokenCell(
+              t,
+              positionGame,
+              step.typeTile,
+              step.positionTile,
+              true
+            )
+          );
           setListTokens(working);
           listTokensRef.current = working;
 
@@ -345,15 +337,10 @@ const Game = ({
         TOKEN_STEP_PAUSE_MS
       );
 
-      working = working.map((group, pIdx) => {
-        if (pIdx !== turn) return group;
-        return {
-          ...group,
-          tokens: group.tokens.map((t, tIdx) =>
-            tIdx === tokenIndex ? { ...t, isMoving: false } : t
-          ),
-        };
-      });
+      working = updateTokenAt(working, turn, tokenIndex, (t) => ({
+        ...t,
+        isMoving: false,
+      }));
       setListTokens(working);
       listTokensRef.current = working;
 
@@ -389,7 +376,8 @@ const Game = ({
         turn,
         remainingDice,
         bonusRoll,
-        consecutiveSixes
+        consecutiveSixes,
+        actions.diceRollNumber ?? 0
       );
 
       applyDecision(decision, landing.players);
@@ -440,15 +428,18 @@ const Game = ({
     autoMoveTimerRef.current = window.setTimeout(attempt, 0);
   }, [runTokenMove]);
 
-  const handleSelectedToken = (selectTokenValues: ISelectTokenValues) => {
-    if (busyRef.current || gameOverRef.current) return;
-    const turn = currentTurnRef.current;
-    const player = playersRef.current[turn];
-    // Only the current non-bot seat may click tokens
-    if (player?.isBot) return;
-    const { diceIndex, tokenIndex } = selectTokenValues;
-    void runTokenMove(tokenIndex, diceIndex);
-  };
+  const handleSelectedToken = useCallback(
+    (selectTokenValues: ISelectTokenValues) => {
+      if (busyRef.current || gameOverRef.current) return;
+      const turn = currentTurnRef.current;
+      const player = playersRef.current[turn];
+      // Only the current non-bot seat may click tokens
+      if (player?.isBot) return;
+      const { diceIndex, tokenIndex } = selectTokenValues;
+      void runTokenMove(tokenIndex, diceIndex);
+    },
+    [runTokenMove]
+  );
 
   const handleSelectDice = useCallback(
     (diceValue?: TDicevalues, _isActionSocket = false) => {
@@ -540,35 +531,54 @@ const Game = ({
     [applyDecision, passToNextPlayer, scheduleHumanAutoMove]
   );
 
-  const handleMuteChat = (playerIndex: number) => {
+  const handleMuteChat = useCallback((playerIndex: number) => {
     if (playerIndex === 0) return;
     setPlayers((prev) =>
       prev.map((p, i) =>
         i === playerIndex ? { ...p, isMuted: !p.isMuted } : p
       )
     );
-  };
+  }, []);
 
-  const handleTimer = (ends = false, playerIndex?: number) => {
-    if (busyRef.current || gameOverRef.current) return;
-    const turn = currentTurnRef.current;
-    if (playerIndex !== undefined && playerIndex !== turn) return;
+  const handleTimer = useCallback(
+    (ends = false, playerIndex?: number) => {
+      if (busyRef.current || gameOverRef.current) return;
+      const turn = currentTurnRef.current;
+      if (playerIndex !== undefined && playerIndex !== turn) return;
 
-    const player = playersRef.current[turn];
-    const actions = actionsTurnRef.current;
+      const player = playersRef.current[turn];
+      const actions = actionsTurnRef.current;
 
-    if (!player?.isBot) {
-      if (!ends) return;
+      if (!player?.isBot) {
+        if (!ends) return;
+        if (actions.actionsBoardGame === EActionsBoardGame.ROLL_DICE) {
+          handleSelectDice();
+          return;
+        }
+        if (actions.actionsBoardGame === EActionsBoardGame.SELECT_TOKEN) {
+          const move = pickBotMove(
+            listTokensRef.current,
+            turn,
+            actions.diceList
+          );
+          if (move) void runTokenMove(move.tokenIndex, move.diceIndex);
+          else {
+            applyDecision(
+              passToNextPlayer(turn, listTokensRef.current, playersRef.current)
+            );
+          }
+        }
+        return;
+      }
+
+      // Bot: disabledDice is intentionally true — still allow auto-roll
       if (actions.actionsBoardGame === EActionsBoardGame.ROLL_DICE) {
         handleSelectDice();
         return;
       }
+
       if (actions.actionsBoardGame === EActionsBoardGame.SELECT_TOKEN) {
-        const move = pickBotMove(
-          listTokensRef.current,
-          turn,
-          actions.diceList
-        );
+        const move = pickBotMove(listTokensRef.current, turn, actions.diceList);
         if (move) void runTokenMove(move.tokenIndex, move.diceIndex);
         else {
           applyDecision(
@@ -576,25 +586,9 @@ const Game = ({
           );
         }
       }
-      return;
-    }
-
-    // Bot: disabledDice is intentionally true — still allow auto-roll
-    if (actions.actionsBoardGame === EActionsBoardGame.ROLL_DICE) {
-      handleSelectDice();
-      return;
-    }
-
-    if (actions.actionsBoardGame === EActionsBoardGame.SELECT_TOKEN) {
-      const move = pickBotMove(listTokensRef.current, turn, actions.diceList);
-      if (move) void runTokenMove(move.tokenIndex, move.diceIndex);
-      else {
-        applyDecision(
-          passToNextPlayer(turn, listTokensRef.current, playersRef.current)
-        );
-      }
-    }
-  };
+    },
+    [applyDecision, handleSelectDice, passToNextPlayer, runTokenMove]
+  );
 
   // Bot: roll when it is their turn and waiting for a roll
   useEffect(() => {
@@ -602,11 +596,17 @@ const Game = ({
     const player = players[currentTurn];
     if (!player?.isBot) return;
     if (actionsTurn.actionsBoardGame !== EActionsBoardGame.ROLL_DICE) return;
+    // A non-zero face means tumble is already in flight (or just finished waiting
+    // for handleDoneDice). Bonus rolls reset diceValue to 0 first.
     if (actionsTurn.diceValue !== 0) return;
 
     const timer = window.setTimeout(() => {
       if (currentTurnRef.current !== currentTurn) return;
       if (gameOverRef.current || busyRef.current) return;
+      if (actionsTurnRef.current.actionsBoardGame !== EActionsBoardGame.ROLL_DICE) {
+        return;
+      }
+      if (actionsTurnRef.current.diceValue !== 0) return;
       handleSelectDice();
     }, 650);
 
@@ -615,6 +615,7 @@ const Game = ({
     currentTurn,
     actionsTurn.actionsBoardGame,
     actionsTurn.diceValue,
+    actionsTurn.diceRollNumber,
     actionsTurn.consecutiveSixes,
     gameOver,
     isBusy,
@@ -699,12 +700,15 @@ const Game = ({
     players,
   ]);
 
-  const profileHandlers = {
-    handleTimer,
-    handleSelectDice,
-    handleDoneDice,
-    handleMuteChat,
-  };
+  const profileHandlers = useMemo(
+    () => ({
+      handleTimer,
+      handleSelectDice,
+      handleDoneDice,
+      handleMuteChat,
+    }),
+    [handleTimer, handleSelectDice, handleDoneDice, handleMuteChat]
+  );
 
   const profileProps = { players, totalPlayers, currentTurn, actionsTurn };
 

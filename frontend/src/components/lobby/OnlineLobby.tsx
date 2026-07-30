@@ -91,7 +91,8 @@ const OnlineLobby = ({
   }, []);
 
   useEffect(() => {
-    const t = window.setInterval(() => setNow(Date.now()), 250);
+    // Whole-second lobby clock (search timer + countdown) — was 250ms.
+    const t = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(t);
   }, []);
 
@@ -173,7 +174,8 @@ const OnlineLobby = ({
     };
 
     void tick();
-    const id = window.setInterval(tick, 250);
+    // Matchmaking does not need sub-second polls; countdown uses countdownEndsAt.
+    const id = window.setInterval(tick, 1000);
     return () => {
       alive = false;
       window.clearInterval(id);

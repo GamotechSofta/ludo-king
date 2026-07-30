@@ -1,4 +1,3 @@
-import cloneDeep from "lodash.clonedeep";
 import type {
   IActionsTurn,
   IDiceList,
@@ -24,6 +23,22 @@ import {
   TOTAL_TILES,
 } from "../../utils/positions-board";
 import { getInitialActionsTurnValue, validateDisabledDice } from "./helpers";
+
+/** Immutable patch of a single pawn — avoids cloning the full board. */
+export const updateTokenAt = (
+  listTokens: IListTokens[],
+  playerIndex: number,
+  tokenIndex: number,
+  updater: (token: IToken) => IToken
+): IListTokens[] => {
+  const group = listTokens[playerIndex];
+  if (!group) return listTokens;
+  const tokens = group.tokens.slice();
+  tokens[tokenIndex] = updater(tokens[tokenIndex]);
+  const next = listTokens.slice();
+  next[playerIndex] = { ...group, tokens };
+  return next;
+};
 
 export interface IMoveTarget {
   typeTile: TtypeTile;
@@ -298,18 +313,15 @@ export const isSafeCell = (
 };
 
 export const recomputeStacking = (listTokens: IListTokens[]): IListTokens[] => {
-  const copy = cloneDeep(listTokens);
   const groups: Record<string, { playerIndex: number; tokenIndex: number }[]> =
     {};
 
-  copy.forEach((group, playerIndex) => {
+  listTokens.forEach((group, playerIndex) => {
     group.tokens.forEach((token, tokenIndex) => {
       if (
         token.typeTile === EtypeTile.JAIL ||
         token.typeTile === EtypeTile.END
       ) {
-        token.totalTokens = 1;
-        token.position = 1;
         return;
       }
       const key = `${token.typeTile}:${token.positionTile}`;
@@ -318,42 +330,60 @@ export const recomputeStacking = (listTokens: IListTokens[]): IListTokens[] => {
     });
   });
 
+  const stackMeta = new Map<string, { total: number; position: number }>();
   Object.values(groups).forEach((items) => {
     items.forEach((item, idx) => {
-      const token = copy[item.playerIndex].tokens[item.tokenIndex];
-      token.totalTokens = items.length;
-      token.position = idx + 1;
+      stackMeta.set(`${item.playerIndex}:${item.tokenIndex}`, {
+        total: items.length,
+        position: idx + 1,
+      });
     });
   });
 
-  return copy;
+  return listTokens.map((group, playerIndex) => ({
+    ...group,
+    tokens: group.tokens.map((token, tokenIndex) => {
+      if (
+        token.typeTile === EtypeTile.JAIL ||
+        token.typeTile === EtypeTile.END
+      ) {
+        if (token.totalTokens === 1 && token.position === 1) return token;
+        return { ...token, totalTokens: 1, position: 1 };
+      }
+      const meta = stackMeta.get(`${playerIndex}:${tokenIndex}`);
+      const total = meta?.total ?? 1;
+      const position = meta?.position ?? 1;
+      if (token.totalTokens === total && token.position === position) {
+        return token;
+      }
+      return { ...token, totalTokens: total, position };
+    }),
+  }));
 };
 
-export const clearDiceAvailable = (listTokens: IListTokens[]): IListTokens[] => {
-  const copy = cloneDeep(listTokens);
-  copy.forEach((group) => {
-    group.tokens.forEach((token) => {
-      token.diceAvailable = [];
-      token.enableTooltip = false;
-      token.animated = false;
-      token.isMoving = false;
-      token.canSelectToken = false;
-    });
-  });
-  return copy;
-};
-
-const setCanSelectForPlayer = (
-  token: IToken,
-  player: IPlayer,
-  playerIndex: number
-) => {
-  if (player.isOnline) {
-    token.canSelectToken = playerIndex === 0;
-    return;
-  }
-  token.canSelectToken = !player.isBot;
-};
+export const clearDiceAvailable = (listTokens: IListTokens[]): IListTokens[] =>
+  listTokens.map((group) => ({
+    ...group,
+    tokens: group.tokens.map((token) => {
+      if (
+        !token.diceAvailable.length &&
+        !token.enableTooltip &&
+        !token.animated &&
+        !token.isMoving &&
+        !token.canSelectToken
+      ) {
+        return token;
+      }
+      return {
+        ...token,
+        diceAvailable: [],
+        enableTooltip: false,
+        animated: false,
+        isMoving: false,
+        canSelectToken: false,
+      };
+    }),
+  }));
 
 export const assignDiceToTokens = (
   listTokens: IListTokens[],
@@ -361,18 +391,30 @@ export const assignDiceToTokens = (
   diceList: IDiceList[],
   players: IPlayer[]
 ): IListTokens[] => {
-  const copy = clearDiceAvailable(listTokens);
-  const positionGame = copy[playerIndex].positionGame;
+  const cleared = clearDiceAvailable(listTokens);
+  const positionGame = cleared[playerIndex].positionGame;
 
-  copy[playerIndex].tokens.forEach((token) => {
-    token.diceAvailable = diceList.filter((dice) =>
-      canTokenUseDice(token, dice.value, positionGame, copy, playerIndex)
-    );
-    token.animated = token.diceAvailable.length > 0;
-    setCanSelectForPlayer(token, players[playerIndex], playerIndex);
+  return cleared.map((group, pIdx) => {
+    if (pIdx !== playerIndex) return group;
+    return {
+      ...group,
+      tokens: group.tokens.map((token) => {
+        const diceAvailable = diceList.filter((dice) =>
+          canTokenUseDice(token, dice.value, positionGame, cleared, playerIndex)
+        );
+        const player = players[playerIndex];
+        const canSelectToken = player.isOnline
+          ? playerIndex === 0
+          : !player.isBot;
+        return {
+          ...token,
+          diceAvailable,
+          animated: diceAvailable.length > 0,
+          canSelectToken,
+        };
+      }),
+    };
   });
-
-  return copy;
 };
 
 export const getPossibleMoves = (
@@ -414,21 +456,16 @@ export const applyTokenCell = (
   typeTile: TtypeTile,
   positionTile: number,
   isMoving = false
-): IToken => {
-  const next = cloneDeep(token);
-  next.typeTile = typeTile;
-  next.positionTile = positionTile;
-  next.coordinate = getCoordinatesForToken(
-    typeTile,
-    positionGame,
-    positionTile
-  );
-  next.isMoving = isMoving;
-  next.diceAvailable = [];
-  next.animated = isMoving;
-  next.enableTooltip = false;
-  return next;
-};
+): IToken => ({
+  ...token,
+  typeTile,
+  positionTile,
+  coordinate: getCoordinatesForToken(typeTile, positionGame, positionTile),
+  isMoving,
+  diceAvailable: [],
+  animated: isMoving,
+  enableTooltip: false,
+});
 
 export const sendTokenToJail = (
   token: IToken,
@@ -481,8 +518,8 @@ export const resolveLanding = (
   playerIndex: number,
   tokenIndex: number
 ): IMoveResult => {
-  let copy = cloneDeep(listTokens);
-  const playersCopy = cloneDeep(players);
+  let copy = listTokens;
+  let playersCopy = players;
   const mover = copy[playerIndex].tokens[tokenIndex];
   let captured = false;
   const reachedHome = mover.typeTile === EtypeTile.END;
@@ -490,9 +527,8 @@ export const resolveLanding = (
   const victims = findCaptureVictims(copy, playerIndex, tokenIndex);
   victims.forEach((victim) => {
     const victimPos = copy[victim.playerIndex].positionGame;
-    copy[victim.playerIndex].tokens[victim.tokenIndex] = sendTokenToJail(
-      copy[victim.playerIndex].tokens[victim.tokenIndex],
-      victimPos
+    copy = updateTokenAt(copy, victim.playerIndex, victim.tokenIndex, (t) =>
+      sendTokenToJail(t, victimPos)
     );
     captured = true;
   });
@@ -502,8 +538,9 @@ export const resolveLanding = (
       (t) => t.typeTile === EtypeTile.END
     );
     if (allHome && !playersCopy[playerIndex].finished) {
-      playersCopy[playerIndex].finished = true;
-      playersCopy[playerIndex].ranking = 1;
+      playersCopy = playersCopy.map((p, i) =>
+        i === playerIndex ? { ...p, finished: true, ranking: 1 } : p
+      );
     }
   }
 
@@ -537,12 +574,11 @@ export const createTurnActions = (
 export const appendDiceRoll = (
   actionsTurn: IActionsTurn,
   diceValue: TDicevalues
-): IActionsTurn => {
-  const copy = cloneDeep(actionsTurn);
-  copy.diceList = [...copy.diceList, { key: nextDiceKey(), value: diceValue }];
-  copy.actionsBoardGame = EActionsBoardGame.DONE_DICE;
-  return copy;
-};
+): IActionsTurn => ({
+  ...actionsTurn,
+  diceList: [...actionsTurn.diceList, { key: nextDiceKey(), value: diceValue }],
+  actionsBoardGame: EActionsBoardGame.DONE_DICE,
+});
 
 export type TTurnDecision =
   | {
@@ -594,10 +630,12 @@ export const decideAfterDiceRoll = (
   tokens = assignDiceToTokens(tokens, currentTurn, diceList, players);
   const moves = getPossibleMoves(tokens, currentTurn, diceList);
 
-  const baseActions = cloneDeep(actionsTurn);
-  baseActions.diceList = diceList;
-  baseActions.consecutiveSixes = consecutiveSixes;
-  baseActions.timerActivated = false;
+  const baseActions: IActionsTurn = {
+    ...actionsTurn,
+    diceList,
+    consecutiveSixes,
+    timerActivated: false,
+  };
 
   if (moves.length === 0) {
     // Spec: no legal moves (including on a 6) → pass; 6 does NOT grant extra roll
@@ -611,15 +649,15 @@ export const decideAfterDiceRoll = (
   }
 
   // Even on 6: move first, then roll again after the move
-  const nextActions = cloneDeep(baseActions);
-  nextActions.disabledDice = true;
-  nextActions.showDice = false;
-  nextActions.actionsBoardGame = EActionsBoardGame.SELECT_TOKEN;
-  nextActions.isDisabledUI = false;
-
   return {
     type: ENextStepGame.MOVE_TOKENS_AGAIN,
-    actionsTurn: nextActions,
+    actionsTurn: {
+      ...baseActions,
+      disabledDice: true,
+      showDice: false,
+      actionsBoardGame: EActionsBoardGame.SELECT_TOKEN,
+      isDisabledUI: false,
+    },
     listTokens: tokens,
   };
 };
@@ -630,7 +668,9 @@ export const decideAfterMove = (
   currentTurn: number,
   remainingDice: IDiceList[],
   bonusRoll: boolean,
-  consecutiveSixes = 0
+  consecutiveSixes = 0,
+  /** Keep tumble counter across bonus rolls so 6→6 does not reuse roll key `1:6`. */
+  prevDiceRollNumber = 0
 ): TTurnDecision => {
   if (bonusRoll) {
     const actions = createTurnActions(currentTurn, players);
@@ -638,6 +678,9 @@ export const decideAfterMove = (
     actions.consecutiveSixes = consecutiveSixes;
     actions.diceList = [];
     actions.timerActivated = false;
+    // Do not reset to 0 — next getRandomValueDice/applyServerDiceVisual must
+    // bump past the previous key or bot/human bonus 6 skips tumble + handleDoneDice.
+    actions.diceRollNumber = Math.max(0, prevDiceRollNumber);
     return {
       type: ENextStepGame.ROLL_DICE_AGAIN,
       actionsTurn: actions,
@@ -655,16 +698,17 @@ export const decideAfterMove = (
     const moves = getPossibleMoves(tokens, currentTurn, remainingDice);
 
     if (moves.length > 0) {
-      const actions = cloneDeep(createTurnActions(currentTurn, players));
-      actions.diceList = remainingDice;
-      actions.consecutiveSixes = consecutiveSixes;
-      actions.disabledDice = true;
-      actions.showDice = false;
-      actions.timerActivated = false;
-      actions.actionsBoardGame = EActionsBoardGame.SELECT_TOKEN;
       return {
         type: ENextStepGame.MOVE_TOKENS_AGAIN,
-        actionsTurn: actions,
+        actionsTurn: {
+          ...createTurnActions(currentTurn, players),
+          diceList: remainingDice,
+          consecutiveSixes,
+          disabledDice: true,
+          showDice: false,
+          timerActivated: false,
+          actionsBoardGame: EActionsBoardGame.SELECT_TOKEN,
+        },
         listTokens: tokens,
       };
     }
@@ -713,13 +757,7 @@ export const pickBotMove = (
 export const isGameOver = (players: IPlayer[]) =>
   players.some((p) => p.finished && p.ranking === 1);
 
-export const finalizeRankings = (players: IPlayer[]): IPlayer[] => {
-  const copy = cloneDeep(players);
-  copy.forEach((p) => {
-    if (p.ranking !== 1) {
-      p.finished = true;
-      p.ranking = 0;
-    }
-  });
-  return copy;
-};
+export const finalizeRankings = (players: IPlayer[]): IPlayer[] =>
+  players.map((p) =>
+    p.ranking === 1 ? p : { ...p, finished: true, ranking: 0 }
+  );

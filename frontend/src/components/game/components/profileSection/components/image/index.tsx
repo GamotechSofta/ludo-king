@@ -72,14 +72,15 @@ const Image = ({
   useInterval(
     () => {
       if (useServerTimer) return;
-      const newProgress = progress + 1;
+      const prev = progress;
+      const newProgress = Math.min(100, prev + 2);
       setProgress(newProgress);
 
-      if (newProgress === 15) {
+      if (prev < 15 && newProgress >= 15) {
         handleInterval(false);
       }
 
-      if (newProgress === 100) {
+      if (newProgress >= 100) {
         setIsRunning(false);
         handleInterval(true);
       }

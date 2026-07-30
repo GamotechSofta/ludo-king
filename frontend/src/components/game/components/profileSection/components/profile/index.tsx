@@ -1,6 +1,6 @@
 import "./styles.css";
 import { Image, NameAndDice, Ranking, RenderDice } from "..";
-import React from "react";
+import React, { useCallback } from "react";
 import type {
   IActionsTurn,
   IPlayer,
@@ -48,6 +48,10 @@ const Profile = ({
   const className = `game-profile ${basePosition.toLowerCase()} ${position.toLowerCase()}${
     hasTurn ? " has-turn" : ""
   }${isEliminated ? " is-eliminated" : ""}`;
+
+  const onSelectDice = useCallback(() => {
+    if (hasTurn) handleSelectDice();
+  }, [hasTurn, handleSelectDice]);
 
   return (
     <div className={className}>
@@ -98,9 +102,7 @@ const Profile = ({
             diceRollNumber={actionsTurn.diceRollNumber}
             value={actionsTurn.diceValue}
             handleDoneDice={handleDoneDice}
-            handleSelectDice={() => {
-              if (hasTurn) handleSelectDice();
-            }}
+            handleSelectDice={onSelectDice}
           />
         )}
       </div>

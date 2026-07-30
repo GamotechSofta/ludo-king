@@ -155,9 +155,12 @@ describe("Ludo rules", () => {
   test("6 grants extra roll after move", () => {
     const players = makePlayers(2);
     const tokens = makeTokens(players);
-    const decision = decideAfterMove(tokens, players, 0, [], true, 1);
+    const decision = decideAfterMove(tokens, players, 0, [], true, 1, 3);
     expect(decision.type).toBe(ENextStepGame.ROLL_DICE_AGAIN);
     expect(decision.actionsTurn.consecutiveSixes).toBe(1);
+    // Preserve tumble counter so bonus 6→6 does not reuse roll key 1:6
+    expect(decision.actionsTurn.diceRollNumber).toBe(3);
+    expect(decision.actionsTurn.diceValue).toBe(0);
   });
 
   test("resolveLanding sets reachedHome on END", () => {
