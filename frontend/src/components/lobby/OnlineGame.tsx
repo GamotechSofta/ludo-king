@@ -23,7 +23,6 @@ import {
   ONLINE_TURN_PASS_DELAY_MS,
   ONLINE_TOKEN_MOVEMENT_INTERVAL_VALUE,
   MAX_PLAYER_CHANCES,
-  ONLINE_ENTRY_AMOUNT,
   TOKEN_STEP_PAUSE_MS,
 } from "../../utils/constants";
 import { isStarTile } from "../../config/ludoBoard";
@@ -112,6 +111,7 @@ interface OnlineGameProps {
   roomId: string;
   initialSnapshot?: IGameSnapshot | null;
   walletBalance?: number | null;
+  entryFee?: number;
   onExit: () => void;
   onPlayAgain: () => void;
 }
@@ -121,6 +121,7 @@ const OnlineGame = ({
   roomId,
   initialSnapshot = null,
   walletBalance = null,
+  entryFee = 0,
   onExit,
   onPlayAgain,
 }: OnlineGameProps) => {
@@ -159,6 +160,7 @@ const OnlineGame = ({
   const exitingRef = useRef(false);
   const leftRoomRef = useRef(false);
   const lostSummaryShownRef = useRef(false);
+  const settledWalletRoomRef = useRef("");
 
   useEffect(() => {
     setLiveBalance(walletBalance ?? null);
@@ -180,12 +182,36 @@ const OnlineGame = ({
   }, [refreshBalance]);
 
   useEffect(() => {
-    if (leftRoomRef.current || exitingRef.current) return;
-    if (snapshot?.phase === "FINISHED") {
-      void refreshBalance();
-      // Settle room as COMPLETED while results show — next queue gets a fresh match
-      void leaveRoom(roomId, guest.id).catch(() => undefined);
+    if (
+      leftRoomRef.current ||
+      exitingRef.current ||
+      snapshot?.phase !== "FINISHED" ||
+      settledWalletRoomRef.current === roomId
+    ) {
+      return;
     }
+
+    settledWalletRoomRef.current = roomId;
+    let cancelled = false;
+    let retryTimer: number | null = null;
+
+    // Settlement is server-authoritative. Refresh only after the room has been
+    // completed; reading first can show the pre-payout balance in the dialog.
+    void leaveRoom(roomId, guest.id)
+      .catch(() => undefined)
+      .then(async () => {
+        if (cancelled) return;
+        await refreshBalance();
+        // External wallet credit may complete just after the FINISHED snapshot.
+        retryTimer = window.setTimeout(() => {
+          if (!cancelled) void refreshBalance();
+        }, 700);
+      });
+
+    return () => {
+      cancelled = true;
+      if (retryTimer != null) window.clearTimeout(retryTimer);
+    };
   }, [snapshot?.phase, refreshBalance, roomId, guest.id]);
 
   const mySeat = useMemo(
@@ -2009,17 +2035,6 @@ const OnlineGame = ({
     },
   };
 
-  if (showResults && snapshot?.phase === "FINISHED") {
-    return (
-      <Results
-        title="Match Results"
-        entries={resultEntries}
-        onPlayAgain={onPlayAgain}
-        onHome={onExit}
-      />
-    );
-  }
-
   if (!boardReady) {
     return (
       <PageWrapper>
@@ -2056,7 +2071,7 @@ const OnlineGame = ({
               fontWeight: 700,
             }}
           >
-            Wallet ₹{liveBalance.toFixed(2)}
+            Real Wallet ₹{liveBalance.toFixed(2)}
           </div>
         )}
         <p className="lobby-sub" style={{ marginTop: 80, textAlign: "center" }}>
@@ -2147,7 +2162,7 @@ const OnlineGame = ({
           }}
           aria-label="Wallet balance"
         >
-          <span style={{ opacity: 0.85, fontWeight: 600 }}>Wallet</span>
+          <span style={{ opacity: 0.85, fontWeight: 600 }}>Real Wallet</span>
           <span>₹{liveBalance.toFixed(2)}</span>
         </div>
       )}
@@ -2201,7 +2216,7 @@ const OnlineGame = ({
       {(showLostSummary && (!matchEnded || voluntaryExit)) && (
         <LostSummaryPopup
           entries={lostSummaryEntries}
-          entryAmount={ONLINE_ENTRY_AMOUNT}
+          entryAmount={entryFee}
           isTwoPlayer={isTwoPlayerMatch}
           exitReason={voluntaryExit ? "left" : "timeout"}
           onExit={() => {
@@ -2216,6 +2231,15 @@ const OnlineGame = ({
             onExit();
           }}
           onWatch={() => setShowLostSummary(false)}
+        />
+      )}
+      {showResults && snapshot?.phase === "FINISHED" && (
+        <Results
+          entries={resultEntries}
+          onPlayAgain={onPlayAgain}
+          onHome={onExit}
+          potAmount={entryFee * matchPlayerCount}
+          balance={liveBalance}
         />
       )}
       {showLeaveConfirm && (

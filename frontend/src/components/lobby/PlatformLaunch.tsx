@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useState } from "react";
-import { createGuest, platformLaunch, queueMatch } from "../../api/ludoApi";
+import React, { useEffect, useRef, useState } from "react";
+import { platformLaunch, queueMatch } from "../../api/ludoApi";
 import { useWindowResize } from "../../hooks";
 import type { IGuestUser } from "./types";
 import "./styles.css";
@@ -43,28 +43,21 @@ interface Props {
   onError: (message: string) => void;
 }
 
-type ReadyCtx = {
-  guest: IGuestUser;
-  returnUrl?: string | null;
-  walletEnabled: boolean;
-  betOptions: number[];
-  balance: number;
-};
+const DEFAULT_PLAYERS: TPlayers = 2;
+const FIXED_ENTRY_FEE = 100;
 
-const DEFAULT_BETS = [10, 20, 50, 100];
-
-/** Boots from Aakda WebView — pick players + bet, then queue. */
+/** Boots from Aakda WebView and queues straight into a match — no setup screen. */
 const PlatformLaunch = ({ query, onReady, onError }: Props) => {
   useWindowResize();
-  const [phase, setPhase] = useState<"boot" | "pick" | "joining">("boot");
   const [message, setMessage] = useState("Starting Ludo…");
   const [balanceLabel, setBalanceLabel] = useState<string | null>(null);
-  const [maxPlayers, setMaxPlayers] = useState<TPlayers>(query.players || 2);
-  const [bet, setBet] = useState<number>(query.bet || 10);
-  const [ctx, setCtx] = useState<ReadyCtx | null>(null);
-  const [busy, setBusy] = useState(false);
+  /** Queueing debits the wallet, so it must never run twice for one launch. */
+  const launchedRef = useRef(false);
 
   useEffect(() => {
+    if (launchedRef.current) return;
+    launchedRef.current = true;
+
     let cancelled = false;
     (async () => {
       try {
@@ -86,34 +79,42 @@ const PlatformLaunch = ({ query, onReady, onError }: Props) => {
         if (cancelled) return;
 
         const walletEnabled = !!launched.walletEnabled;
-        const betOptions =
-          launched.betOptions && launched.betOptions.length > 0
-            ? launched.betOptions
-            : DEFAULT_BETS;
         const balance =
           typeof launched.balance === "number" ? launched.balance : null;
 
-        const initialBet =
-          query.bet && betOptions.includes(query.bet)
-            ? query.bet
-            : betOptions[0];
-        setBet(initialBet);
+        if (!walletEnabled) {
+          onError("Wallet unavailable, retry");
+          return;
+        }
 
-        if (walletEnabled && balance != null) {
+        if (balance != null) {
           setBalanceLabel(`Balance ₹${balance.toFixed(2)}`);
         }
 
-        if (walletEnabled && balance == null && launched.balanceError) {
+        if (balance == null) {
           onError(launched.balanceError || "Wallet busy, retry");
           return;
         }
 
-        setMessage("Preparing player…");
+        // This game has one fixed real-money stake, matching the reference.
+        // Ignore URL-provided bets so a client cannot lower the entry fee.
+        const bet = FIXED_ENTRY_FEE;
+        const maxPlayers = query.players || DEFAULT_PLAYERS;
+
+        if (balance < bet) {
+          onError(
+            `Insufficient balance (₹${(balance ?? 0).toFixed(
+              2
+            )}). Need ₹${bet}.`
+          );
+          return;
+        }
+
         const resolvedName =
           (launched.displayName && launched.displayName.trim()) || displayName;
-        await createGuest(resolvedName);
-        if (cancelled) return;
 
+        // platformLaunch already upserts this identity under the authoritative
+        // Aakda userId. Creating a second guest here produced an orphan profile.
         const guest: IGuestUser = {
           id: launched.userId,
           username: resolvedName,
@@ -122,14 +123,26 @@ const PlatformLaunch = ({ query, onReady, onError }: Props) => {
           avatarId: "1",
         };
 
-        setCtx({
-          guest,
-          returnUrl: launched.returnUrl,
-          walletEnabled,
-          betOptions,
+        setMessage(
+          walletEnabled
+            ? `Joining ${maxPlayers}P · Bet ₹${bet}…`
+            : `Finding ${maxPlayers}P match…`
+        );
+
+        const stakeTier = `BET_${bet}`;
+        const queued = await queueMatch(
+          guest.id,
+          guest.username,
+          maxPlayers,
+          stakeTier
+        );
+        if (cancelled) return;
+
+        onReady(guest, queued.roomId, queued.roomCode, launched.returnUrl, {
           balance: balance ?? 0,
+          entryFee: bet,
+          walletEnabled,
         });
-        setPhase("pick");
       } catch (e) {
         if (!cancelled) {
           const msg = e instanceof Error ? e.message : "Failed to launch game";
@@ -142,115 +155,7 @@ const PlatformLaunch = ({ query, onReady, onError }: Props) => {
     return () => {
       cancelled = true;
     };
-  }, [query, onError]);
-
-  const handlePlay = useCallback(async () => {
-    if (!ctx || busy) return;
-    if (ctx.walletEnabled && ctx.balance < bet) {
-      onError(
-        `Insufficient balance (₹${ctx.balance.toFixed(2)}). Need ₹${bet}.`
-      );
-      return;
-    }
-    setBusy(true);
-    setPhase("joining");
-    setMessage(
-      ctx.walletEnabled
-        ? `Joining ${maxPlayers}P · Bet ₹${bet}…`
-        : `Finding ${maxPlayers}P match…`
-    );
-    try {
-      const stakeTier = ctx.walletEnabled ? `BET_${bet}` : "FREE";
-      const queued = await queueMatch(
-        ctx.guest.id,
-        ctx.guest.username,
-        maxPlayers,
-        stakeTier
-      );
-      onReady(ctx.guest, queued.roomId, queued.roomCode, ctx.returnUrl, {
-        balance: ctx.balance,
-        entryFee: bet,
-        walletEnabled: ctx.walletEnabled,
-      });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Failed to join";
-      if (/insufficient/i.test(msg)) onError("Insufficient balance");
-      else if (/wallet/i.test(msg)) onError("Wallet busy, retry");
-      else onError(msg);
-      setPhase("pick");
-      setBusy(false);
-    }
-  }, [ctx, busy, maxPlayers, bet, onReady, onError]);
-
-  if (phase === "pick" && ctx) {
-    return (
-      <div
-        className="lobby platform-fill"
-        style={{
-          ...fillStyle,
-          justifyContent: "center",
-        }}
-      >
-        <div className="lobby-top" style={{ width: "100%", maxWidth: 420 }}>
-          <h2 className="lobby-heading">Ludo King</h2>
-          <p className="lobby-sub">
-            {ctx.guest.username}
-            {balanceLabel ? ` · ${balanceLabel}` : ""}
-          </p>
-
-          <div className="lobby-panel">
-            <p className="lobby-footer-note">Players</p>
-            <div className="player-count">
-              {([2, 3, 4] as TPlayers[]).map((count) => (
-                <button
-                  key={count}
-                  type="button"
-                  className={maxPlayers === count ? "active" : ""}
-                  onClick={() => setMaxPlayers(count)}
-                  disabled={busy}
-                >
-                  {count}P
-                </button>
-              ))}
-            </div>
-
-            <p className="lobby-footer-note" style={{ marginTop: 14 }}>
-              Bet
-            </p>
-            <div className="player-count">
-              {ctx.betOptions.map((amount) => {
-                const tooPoor = ctx.walletEnabled && ctx.balance < amount;
-                return (
-                  <button
-                    key={amount}
-                    type="button"
-                    className={bet === amount ? "active" : ""}
-                    onClick={() => setBet(amount)}
-                    disabled={busy || tooPoor}
-                    title={tooPoor ? "Insufficient balance" : undefined}
-                  >
-                    ₹{amount}
-                  </button>
-                );
-              })}
-            </div>
-
-            <button
-              className="lobby-btn primary"
-              type="button"
-              disabled={
-                busy || (ctx.walletEnabled && ctx.balance < bet)
-              }
-              onClick={() => void handlePlay()}
-              style={{ marginTop: 12 }}
-            >
-              PLAY · {maxPlayers}P · ₹{bet}
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  }, [query, onReady, onError]);
 
   return (
     <div

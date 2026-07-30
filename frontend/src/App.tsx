@@ -358,6 +358,7 @@ const App = () => {
           roomId={onlineRoomId}
           initialSnapshot={onlineSnapshot}
           walletBalance={walletBalance}
+          entryFee={entryFee}
           onExit={handleOnlineExit}
           onPlayAgain={handlePlayAgain}
         />
@@ -415,7 +416,6 @@ const App = () => {
       )}
       {screen === "results" && (
         <Results
-          title="Match Results"
           entries={resultEntries}
           onPlayAgain={handlePlayAgain}
           onHome={goHome}

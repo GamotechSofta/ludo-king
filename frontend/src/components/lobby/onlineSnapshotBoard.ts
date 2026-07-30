@@ -76,14 +76,16 @@ export function displayPlayerName(
   usedNames: string[] = [],
   isBot = false
 ): string {
-  const cached = displayNameCache.get(seatKey);
-  if (cached) return cached;
-
+  // A later authoritative snapshot may replace the initial generic fallback
+  // with the authenticated Aakda name. Never let the cache hide that update.
   if (rawName && !isGenericBotLabel(rawName) && !isGenericPlayerLabel(rawName)) {
     const stable = rawName.trim();
     displayNameCache.set(seatKey, stable);
     return stable;
   }
+
+  const cached = displayNameCache.get(seatKey);
+  if (cached) return cached;
 
   if (!isBot) {
     const base = rawName?.trim() || "Player";

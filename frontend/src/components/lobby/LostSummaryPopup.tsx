@@ -58,13 +58,15 @@ const LostSummaryPopup = ({
               : `${MAX_PLAYER_CHANCES} turn timeouts used — you have been eliminated.`}
         </p>
 
-        <div className="lost-summary-stat-row">
-          <span className="lost-summary-stat-label">Entry fee</span>
-          <span className="lost-summary-stat-value lost-summary-stat-negative">
-            <CoinsWinIcon />
-            -{entryAmount}
-          </span>
-        </div>
+        {entryAmount > 0 && (
+          <div className="lost-summary-stat-row">
+            <span className="lost-summary-stat-label">Entry fee</span>
+            <span className="lost-summary-stat-value lost-summary-stat-negative">
+              <CoinsWinIcon />
+              -{entryAmount}
+            </span>
+          </div>
+        )}
         <div className="lost-summary-stat-row">
           <span className="lost-summary-stat-label">Your result</span>
           <span className="lost-summary-stat-value lost-summary-stat-negative">
