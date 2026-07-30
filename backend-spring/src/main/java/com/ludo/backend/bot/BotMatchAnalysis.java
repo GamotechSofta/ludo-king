@@ -7,26 +7,26 @@ import java.util.List;
 import java.util.Map;
 
 /** Mode / phase / leader snapshot for one bot decision. */
-final class BotMatchAnalysis {
+public final class BotMatchAnalysis {
 
-  final BotAiMode mode;
-  final BotGamePhase phase;
-  final BotDifficulty difficulty;
-  final int botSeat;
-  final int humanCount;
-  final int botCount;
-  final int playerCount;
-  final boolean[] isBot;
-  final int leaderSeat;
-  final int[] seatProgress;
-  final int[] finishedPawns;
-  final int[] activePawns;
-  final double tableProgress;
-  final boolean botBehind;
-  final boolean botIsLeader;
-  final boolean allowAggressiveLeaderHunt;
+  public final BotAiMode mode;
+  public final BotGamePhase phase;
+  public final BotDifficulty difficulty;
+  public final int botSeat;
+  public final int humanCount;
+  public final int botCount;
+  public final int playerCount;
+  public final boolean[] isBot;
+  public final int leaderSeat;
+  public final int[] seatProgress;
+  public final int[] finishedPawns;
+  public final int[] activePawns;
+  public final double tableProgress;
+  public final boolean botBehind;
+  public final boolean botIsLeader;
+  public final boolean allowAggressiveLeaderHunt;
 
-  BotMatchAnalysis(
+  public BotMatchAnalysis(
       BotAiMode mode,
       BotGamePhase phase,
       BotDifficulty difficulty,
@@ -62,11 +62,11 @@ final class BotMatchAnalysis {
     this.allowAggressiveLeaderHunt = allowAggressiveLeaderHunt;
   }
 
-  boolean hardDynamic() {
+  public boolean hardDynamic() {
     return difficulty == BotDifficulty.HARD && mode != BotAiMode.OTHER;
   }
 
-  static BotAiMode detectMode(GameSnapshot snap) {
+  public static BotAiMode detectMode(GameSnapshot snap) {
     if (snap == null || snap.getIsBot() == null) {
       return BotAiMode.OTHER;
     }
@@ -96,7 +96,7 @@ final class BotMatchAnalysis {
     return BotAiMode.OTHER;
   }
 
-  static BotGamePhase detectPhase(GameSnapshot snap, double tableProgress) {
+  public static BotGamePhase detectPhase(GameSnapshot snap, double tableProgress) {
     if (snap == null || snap.getSeatColors() == null || snap.getTokenPositions() == null) {
       return BotGamePhase.EARLY;
     }
@@ -125,7 +125,7 @@ final class BotMatchAnalysis {
     return BotGamePhase.MID;
   }
 
-  static double tableProgressRatio(GameSnapshot snap) {
+  public static double tableProgressRatio(GameSnapshot snap) {
     if (snap == null || snap.getSeatColors() == null || snap.getTokenPositions() == null) {
       return 0;
     }

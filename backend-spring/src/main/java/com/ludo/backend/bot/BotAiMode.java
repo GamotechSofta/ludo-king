@@ -10,7 +10,7 @@ package com.ludo.backend.bot;
  *   <li>{@link #MODE_4} – 4P: 3 Humans, 1 Bot (~35–45% bot WR)
  * </ul>
  */
-enum BotAiMode {
+public enum BotAiMode {
   MODE_1,
   MODE_2,
   MODE_3,

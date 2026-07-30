@@ -85,7 +85,7 @@ public class BotService {
         if (GameEngineService.PHASE_ROLL.equals(snap.getPhase())) {
           sleepBeforeDiceRoll();
           Integer assistDice =
-              aiEngine.maybeAssistCaptureDice(
+              aiEngine.maybeAssistDice(
                   roomId,
                   snap,
                   seat,

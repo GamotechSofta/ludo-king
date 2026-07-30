@@ -18,14 +18,14 @@ import java.util.List;
 import java.util.Map;
 
 /** Shared board math for AI (legal path only — mirrors engine rules). */
-final class BotBoardMath {
+public final class BotBoardMath {
 
   /** Max progress for one pawn (main path + home column). */
-  static final int MAX_PAWN_PROGRESS = TOTAL_TILES + HOME_STEPS;
+  public static final int MAX_PAWN_PROGRESS = TOTAL_TILES + HOME_STEPS;
 
   private BotBoardMath() {}
 
-  static int countActive(List<Integer> positions) {
+  public static int countActive(List<Integer> positions) {
     if (positions == null) {
       return 0;
     }
@@ -39,7 +39,7 @@ final class BotBoardMath {
     return n;
   }
 
-  static int countJail(List<Integer> positions) {
+  public static int countJail(List<Integer> positions) {
     if (positions == null) {
       return 0;
     }
@@ -53,7 +53,7 @@ final class BotBoardMath {
     return n;
   }
 
-  static int countHome(List<Integer> positions) {
+  public static int countHome(List<Integer> positions) {
     if (positions == null) {
       return 0;
     }
@@ -67,7 +67,7 @@ final class BotBoardMath {
     return n;
   }
 
-  static int remainingDistance(LudoColor color, int pos) {
+  public static int remainingDistance(LudoColor color, int pos) {
     if (isJail(pos) || isHome(pos)) {
       return Integer.MAX_VALUE;
     }
@@ -79,7 +79,7 @@ final class BotBoardMath {
   }
 
   /** 0 = jail / unknown; finished = max. */
-  static int pawnProgress(LudoColor color, int pos) {
+  public static int pawnProgress(LudoColor color, int pos) {
     if (isJail(pos)) {
       return 0;
     }
@@ -93,7 +93,7 @@ final class BotBoardMath {
     return Math.max(0, MAX_PAWN_PROGRESS - rem);
   }
 
-  static int totalProgress(LudoColor color, List<Integer> positions) {
+  public static int totalProgress(LudoColor color, List<Integer> positions) {
     if (positions == null || color == null) {
       return 0;
     }
@@ -104,7 +104,7 @@ final class BotBoardMath {
     return sum;
   }
 
-  static double progressRatio(LudoColor color, List<Integer> positions) {
+  public static double progressRatio(LudoColor color, List<Integer> positions) {
     int max = MAX_PAWN_PROGRESS * 4;
     if (max <= 0) {
       return 0;
@@ -112,7 +112,7 @@ final class BotBoardMath {
     return Math.min(1.0, totalProgress(color, positions) / (double) max);
   }
 
-  static boolean isNearHome(LudoColor color, int pos) {
+  public static boolean isNearHome(LudoColor color, int pos) {
     if (isJail(pos) || isHome(pos)) {
       return false;
     }
@@ -123,7 +123,7 @@ final class BotBoardMath {
     return rem != Integer.MAX_VALUE && rem <= HOME_STEPS + 10;
   }
 
-  static int countNearHome(LudoColor color, List<Integer> positions) {
+  public static int countNearHome(LudoColor color, List<Integer> positions) {
     if (positions == null || color == null) {
       return 0;
     }
@@ -136,7 +136,7 @@ final class BotBoardMath {
     return n;
   }
 
-  static boolean isPositionThreatened(
+  public static boolean isPositionThreatened(
       int defenderSeat,
       int pos,
       Map<String, List<Integer>> allPositions,
@@ -171,19 +171,19 @@ final class BotBoardMath {
     return false;
   }
 
-  static final class VictimInfo {
-    final LudoColor color;
-    final int seat;
-    final boolean isHuman;
+  public static final class VictimInfo {
+    public final LudoColor color;
+    public final int seat;
+    public final boolean isHuman;
 
-    VictimInfo(LudoColor color, int seat, boolean isHuman) {
+    public VictimInfo(LudoColor color, int seat, boolean isHuman) {
       this.color = color;
       this.seat = seat;
       this.isHuman = isHuman;
     }
   }
 
-  static VictimInfo findCaptureVictim(
+  public static VictimInfo findCaptureVictim(
       int moverSeat,
       int landPos,
       Map<String, List<Integer>> allPositions,
@@ -233,7 +233,7 @@ final class BotBoardMath {
     return best;
   }
 
-  static int applySteps(LudoColor color, int from, int steps) {
+  public static int applySteps(LudoColor color, int from, int steps) {
     if (isJail(from)) {
       return color.startTile();
     }
@@ -259,7 +259,7 @@ final class BotBoardMath {
     return pos;
   }
 
-  static LudoColor parseColor(String name) {
+  public static LudoColor parseColor(String name) {
     if (name == null) {
       return null;
     }

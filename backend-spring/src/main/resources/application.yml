@@ -58,12 +58,147 @@ ludo:
       enabled: ${LUDO_BOT_PHASE_ENABLED:true}
     leader:
       detection: ${LUDO_BOT_LEADER_DETECTION:true}
+      enabled: ${LUDO_BOT_LEADER_ENABLED:true}
+      finishedPoints: ${LUDO_BOT_LEADER_FINISHED_POINTS:150}
+      nearHomePoints: ${LUDO_BOT_LEADER_NEAR_HOME_POINTS:120}
+      advancedPoints: ${LUDO_BOT_LEADER_ADVANCED_POINTS:80}
+      safePawnPoints: ${LUDO_BOT_LEADER_SAFE_POINTS:20}
+      jailPenalty: ${LUDO_BOT_LEADER_JAIL_PENALTY:20}
+      capturedPenalty: ${LUDO_BOT_LEADER_CAPTURED_PENALTY:15}
+      captureBonus: ${LUDO_BOT_LEADER_CAPTURE_BONUS:120}
+      slowBonus: ${LUDO_BOT_LEADER_SLOW_BONUS:70}
+      reduceBonus: ${LUDO_BOT_LEADER_REDUCE_BONUS:50}
+    opponentAnalysis: ${LUDO_BOT_OPPONENT_ANALYSIS:true}
+    history:
+      enabled: ${LUDO_BOT_HISTORY_ENABLED:true}
+      size: ${LUDO_BOT_HISTORY_SIZE:20}
+    threatPrediction: ${LUDO_BOT_THREAT_PREDICTION:true}
+    targetPriority: ${LUDO_BOT_TARGET_PRIORITY:true}
     move:
       scoring: ${LUDO_BOT_MOVE_SCORING:true}
     risk:
       analysis: ${LUDO_BOT_RISK_ANALYSIS:true}
     comeback:
       enabled: ${LUDO_BOT_COMEBACK_ENABLED:true}
+    # Production Move Scoring Engine (HARD only).
+    scoring:
+      enabled: ${LUDO_BOT_SCORING_ENABLED:true}
+      opening-turn-window: ${LUDO_BOT_SCORING_OPENING_TURNS:6}
+      history-size: ${LUDO_BOT_SCORING_HISTORY_SIZE:10}
+      continuous-repeat-limit: ${LUDO_BOT_SCORING_REPEAT_LIMIT:5}
+    homeBonus: ${LUDO_BOT_HOME_BONUS:150}
+    homeStretchBonus: ${LUDO_BOT_HOME_STRETCH_BONUS:120}
+    closerToHomeBonus: ${LUDO_BOT_CLOSER_HOME_BONUS:40}
+    safeBonus: ${LUDO_BOT_SAFE_BONUS:100}
+    becomesSafeBonus: ${LUDO_BOT_BECOMES_SAFE_BONUS:70}
+    escapeBonus: ${LUDO_BOT_ESCAPE_BONUS:90}
+    openPawnBonus: ${LUDO_BOT_OPEN_PAWN_BONUS:70}
+    captureBonus: ${LUDO_BOT_CAPTURE_BONUS:60}
+    captureLeaderBonus: ${LUDO_BOT_CAPTURE_LEADER_BONUS:100}
+    captureNearHomeBonus: ${LUDO_BOT_CAPTURE_NEAR_HOME_BONUS:90}
+    captureJustOutBonus: ${LUDO_BOT_CAPTURE_JUST_OUT_BONUS:10}
+    protectAdvancedBonus: ${LUDO_BOT_PROTECT_ADVANCED_BONUS:80}
+    advanceStrongBonus: ${LUDO_BOT_ADVANCE_STRONG_BONUS:60}
+    boardControlBonus: ${LUDO_BOT_BOARD_CONTROL_BONUS:40}
+    samePawnRepeatPenalty: ${LUDO_BOT_SAME_PAWN_PENALTY:30}
+    blockBonus: ${LUDO_BOT_BLOCK_BONUS:50}
+    blockProtectsBonus: ${LUDO_BOT_BLOCK_PROTECTS_BONUS:80}
+    riskPenalty: ${LUDO_BOT_RISK_PENALTY:80}
+    multiThreatPenalty: ${LUDO_BOT_MULTI_THREAT_PENALTY:120}
+    obviousDangerPenalty: ${LUDO_BOT_OBVIOUS_DANGER_PENALTY:150}
+    leaveSafePenalty: ${LUDO_BOT_LEAVE_SAFE_PENALTY:70}
+    uselessMovePenalty: ${LUDO_BOT_USELESS_MOVE_PENALTY:40}
+    continuousRepeatPenalty: ${LUDO_BOT_CONTINUOUS_REPEAT_PENALTY:30}
+    slowLeaderBonus: ${LUDO_BOT_SLOW_LEADER_BONUS:70}
+    endgameFourthBonus: ${LUDO_BOT_ENDGAME_FOURTH_BONUS:100}
+    randomnessThreshold: ${LUDO_BOT_RANDOMNESS_THRESHOLD:10}
+    # Danger Map & Threat Analysis (HARD only).
+    danger:
+      enabled: ${LUDO_BOT_DANGER_ENABLED:true}
+      escapeBonus: ${LUDO_BOT_DANGER_ESCAPE_BONUS:90}
+      trapPenalty: ${LUDO_BOT_DANGER_TRAP_PENALTY:100}
+      futureOnePenalty: ${LUDO_BOT_DANGER_FUTURE_ONE:40}
+      futureTwoPenalty: ${LUDO_BOT_DANGER_FUTURE_TWO:25}
+      safeRouteBonus: ${LUDO_BOT_DANGER_SAFE_ROUTE:80}
+      criticalPenalty: ${LUDO_BOT_DANGER_CRITICAL:120}
+      highPenalty: ${LUDO_BOT_DANGER_HIGH:80}
+      mediumPenalty: ${LUDO_BOT_DANGER_MEDIUM:40}
+      lowBonus: ${LUDO_BOT_DANGER_LOW_BONUS:20}
+      safeBonus: ${LUDO_BOT_DANGER_SAFE_BONUS:80}
+    futureThreat: ${LUDO_BOT_FUTURE_THREAT:true}
+    trapDetection: ${LUDO_BOT_TRAP_DETECTION:true}
+    cacheDangerMap: ${LUDO_BOT_CACHE_DANGER_MAP:true}
+    safeRoute: ${LUDO_BOT_SAFE_ROUTE:true}
+    # Future Move Simulation (HARD only).
+    future:
+      enabled: ${LUDO_BOT_FUTURE_ENABLED:true}
+      depth: ${LUDO_BOT_FUTURE_DEPTH:3}
+      cache: ${LUDO_BOT_FUTURE_CACHE:true}
+      pruning: ${LUDO_BOT_FUTURE_PRUNING:true}
+      maxTimeMs: ${LUDO_BOT_FUTURE_MAX_TIME_MS:5}
+    # Pawn Value & Strategic Priority (HARD only).
+    pawnValue:
+      enabled: ${LUDO_BOT_PAWN_VALUE_ENABLED:true}
+      jail: ${LUDO_BOT_PAWN_VALUE_JAIL:10}
+      justReleased: ${LUDO_BOT_PAWN_VALUE_JUST_RELEASED:25}
+      early: ${LUDO_BOT_PAWN_VALUE_EARLY:40}
+      mid: ${LUDO_BOT_PAWN_VALUE_MID:70}
+      advanced: ${LUDO_BOT_PAWN_VALUE_ADVANCED:100}
+      nearHome: ${LUDO_BOT_PAWN_VALUE_NEAR_HOME:150}
+      finalStretch: ${LUDO_BOT_PAWN_VALUE_FINAL:200}
+    homePawnBonus: ${LUDO_BOT_HOME_PAWN_BONUS:200}
+    safeCellBonus: ${LUDO_BOT_SAFE_CELL_BONUS:25}
+    leaderPawnBonus: ${LUDO_BOT_LEADER_PAWN_BONUS:40}
+    advancedPawnBonus: ${LUDO_BOT_ADVANCED_PAWN_BONUS:30}
+    sacrifice:
+      enabled: ${LUDO_BOT_SACRIFICE_ENABLED:true}
+    # Smart Dice Assistance (HARD only, non-kill).
+    smartDice:
+      enabled: ${LUDO_BOT_SMART_DICE_ENABLED:true}
+      weighted: ${LUDO_BOT_SMART_DICE_WEIGHTED:true}
+      maxAssist: ${LUDO_BOT_SMART_DICE_MAX_ASSIST:0.45}
+      early: ${LUDO_BOT_SMART_DICE_EARLY:0.15}
+      mid: ${LUDO_BOT_SMART_DICE_MID:0.25}
+      end: ${LUDO_BOT_SMART_DICE_END:0.35}
+      losing: ${LUDO_BOT_SMART_DICE_LOSING:0.45}
+      winning: ${LUDO_BOT_SMART_DICE_WINNING:0.10}
+    # Adaptive Difficulty (HARD only).
+    adaptive:
+      enabled: ${LUDO_BOT_ADAPTIVE_ENABLED:true}
+      maxAssist: ${LUDO_BOT_ADAPTIVE_MAX_ASSIST:0.45}
+      futureWeight: ${LUDO_BOT_ADAPTIVE_FUTURE_WEIGHT:true}
+      dynamicScoring: ${LUDO_BOT_ADAPTIVE_DYNAMIC_SCORING:true}
+      strategySwitch: ${LUDO_BOT_ADAPTIVE_STRATEGY_SWITCH:true}
+    # Dynamic Bot Personality (HARD only).
+    personality:
+      enabled: ${LUDO_BOT_PERSONALITY_ENABLED:true}
+      mode: ${LUDO_BOT_PERSONALITY_MODE:random}
+      default: ${LUDO_BOT_PERSONALITY_DEFAULT:Balanced}
+      evolution: ${LUDO_BOT_PERSONALITY_EVOLUTION:true}
+      randomVariance: ${LUDO_BOT_PERSONALITY_VARIANCE:0.05}
+    # End Game Master Strategy (HARD only).
+    endgame:
+      enabled: ${LUDO_BOT_ENDGAME_ENABLED:true}
+      activationRemainingMoves: ${LUDO_BOT_ENDGAME_ACTIVATION_MOVES:20}
+      futureDepth: ${LUDO_BOT_ENDGAME_FUTURE_DEPTH:4}
+      safeBias: ${LUDO_BOT_ENDGAME_SAFE_BIAS:0.70}
+      homeBias: ${LUDO_BOT_ENDGAME_HOME_BIAS:1.40}
+      captureBias: ${LUDO_BOT_ENDGAME_CAPTURE_BIAS:0.35}
+      raceRemainingThreshold: ${LUDO_BOT_ENDGAME_RACE_REMAINING:0.25}
+    # Monte Carlo Decision Engine (HARD only, final layer).
+    monteCarlo:
+      enabled: ${LUDO_BOT_MONTE_CARLO_ENABLED:true}
+      depth: ${LUDO_BOT_MONTE_CARLO_DEPTH:4}
+      maxSimulations: ${LUDO_BOT_MONTE_CARLO_MAX_SIMS:50}
+      maxTimeMs: ${LUDO_BOT_MONTE_CARLO_MAX_TIME_MS:5}
+      pruning: ${LUDO_BOT_MONTE_CARLO_PRUNING:true}
+      cache: ${LUDO_BOT_MONTE_CARLO_CACHE:true}
+    # Human Behavior Learning (HARD only, match-scoped).
+    behavior:
+      enabled: ${LUDO_BOT_BEHAVIOR_ENABLED:true}
+      history: ${LUDO_BOT_BEHAVIOR_HISTORY:30}
+      maxInfluence: ${LUDO_BOT_BEHAVIOR_MAX_INFLUENCE:0.10}
+      confidenceThreshold: ${LUDO_BOT_BEHAVIOR_CONFIDENCE:0.65}
     # Human-like pauses. Raise for slower bots, lower for snappier turns.
     roll-delay-min-ms: ${BOT_ROLL_DELAY_MIN_MS:1100}
     roll-delay-max-ms: ${BOT_ROLL_DELAY_MAX_MS:1700}

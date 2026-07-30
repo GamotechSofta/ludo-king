@@ -3,10 +3,12 @@ package com.ludo.backend.game;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.ludo.backend.bot.ai.HumanBehaviorEngine;
 import com.ludo.backend.config.HumanJailAssistProperties;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.ObjectProvider;
 
 class GameEngineForfeitTest {
 
@@ -19,7 +21,31 @@ class GameEngineForfeitTest {
             new HumanJailAssistProperties(false, 6, 2, 0.05, 0.45));
     HumanJailExitAssist exitAssist = new HumanJailExitAssist(false, 70);
     HumanCaptureDiceAssist captureAssist = new HumanCaptureDiceAssist(false, 60);
-    engine = new GameEngineService(jailAssist, exitAssist, captureAssist);
+    engine = new GameEngineService(jailAssist, exitAssist, captureAssist, emptyBehavior());
+  }
+
+  private static ObjectProvider<HumanBehaviorEngine> emptyBehavior() {
+    return new ObjectProvider<>() {
+      @Override
+      public HumanBehaviorEngine getObject() {
+        return null;
+      }
+
+      @Override
+      public HumanBehaviorEngine getObject(Object... args) {
+        return null;
+      }
+
+      @Override
+      public HumanBehaviorEngine getIfAvailable() {
+        return null;
+      }
+
+      @Override
+      public HumanBehaviorEngine getIfUnique() {
+        return null;
+      }
+    };
   }
 
   @Test

@@ -24,6 +24,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
+import com.ludo.backend.bot.ai.HumanBehaviorEngine;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
 /**
@@ -65,15 +67,18 @@ public class GameEngineService {
   private final HumanJailDiceAssist humanJailDiceAssist;
   private final HumanJailExitAssist humanJailExitAssist;
   private final HumanCaptureDiceAssist humanCaptureDiceAssist;
+  private final ObjectProvider<HumanBehaviorEngine> humanBehaviorEngine;
 
   public GameEngineService(
       HumanJailDiceAssist humanJailDiceAssist,
       HumanJailExitAssist humanJailExitAssist,
-      HumanCaptureDiceAssist humanCaptureDiceAssist
+      HumanCaptureDiceAssist humanCaptureDiceAssist,
+      ObjectProvider<HumanBehaviorEngine> humanBehaviorEngine
   ) {
     this.humanJailDiceAssist = humanJailDiceAssist;
     this.humanJailExitAssist = humanJailExitAssist;
     this.humanCaptureDiceAssist = humanCaptureDiceAssist;
+    this.humanBehaviorEngine = humanBehaviorEngine;
   }
 
   public static class SeatInfo {
@@ -255,6 +260,7 @@ public class GameEngineService {
         existing.lock.unlock();
       }
       matches.remove(roomId, existing);
+      clearHumanBehavior(roomId);
     }
     MatchRuntime rt = new MatchRuntime(roomId, seats);
     MatchRuntime raced = matches.putIfAbsent(roomId, rt);
@@ -633,6 +639,7 @@ public class GameEngineService {
     rt.phase = PHASE_MOVE;
     rt.turnStartedAt = Instant.now();
     recordAction(rt, "ROLL", seat, null, value);
+    observeHumanRoll(rt, seat, value);
     return snapshot(rt);
   }
 
@@ -678,8 +685,10 @@ public class GameEngineService {
     clearDice(rt);
     rt.lastRollWasSix = false;
     recordAction(rt, "MOVE", seat, tokenIndex, dice, from, to);
+    observeHumanMove(rt, seat, tokenIndex, dice, from, to, captured);
 
     if (PHASE_FINISHED.equals(rt.phase)) {
+      clearHumanBehavior(rt.roomId);
       return snapshot(rt);
     }
 
@@ -777,6 +786,7 @@ public class GameEngineService {
       rt.ranking[i] = RANK_WIN;
     }
     rt.phase = PHASE_FINISHED;
+    clearHumanBehavior(rt.roomId);
   }
 
   private void checkFinished(MatchRuntime rt, int seat) {
@@ -802,6 +812,49 @@ public class GameEngineService {
       }
     }
     rt.phase = PHASE_FINISHED;
+    clearHumanBehavior(rt.roomId);
+  }
+
+  private void observeHumanRoll(MatchRuntime rt, int seat, int dice) {
+    HumanBehaviorEngine eng = humanBehaviorEngine.getIfAvailable();
+    if (eng == null || rt.isBot[seat]) {
+      return;
+    }
+    eng.observeRoll(rt.roomId, seat, false, dice);
+  }
+
+  private void observeHumanMove(
+      MatchRuntime rt,
+      int seat,
+      int tokenIndex,
+      int dice,
+      int from,
+      int to,
+      boolean captured
+  ) {
+    HumanBehaviorEngine eng = humanBehaviorEngine.getIfAvailable();
+    if (eng == null || rt.isBot[seat]) {
+      return;
+    }
+    eng.observeMove(
+        rt.roomId,
+        seat,
+        false,
+        rt.colors[seat],
+        tokenIndex,
+        dice,
+        from,
+        to,
+        captured,
+        rt.tokens,
+        rt.colors);
+  }
+
+  private void clearHumanBehavior(String roomId) {
+    HumanBehaviorEngine eng = humanBehaviorEngine.getIfAvailable();
+    if (eng != null) {
+      eng.clear(roomId);
+    }
   }
 
   private boolean resolveCapture(MatchRuntime rt, int moverSeat, int moverToken, int landPos) {
