@@ -29,7 +29,33 @@ public record WalletProperties(
 
   public String base() {
     String b = baseUrl == null ? "" : baseUrl.trim();
-    return b.endsWith("/") ? b.substring(0, b.length() - 1) : b;
+    while (b.endsWith("/")) {
+      b = b.substring(0, b.length() - 1);
+    }
+    return b;
+  }
+
+  /**
+   * True when the configured host is Aakda's player frontend instead of its API.
+   * That host serves the React SPA and answers wallet paths with an empty 200,
+   * which looks like a flaky wallet rather than a misconfiguration.
+   */
+  public boolean wrongHost() {
+    String host = host();
+    return "aakda.in".equals(host) || "www.aakda.in".equals(host);
+  }
+
+  public String host() {
+    String b = base();
+    if (b.isBlank()) {
+      return "";
+    }
+    try {
+      String h = java.net.URI.create(b).getHost();
+      return h == null ? "" : h.toLowerCase();
+    } catch (IllegalArgumentException e) {
+      return "";
+    }
   }
 
   /** Live when wallet URL configured (bet amount chosen at join). */

@@ -29,6 +29,9 @@ export interface PlatformQuery {
   bet?: number;
   /** Aakda / launch query: displayName | name | username */
   displayName?: string;
+  /** Aakda-supplied balance, shown before the wallet answers. */
+  launchBalance?: number;
+  currency?: string;
 }
 
 interface Props {
@@ -49,8 +52,14 @@ const FIXED_ENTRY_FEE = 100;
 /** Boots from Aakda WebView and queues straight into a match — no setup screen. */
 const PlatformLaunch = ({ query, onReady, onError }: Props) => {
   useWindowResize();
-  const [message, setMessage] = useState("Starting Ludo…");
-  const [balanceLabel, setBalanceLabel] = useState<string | null>(null);
+  const [message, setMessage] = useState(
+    query.displayName ? `Welcome ${query.displayName}…` : "Starting Ludo…"
+  );
+  const [balanceLabel, setBalanceLabel] = useState<string | null>(
+    query.launchBalance != null
+      ? `Balance ₹${query.launchBalance.toFixed(2)}`
+      : null
+  );
   /** Queueing debits the wallet, so it must never run twice for one launch. */
   const launchedRef = useRef(false);
 
@@ -82,17 +91,17 @@ const PlatformLaunch = ({ query, onReady, onError }: Props) => {
         const balance =
           typeof launched.balance === "number" ? launched.balance : null;
 
-        if (!walletEnabled) {
-          onError("Wallet unavailable, retry");
-          return;
-        }
-
-        if (balance != null) {
+        if (walletEnabled && balance != null) {
           setBalanceLabel(`Balance ₹${balance.toFixed(2)}`);
         }
 
-        if (balance == null) {
-          onError(launched.balanceError || "Wallet busy, retry");
+        // Only a configured wallet can fail to answer. Without one the backend
+        // keeps a local ledger and never debits, so play may still continue.
+        if (walletEnabled && balance == null) {
+          // Spring wraps the reason as `502 BAD_GATEWAY "…"` — show the short bit.
+          const raw = (launched.balanceError || "").trim();
+          const quoted = raw.match(/"([^"]+)"/);
+          onError(quoted?.[1] || raw || "Wallet busy, retry");
           return;
         }
 
@@ -101,7 +110,7 @@ const PlatformLaunch = ({ query, onReady, onError }: Props) => {
         const bet = FIXED_ENTRY_FEE;
         const maxPlayers = query.players || DEFAULT_PLAYERS;
 
-        if (balance < bet) {
+        if (walletEnabled && (balance ?? 0) < bet) {
           onError(
             `Insufficient balance (₹${(balance ?? 0).toFixed(
               2
@@ -147,6 +156,7 @@ const PlatformLaunch = ({ query, onReady, onError }: Props) => {
         if (!cancelled) {
           const msg = e instanceof Error ? e.message : "Failed to launch game";
           if (/insufficient/i.test(msg)) onError("Insufficient balance");
+          else if (/misconfigur/i.test(msg)) onError(msg);
           else if (/wallet/i.test(msg)) onError("Wallet busy, retry");
           else onError(msg);
         }

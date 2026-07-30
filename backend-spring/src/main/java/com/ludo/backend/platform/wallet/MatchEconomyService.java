@@ -70,8 +70,17 @@ public class MatchEconomyService {
       return 0;
     }
     AakdaWalletClient.WalletResult r = wallet.getBalance(userId);
+    if (r.configError()) {
+      throw new ResponseStatusException(
+          HttpStatus.INTERNAL_SERVER_ERROR, "Wallet misconfigured, contact support");
+    }
     if (!r.success()) {
-      throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Wallet busy, retry");
+      // A declined call carries Aakda's own reason ("Invalid userId", "User not
+      // found"); only transport failures are genuinely worth retrying.
+      String reason = r.retryable() || r.message() == null || r.message().isBlank()
+          ? "Wallet busy, retry"
+          : r.message();
+      throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, reason);
     }
     return WalletProperties.money(r.balance());
   }
@@ -100,6 +109,10 @@ public class MatchEconomyService {
     if (isLive() && fee > 0) {
       AakdaWalletClient.WalletResult result =
           wallet.debit(userId, fee, txnId, props.gameId(), matchId);
+      if (result.configError()) {
+        throw new ResponseStatusException(
+            HttpStatus.INTERNAL_SERVER_ERROR, "Wallet misconfigured, contact support");
+      }
       if (!result.success()) {
         throw new ResponseStatusException(HttpStatus.PAYMENT_REQUIRED, "Insufficient balance");
       }
@@ -147,13 +160,14 @@ public class MatchEconomyService {
       return;
     }
     String refundTxn = "LUDO_REFUND_" + matchId + "_" + userId;
-    if (isLive() && entry.getEntryAmount() > 0) {
+    boolean debited = entry.getEntryTxnId() != null && !entry.getEntryTxnId().isBlank();
+    if (isLive() && entry.getEntryAmount() > 0 && debited) {
       AakdaWalletClient.WalletResult result = wallet.rollback(
           userId, entry.getEntryTxnId(), entry.getEntryAmount(), props.gameId(), matchId);
       if (!result.success()) {
-        result = wallet.credit(userId, entry.getEntryAmount(), refundTxn, props.gameId(), matchId);
-      }
-      if (!result.success()) {
+        // Leave the row un-refunded so a retry can reverse the same debit id.
+        // Crediting here instead would double-refund a rollback that in fact
+        // landed on Aakda but answered late or unparseably.
         log.error("refund FAILED matchId={} userId={} status={}", matchId, userId, result.status());
         return;
       }

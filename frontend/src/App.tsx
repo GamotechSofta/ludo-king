@@ -28,12 +28,29 @@ import { startBackgroundMusic, stopBackgroundMusic } from "./utils/sounds";
 type HistoryState = { screen: TLobbyScreen };
 
 /** Detect Aakda WebView launch params. userId required for platform flow. */
+/** Reads the `id` claim from Aakda's HS256 launch token without verifying it. */
+function claimsFromToken(token: string | null): Record<string, unknown> | null {
+  if (!token) return null;
+  const payload = token.split(".")[1];
+  if (!payload) return null;
+  try {
+    const json = atob(payload.replace(/-/g, "+").replace(/_/g, "/"));
+    const parsed = JSON.parse(json);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 function parsePlatformQuery(): PlatformQuery | "missing-userid" | null {
   const params = new URLSearchParams(window.location.search);
-  const userId = params.get("userId");
-  const gameId = params.get("gameId");
+  // Aakda sends the same JWT as `token`; `id` is the PotLudo-compatible alias.
+  const token = params.get("token") || params.get("id");
+  const claims = claimsFromToken(token);
+  const claimUserId = typeof claims?.id === "string" ? claims.id : null;
+  const userId = params.get("userId") || claimUserId;
+  const gameId = params.get("gameId") || params.get("game_id");
   const sessionId = params.get("sessionId");
-  const token = params.get("token");
   const returnUrl = params.get("returnUrl");
   const playersRaw = params.get("players") || params.get("maxPlayers");
   const playersNum = playersRaw ? Number(playersRaw) : NaN;
@@ -45,15 +62,26 @@ function parsePlatformQuery(): PlatformQuery | "missing-userid" | null {
   const betNum = betRaw ? Number(betRaw) : NaN;
   const bet = Number.isFinite(betNum) && betNum > 0 ? betNum : undefined;
   const displayNameRaw =
-    params.get("displayName") ||
-    params.get("name") ||
     params.get("username") ||
+    params.get("name") ||
+    params.get("displayName") ||
     params.get("playerName") ||
-    params.get("userName");
+    params.get("userName") ||
+    (typeof claims?.username === "string" ? claims.username : null) ||
+    (typeof claims?.name === "string" ? claims.name : null);
   const displayName =
     displayNameRaw && displayNameRaw.trim()
       ? displayNameRaw.trim().slice(0, 64)
       : undefined;
+
+  // Optimistic only — reconciled against POST /api/wallet/balance on launch.
+  const balanceRaw = params.get("balance");
+  const balanceNum = balanceRaw != null ? Number(balanceRaw) : Number(claims?.balance);
+  const launchBalance = Number.isFinite(balanceNum) && balanceNum >= 0 ? balanceNum : undefined;
+  const currency =
+    params.get("currency") ||
+    (typeof claims?.currency === "string" ? claims.currency : null) ||
+    undefined;
 
   const hasAnyPlatformHint =
     userId != null ||
@@ -77,6 +105,8 @@ function parsePlatformQuery(): PlatformQuery | "missing-userid" | null {
     players,
     bet,
     displayName,
+    launchBalance,
+    currency,
   };
 }
 
@@ -297,12 +327,14 @@ const App = () => {
       setOnlineRoomCode(roomCode);
       setMode("online");
       if (returnUrl) setPlatformReturnUrl(returnUrl);
+      // The stake is fixed for every platform match, so the pot must show even
+      // when no live wallet is configured (backend then keeps a local ledger).
+      if (wallet) setEntryFee(wallet.entryFee || 0);
       if (wallet?.walletEnabled) {
         // Balance after debit happens server-side on queue — refresh approx
         setWalletBalance(
           Math.max(0, wallet.balance - (wallet.entryFee || 0))
         );
-        setEntryFee(wallet.entryFee || 0);
       }
       setPlatformQuery(null);
       window.history.replaceState({ screen: "onlineLobby" }, "", "/");
@@ -333,7 +365,11 @@ const App = () => {
           boxSizing: "border-box",
         }}
       >
-        <h2 style={{ marginBottom: 8 }}>Open this game from Aakda app</h2>
+        <h2 style={{ marginBottom: 8 }}>
+          {platformError === "Open this game from Aakda app"
+            ? "Open this game from Aakda app"
+            : "Can't start match"}
+        </h2>
         <p style={{ opacity: 0.85 }}>{platformError}</p>
       </div>
     );

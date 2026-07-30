@@ -179,7 +179,7 @@ APIs on Spring:
 | `CLIENT_URL` | Frontend origin(s) |
 | `CORS_ALLOWED_ORIGINS` | Aakda + local |
 | `PLATFORM_SHARED_SECRET` | Optional `X-Platform-Key` on balance |
-| `AAKDA_WALLET_BASE_URL` | e.g. `https://api.aakda.in` |
+| `AAKDA_WALLET_BASE_URL` | Must be `https://api.aakda.in` — never `aakda.in` (see below) |
 | `LUDO_WALLET_ENABLED` | `true` to charge entry fees |
 | `GAME_ID` | `LUDO` |
 | `ENTRY_FEE` | e.g. `10` |
@@ -194,6 +194,37 @@ Frontend: `REACT_APP_API_URL=https://YOUR-SPRING-ON-RENDER`
 - Allowed patterns include Aakda origins + `http://localhost:*`
 - `X-Frame-Options` disabled; CSP `frame-ancestors` allows Aakda + local parents
 - API fetch uses `credentials: "include"` so launch binds to HTTP session
+
+### Wallet host
+
+`AAKDA_WALLET_BASE_URL` must be the API host `https://api.aakda.in`. The player
+frontend (`aakda.in`, `www.aakda.in`) serves the React SPA and answers every
+`/api/wallet/*` path with an empty `200`, which used to surface as
+"Wallet busy, retry". Startup now logs the resolved base URL and refuses calls to
+the frontend host with a `WALLET_CONFIG_ERROR`.
+
+Contract (POST, `application/json`, no auth headers while Aakda runs with
+`GAP_SIGNATURE_ENABLED=false`):
+
+| Path | Body |
+|------|------|
+| `/api/wallet/balance` | `userId` (24-char Mongo ObjectId) |
+| `/api/wallet/debit` | `userId`, `amount`, `transactionId`, `gameId`, `roundId` |
+| `/api/wallet/credit` | same as debit |
+| `/api/wallet/rollback` | `transactionId` of the original debit |
+
+Success is `{"success":true,"status":"SUCCESS","balance":150.5}`; failures return
+`{"success":false,"status":"FAILED","message":"…"}`. Debit/credit/rollback are
+idempotent per `transactionId`, so retries reuse the same id. Refunds always go
+through `/api/wallet/rollback` — a `ROLLBACK_`-prefixed credit would pay twice.
+
+### Launch query params (from Aakda)
+
+`userId` (used verbatim as the wallet id), `username`, `name`, `balance`,
+`currency`, `phone`, `gameId` (alias `game_id`), `sessionId`, `returnUrl`, and
+`token` (alias `id`) holding the HS256 `game_launch` JWT. The frontend accepts a
+token-only launch by reading the `id` claim, shows `username` + `balance`
+optimistically, then reconciles against `/api/wallet/balance`.
 
 ### Quick test (wallet)
 
