@@ -17,16 +17,33 @@ interface OnlineSetupProps {
     roomCode: string,
     maxPlayers: TPlayers
   ) => void;
+  /** Aakda identity — present only on a platform launch. */
+  platformGuest?: IGuestUser | null;
+  /** Real-money stake; 0 keeps local play free. */
+  entryFee?: number;
+  walletBalance?: number | null;
 }
 
-const OnlineSetup = ({ onBack, onQueued }: OnlineSetupProps) => {
+const OnlineSetup = ({
+  onBack,
+  onQueued,
+  platformGuest,
+  entryFee = 0,
+  walletBalance,
+}: OnlineSetupProps) => {
   const [maxPlayers, setMaxPlayers] = useState<TPlayers>(4);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
+  const stake = entryFee > 0 ? entryFee : ENTRY_AMOUNT;
   const winAmount = WIN_BY_PLAYERS[maxPlayers];
 
   const ensureGuest = async () => {
+    // A platform launch already bound the authoritative Aakda userId; creating
+    // a guest here would queue the match under an orphan profile.
+    if (platformGuest?.id) {
+      return platformGuest;
+    }
     try {
       const raw = localStorage.getItem("ludoGuest");
       if (raw) {
@@ -53,7 +70,8 @@ const OnlineSetup = ({ onBack, onQueued }: OnlineSetupProps) => {
     setError("");
     try {
       const guest = await ensureGuest();
-      const res = await queueMatch(guest.id, guest.username, maxPlayers, "FREE", {
+      const stakeTier = stake > 0 ? `BET_${stake}` : "FREE";
+      const res = await queueMatch(guest.id, guest.username, maxPlayers, stakeTier, {
         rating: guest.rating,
         region: "IN",
         avatarId: guest.avatarId,
@@ -73,6 +91,12 @@ const OnlineSetup = ({ onBack, onQueued }: OnlineSetupProps) => {
       <button className="find-match-back" type="button" onClick={onBack} aria-label="Back">
         ←
       </button>
+
+      {walletBalance != null && (
+        <p className="find-match-balance">
+          Real Wallet ₹{walletBalance.toFixed(2)}
+        </p>
+      )}
 
       <section className="find-match-card find-match-card-players">
         <h3 className="find-match-title">SELECT PLAYERS</h3>
@@ -134,7 +158,7 @@ const OnlineSetup = ({ onBack, onQueued }: OnlineSetupProps) => {
               </div>
             </div>
             <div className="find-match-entry">
-              Entry: {ENTRY_AMOUNT.toLocaleString()}
+              Entry: {stake.toLocaleString()}
             </div>
           </div>
           <button

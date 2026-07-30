@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { platformLaunch, queueMatch } from "../../api/ludoApi";
+import { platformLaunch } from "../../api/ludoApi";
 import { useWindowResize } from "../../hooks";
 import type { IGuestUser } from "./types";
 import "./styles.css";
@@ -38,18 +38,15 @@ interface Props {
   query: PlatformQuery;
   onReady: (
     guest: IGuestUser,
-    roomId: string,
-    roomCode: string,
     returnUrl?: string | null,
     wallet?: { balance: number; entryFee: number; walletEnabled: boolean }
   ) => void;
   onError: (message: string) => void;
 }
 
-const DEFAULT_PLAYERS: TPlayers = 2;
 const FIXED_ENTRY_FEE = 100;
 
-/** Boots from Aakda WebView and queues straight into a match — no setup screen. */
+/** Binds the Aakda session and hands the player to the normal lobby screens. */
 const PlatformLaunch = ({ query, onReady, onError }: Props) => {
   useWindowResize();
   const [message, setMessage] = useState(
@@ -60,7 +57,7 @@ const PlatformLaunch = ({ query, onReady, onError }: Props) => {
       ? `Balance ₹${query.launchBalance.toFixed(2)}`
       : null
   );
-  /** Queueing debits the wallet, so it must never run twice for one launch. */
+  /** The launch call upserts the profile, so it must not run twice. */
   const launchedRef = useRef(false);
 
   useEffect(() => {
@@ -108,7 +105,6 @@ const PlatformLaunch = ({ query, onReady, onError }: Props) => {
         // This game has one fixed real-money stake, matching the reference.
         // Ignore URL-provided bets so a client cannot lower the entry fee.
         const bet = FIXED_ENTRY_FEE;
-        const maxPlayers = query.players || DEFAULT_PLAYERS;
 
         if (walletEnabled && (balance ?? 0) < bet) {
           onError(
@@ -132,22 +128,9 @@ const PlatformLaunch = ({ query, onReady, onError }: Props) => {
           avatarId: "1",
         };
 
-        setMessage(
-          walletEnabled
-            ? `Joining ${maxPlayers}P · Bet ₹${bet}…`
-            : `Finding ${maxPlayers}P match…`
-        );
-
-        const stakeTier = `BET_${bet}`;
-        const queued = await queueMatch(
-          guest.id,
-          guest.username,
-          maxPlayers,
-          stakeTier
-        );
-        if (cancelled) return;
-
-        onReady(guest, queued.roomId, queued.roomCode, launched.returnUrl, {
+        // Queueing happens later from the player-select screen, so the entry
+        // fee is only debited once the player actually picks a match.
+        onReady(guest, launched.returnUrl, {
           balance: balance ?? 0,
           entryFee: bet,
           walletEnabled,

@@ -22,7 +22,7 @@ import PlatformLaunch, {
 import Results from "./components/lobby/Results";
 import type { IUser, TTotalPlayers } from "./interfaces";
 import { ETypeGame } from "./utils/constants";
-import { leaveRoom } from "./api/ludoApi";
+import { fetchWalletBalance, leaveRoom } from "./api/ludoApi";
 import { startBackgroundMusic, stopBackgroundMusic } from "./utils/sounds";
 
 type HistoryState = { screen: TLobbyScreen };
@@ -141,6 +141,8 @@ const App = () => {
   );
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
   const [entryFee, setEntryFee] = useState(0);
+  /** True once an Aakda launch bound this session, even without a returnUrl. */
+  const [platformSession, setPlatformSession] = useState(false);
   const [initialTurn, setInitialTurn] = useState(0);
 
   const exitToPlatform = useCallback(() => {
@@ -227,6 +229,24 @@ const App = () => {
     window.history.replaceState({ screen: "home" } satisfies HistoryState, "");
   }, [platformQuery, platformError]);
 
+  // The stake is debited per match, so re-read the wallet before each new one.
+  useEffect(() => {
+    if (screen !== "onlineSetup" || !platformSession || !guest?.id) return;
+    let cancelled = false;
+    void fetchWalletBalance(guest.id)
+      .then((res) => {
+        if (!cancelled && typeof res.balance === "number") {
+          setWalletBalance(res.balance);
+        }
+      })
+      .catch(() => {
+        /* keep the last known balance */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [screen, platformSession, guest]);
+
   useEffect(() => {
     const lobbyBgm =
       !!platformQuery ||
@@ -277,10 +297,6 @@ const App = () => {
     await releaseOnlineRoom();
     setResultEntries([]);
     setGameConfig(null);
-    if (platformReturnUrl || platformQuery) {
-      exitToPlatform();
-      return;
-    }
     goTo("onlineSetup", true);
   };
 
@@ -317,15 +333,12 @@ const App = () => {
   const handlePlatformReady = useCallback(
     (
       g: IGuestUser,
-      roomId: string,
-      roomCode: string,
       returnUrl?: string | null,
       wallet?: { balance: number; entryFee: number; walletEnabled: boolean }
     ) => {
       setGuest(g);
-      setOnlineRoomId(roomId);
-      setOnlineRoomCode(roomCode);
       setMode("online");
+      setPlatformSession(true);
       if (returnUrl) setPlatformReturnUrl(returnUrl);
       // The stake is fixed for every platform match, so the pot must show even
       // when no live wallet is configured (backend then keeps a local ledger).
@@ -337,8 +350,8 @@ const App = () => {
         );
       }
       setPlatformQuery(null);
-      window.history.replaceState({ screen: "onlineLobby" }, "", "/");
-      goTo("onlineLobby", true);
+      window.history.replaceState({ screen: "home" }, "", "/");
+      goTo("home", true);
     },
     [goTo]
   );
@@ -442,7 +455,13 @@ const App = () => {
         <Setup mode="computer" onBack={goBack} onStart={handleStart} />
       )}
       {screen === "onlineSetup" && (
-        <OnlineSetup onBack={goBack} onQueued={handleOnlineQueued} />
+        <OnlineSetup
+          onBack={goBack}
+          onQueued={handleOnlineQueued}
+          platformGuest={platformSession ? guest : null}
+          entryFee={entryFee}
+          walletBalance={walletBalance}
+        />
       )}
       {screen === "onlineLobby" && guest && onlineRoomId && (
         <OnlineLobby

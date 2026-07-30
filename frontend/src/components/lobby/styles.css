@@ -1182,6 +1182,18 @@
   opacity: 0.6;
 }
 
+.find-match-balance {
+  align-self: center;
+  background: rgba(0, 0, 0, 0.32);
+  border: 2px solid rgba(255, 204, 0, 0.65);
+  border-radius: 999px;
+  color: #ffe27a;
+  font-family: "Fredoka", sans-serif;
+  font-size: 0.85rem;
+  margin: 0;
+  padding: 4px 14px;
+}
+
 .find-match-error {
   color: #ffb4b4;
   font-family: "Fredoka", sans-serif;
