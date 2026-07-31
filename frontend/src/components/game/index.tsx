@@ -186,6 +186,14 @@ const Game = ({
             }));
             stopBackgroundMusic();
             window.setTimeout(() => onGameOver(entries), 500);
+          } else {
+            const youWon = finalPlayers.some(
+              (p) => !p.isBot && p.index === 0 && p.ranking === 1
+            );
+            stopBackgroundMusic();
+            if (!youWon) {
+              playSound("playerLost");
+            }
           }
         }
         setPlayers(finalPlayers);

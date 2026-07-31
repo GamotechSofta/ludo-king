@@ -232,6 +232,7 @@ const OnlineGame = ({
     lostSummaryShownRef.current = true;
     setShowLostSummary(true);
     stopBackgroundMusic();
+    playSound("playerLost");
     void refreshBalance();
   }, [myEliminated, refreshBalance]);
 
@@ -2021,6 +2022,17 @@ const OnlineGame = ({
     }
   }, [myEliminated, isTwoPlayerMatch, matchEnded, voluntaryExit]);
 
+  /** Match ended as a loss without mid-match elimination popup — play lose SFX once. */
+  useEffect(() => {
+    if (voluntaryExit || !matchEnded || !showResults) return;
+    if (lostSummaryShownRef.current) return;
+    const me = resultEntries.find((e) => e.isYou);
+    if (!me || me.won) return;
+    lostSummaryShownRef.current = true;
+    stopBackgroundMusic();
+    playSound("playerLost");
+  }, [matchEnded, showResults, resultEntries, voluntaryExit]);
+
   const resultEntries: IResultEntry[] = useMemo(
     () => buildResults(snapshot, guest.id, roomId),
     [snapshot, guest.id, roomId]
@@ -2276,6 +2288,7 @@ const OnlineGame = ({
           onHome={onExit}
           potAmount={entryFee * matchPlayerCount}
           balance={liveBalance}
+          playOutcomeSound={false}
         />
       )}
       {showLeaveConfirm && (

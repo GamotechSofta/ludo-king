@@ -1,7 +1,8 @@
-import React from "react";
+import React, { useEffect } from "react";
 import type { IResultEntry } from "./types";
 import { partitionResults } from "./resultHelpers";
 import CoinsWinIcon from "./CoinsWinIcon";
+import { playSound, stopBackgroundMusic } from "../../utils/sounds";
 import "./resultStyles.css";
 
 interface ResultsProps {
@@ -10,6 +11,8 @@ interface ResultsProps {
   onHome: () => void;
   potAmount?: number;
   balance?: number | null;
+  /** When false, parent already played the lose SFX (e.g. mid-match elimination). */
+  playOutcomeSound?: boolean;
 }
 
 const Results = ({
@@ -18,6 +21,7 @@ const Results = ({
   onHome,
   potAmount = 0,
   balance = null,
+  playOutcomeSound = true,
 }: ResultsProps) => {
   const { winner } = partitionResults(entries);
   const didWin = !!winner?.isYou;
@@ -28,6 +32,12 @@ const Results = ({
   const formattedPot = Number.isInteger(potAmount)
     ? String(potAmount)
     : potAmount.toFixed(2);
+
+  useEffect(() => {
+    if (!playOutcomeSound || didWin) return;
+    stopBackgroundMusic();
+    playSound("playerLost");
+  }, [playOutcomeSound, didWin]);
 
   return (
     <div
