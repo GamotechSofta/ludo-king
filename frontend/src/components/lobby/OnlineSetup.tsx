@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import type { IGuestUser } from "./types";
 import { createGuest, queueMatch } from "../../api/ludoApi";
 import CoinsWinIcon from "./CoinsWinIcon";
+import MusicToggle from "./MusicToggle";
 import "./styles.css";
 
 type TPlayers = 2 | 4;
@@ -31,7 +32,7 @@ const OnlineSetup = ({
   entryFee = 0,
   walletBalance,
 }: OnlineSetupProps) => {
-  const [maxPlayers, setMaxPlayers] = useState<TPlayers>(4);
+  const [maxPlayers, setMaxPlayers] = useState<TPlayers>(2);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -87,6 +88,7 @@ const OnlineSetup = ({
 
   return (
     <div className="lobby">
+      <MusicToggle className="music-toggle-float" />
       <div className="find-match">
       <button className="find-match-back" type="button" onClick={onBack} aria-label="Back">
         ←

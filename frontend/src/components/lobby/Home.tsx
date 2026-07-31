@@ -1,5 +1,6 @@
 import React, { useCallback, useState } from "react";
 import { fetchGameHistory, type IGameHistoryItem } from "../../api/ludoApi";
+import MusicToggle from "./MusicToggle";
 import "./styles.css";
 
 interface HomeProps {
@@ -40,6 +41,7 @@ const Home = ({ onPlay, userId }: HomeProps) => {
 
   return (
     <div className="lobby">
+      <MusicToggle className="music-toggle-float" />
       <div className="lobby-top">
         <div className="lobby-brand">
           <div className="lobby-crown" aria-hidden />

@@ -47,6 +47,7 @@ import type { IGameSnapshot, IGuestUser, IResultEntry } from "./types";
 import Results from "./Results";
 import LostSummaryPopup from "./LostSummaryPopup";
 import LeaveMatchConfirmPopup from "./LeaveMatchConfirmPopup";
+import MusicToggle from "./MusicToggle";
 import { fetchWalletBalance, leaveRoom, ensureGameSnapshot } from "../../api/ludoApi";
 import {
   placeVictimsInJail,
@@ -2086,6 +2087,7 @@ const OnlineGame = ({
   if (!boardReady) {
     return (
       <PageWrapper>
+        <MusicToggle className="music-toggle-game" resumeOnEnable />
         <button
           className="game-back-arrow"
           type="button"
@@ -2170,6 +2172,7 @@ const OnlineGame = ({
 
   return (
     <PageWrapper>
+      <MusicToggle className="music-toggle-game" resumeOnEnable />
       <button
         className="game-back-arrow"
         type="button"

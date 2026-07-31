@@ -25,6 +25,7 @@ import { isStarTile } from "../../config/ludoBoard";
 import { playSound, preloadGameSounds, stopBackgroundMusic } from "../../utils/sounds";
 import { runReturnToJailAnimations } from "../lobby/captureReturnAnim";
 import { runCellByCellSteps, nextFrame } from "../lobby/onlineAnimate";
+import MusicToggle from "../lobby/MusicToggle";
 import {
   lostStatusLabel,
   partitionResults,
@@ -734,6 +735,7 @@ const Game = ({
 
   return (
     <PageWrapper>
+      <MusicToggle className="music-toggle-game" resumeOnEnable />
       {onExit && (
         <button
           className="game-back-arrow"

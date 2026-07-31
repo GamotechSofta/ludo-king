@@ -13,6 +13,7 @@ export type TGameSound = keyof typeof SOUND_FILES;
 
 const BG_MUSIC_SRC = "/sounds/ludo_king.mp3";
 const BG_MUSIC_VOLUME = 0.28;
+const MUSIC_PREF_KEY = "ludo-music-enabled";
 
 /** Default volumes tuned for Classic-like clarity. */
 const DEFAULT_VOLUME: Record<TGameSound, number> = {
@@ -30,6 +31,72 @@ const cache = new Map<TGameSound, HTMLAudioElement>();
 let bgMusic: HTMLAudioElement | null = null;
 let matchSearchLoop: HTMLAudioElement | null = null;
 let bgMusicStarted = false;
+let matchMusicStarted = false;
+let musicEnabled = readMusicPref();
+const musicListeners = new Set<(enabled: boolean) => void>();
+
+function readMusicPref(): boolean {
+  try {
+    const raw = localStorage.getItem(MUSIC_PREF_KEY);
+    if (raw === null) return true;
+    return raw !== "0" && raw !== "false";
+  } catch {
+    return true;
+  }
+}
+
+function writeMusicPref(enabled: boolean) {
+  try {
+    localStorage.setItem(MUSIC_PREF_KEY, enabled ? "1" : "0");
+  } catch {
+    // ignore
+  }
+}
+
+function notifyMusicListeners() {
+  musicListeners.forEach((fn) => {
+    try {
+      fn(musicEnabled);
+    } catch {
+      // ignore
+    }
+  });
+}
+
+export const isMusicEnabled = () => musicEnabled;
+
+export const subscribeMusicEnabled = (fn: (enabled: boolean) => void) => {
+  musicListeners.add(fn);
+  return () => {
+    musicListeners.delete(fn);
+  };
+};
+
+const pauseBackgroundMusic = () => {
+  try {
+    if (!bgMusic) return;
+    bgMusic.pause();
+    bgMusicStarted = false;
+  } catch {
+    // ignore
+  }
+};
+
+export const setMusicEnabled = (enabled: boolean) => {
+  musicEnabled = enabled;
+  writeMusicPref(enabled);
+  if (!enabled) {
+    matchMusicStarted = false;
+    pauseBackgroundMusic();
+    stopMatchSearchLoop();
+  }
+  notifyMusicListeners();
+};
+
+export const toggleMusicEnabled = () => {
+  setMusicEnabled(!musicEnabled);
+  return musicEnabled;
+};
 
 const getAudio = (name: TGameSound) => {
   let audio = cache.get(name);
@@ -79,6 +146,7 @@ export const playSound = (name: TGameSound, volume?: number) => {
 
 /** Loop counting ding during online match search (10s window). */
 export const startMatchSearchLoop = (volume = 0.55) => {
+  if (!musicEnabled) return;
   try {
     if (!matchSearchLoop) {
       matchSearchLoop = new Audio(SOUND_FILES.countdownDing);
@@ -106,17 +174,19 @@ export const stopMatchSearchLoop = () => {
   }
 };
 
-/** Looping BGM — opt-in only; not started when a match/board loads. */
-let matchMusicStarted = false;
-
 export const beginMatchMusic = (volume = BG_MUSIC_VOLUME) => {
+  if (!musicEnabled) return;
   if (matchMusicStarted) return;
   matchMusicStarted = true;
   startBackgroundMusic(volume);
 };
 
-/** Looping BGM for an active match. */
+/** Looping BGM for lobby / match when music is enabled. */
 export const startBackgroundMusic = (volume = BG_MUSIC_VOLUME) => {
+  if (!musicEnabled) {
+    pauseBackgroundMusic();
+    return;
+  }
   try {
     const audio = getBgMusic();
     audio.volume = volume;
@@ -131,8 +201,8 @@ export const startBackgroundMusic = (volume = BG_MUSIC_VOLUME) => {
   }
 };
 
-/** Start BGM once — on first dice roll / gameplay, not on game load. */
 export const ensureBackgroundMusic = (volume = BG_MUSIC_VOLUME) => {
+  if (!musicEnabled) return;
   if (bgMusicStarted) return;
   bgMusicStarted = true;
   startBackgroundMusic(volume);

@@ -1265,12 +1265,13 @@
   display: block;
   flex-shrink: 1;
   height: auto;
-  margin: 24px auto 0;
-  max-height: clamp(140px, 28vh, 260px);
-  max-width: clamp(220px, 72vw, 340px);
+  margin: 12px auto 0;
+  max-height: clamp(44px, 10vh, 72px);
+  max-width: clamp(180px, 58vw, 260px);
   min-height: 0;
   object-fit: contain;
-  width: min(72vw, 340px);
+  width: min(58vw, 260px);
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
 }
 
 .find-players-heading {
@@ -1885,9 +1886,9 @@
 
 @media (max-height: 640px) {
   .find-players-logo {
-    max-height: 120px;
+    max-height: 48px;
     max-width: 200px;
-    width: 200px;
+    width: min(58vw, 200px);
   }
 
   .find-players-avatar-frame {

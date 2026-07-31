@@ -255,9 +255,10 @@ const App = () => {
       screen === "onlineLobby";
     if (lobbyBgm) {
       startBackgroundMusic();
-    } else {
+    } else if (screen === "results" || screen === "modes" || screen === "setup") {
       stopBackgroundMusic();
     }
+    // onlineGame / game: leave BGM alone so the music toggle can control it
   }, [screen, platformQuery]);
 
   useEffect(() => {

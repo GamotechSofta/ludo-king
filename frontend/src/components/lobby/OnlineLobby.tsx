@@ -16,11 +16,12 @@ import {
   startMatchSearchLoop,
   stopMatchSearchLoop,
 } from "../../utils/sounds";
-import ludoKingLogo from "../../assets/ludo-king-logo.png";
+import ludoOnlineLogo from "../../assets/ludo-online-logo.png";
 import treasureChest from "../../assets/treasure-chest.png";
 import Avatar from "../avatar";
 import { displayPlayerName } from "./onlineSnapshotBoard";
 import SearchingProfileScroll from "./SearchingProfileScroll";
+import MusicToggle from "./MusicToggle";
 import {
   getCountdownDisplay,
   getReadyStatusMessage,
@@ -408,6 +409,7 @@ const OnlineLobby = ({
 
   return (
     <div className="lobby find-players-lobby">
+      <MusicToggle className="music-toggle-float" />
       <div className="find-players">
         <button
           className="find-players-back"
@@ -421,8 +423,8 @@ const OnlineLobby = ({
 
         <img
           className="find-players-logo"
-          src={ludoKingLogo}
-          alt="Ludo King"
+          src={ludoOnlineLogo}
+          alt="Ludo"
         />
 
         <h2 className="find-players-heading">ONLINE MULTIPLAYER</h2>

@@ -48,27 +48,14 @@ export const getSearchElapsedSec = (
 };
 
 export const getSearchStatusMessage = (
-  phase: TSearchPhase,
+  _phase: TSearchPhase,
   playersFound: number,
   maxPlayers: number,
   joinFlash: string | null
 ): string => {
   if (joinFlash) return joinFlash;
   if (playersFound >= maxPlayers) return "Almost Ready...";
-  if (playersFound > 1) return `${playersFound}/${maxPlayers} Players Found`;
-
-  switch (phase) {
-    case "NEARBY":
-      return "Finding nearby players...";
-    case "EXPANDED":
-      return "Expanding search radius...";
-    case "WIDE":
-      return "Searching wider regions...";
-    case "BOT_FILL":
-      return "Adding players...";
-    default:
-      return "Searching...";
-  }
+  return "Searching players...";
 };
 
 /** Must match backend RoomService.COUNTDOWN_SECONDS (1s per label). */
