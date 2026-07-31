@@ -1,6 +1,7 @@
 package com.ludo.backend.socket;
 
 import org.springframework.context.annotation.Configuration;
+import org.springframework.messaging.simp.config.ChannelRegistration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
@@ -14,6 +15,20 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
   public void configureMessageBroker(MessageBrokerRegistry registry) {
     registry.enableSimpleBroker("/topic", "/queue");
     registry.setApplicationDestinationPrefixes("/app");
+  }
+
+  /**
+   * Fan-out STOMP on a sized pool so many concurrent rooms don't stall
+   * gameplay / HTTP threads on SimpleBroker serialize+send.
+   */
+  @Override
+  public void configureClientOutboundChannel(ChannelRegistration registration) {
+    registration.taskExecutor().corePoolSize(8).maxPoolSize(32).queueCapacity(10_000);
+  }
+
+  @Override
+  public void configureClientInboundChannel(ChannelRegistration registration) {
+    registration.taskExecutor().corePoolSize(4).maxPoolSize(16).queueCapacity(5_000);
   }
 
   @Override

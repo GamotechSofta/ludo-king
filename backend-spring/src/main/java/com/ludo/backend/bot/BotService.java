@@ -10,16 +10,16 @@ import com.ludo.backend.game.GameSnapshot;
 import com.ludo.backend.room.BotDifficulty;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
- * Bot turn loop. Move selection uses LudoGame {@link SuperiorBotBridge} / SuperiorBotEngine.
- * Dice are never manipulated — only chooses among legal options after a fair roll.
+ * Bot action executor. Delays live in {@link BotTurnCoordinator} (LudoGame-style
+ * deadlines) — this class never sleeps, so workers stay free under load.
+ *
+ * <p>Dice are never manipulated; move pick uses SuperiorBotEngine.
  */
 @Service
 public class BotService {
@@ -28,36 +28,18 @@ public class BotService {
 
   private final GameEngineService gameEngineService;
   private final SuperiorBotBridge superiorBotBridge;
-  private final int rollDelayMinMs;
-  private final int rollDelayMaxMs;
-  private final int thinkDelayMinMs;
-  private final int thinkDelayMaxMs;
 
-  public BotService(
-      GameEngineService gameEngineService,
-      SuperiorBotBridge superiorBotBridge,
-      @Value("${ludo.bot.roll-delay-min-ms:450}") int rollDelayMinMs,
-      @Value("${ludo.bot.roll-delay-max-ms:750}") int rollDelayMaxMs,
-      @Value("${ludo.bot.think-delay-min-ms:180}") int thinkDelayMinMs,
-      @Value("${ludo.bot.think-delay-max-ms:350}") int thinkDelayMaxMs
-  ) {
+  public BotService(GameEngineService gameEngineService, SuperiorBotBridge superiorBotBridge) {
     this.gameEngineService = gameEngineService;
     this.superiorBotBridge = superiorBotBridge;
-    this.rollDelayMinMs = Math.max(0, rollDelayMinMs);
-    this.rollDelayMaxMs = Math.max(this.rollDelayMinMs + 1, rollDelayMaxMs);
-    this.thinkDelayMinMs = Math.max(0, thinkDelayMinMs);
-    this.thinkDelayMaxMs = Math.max(this.thinkDelayMinMs + 1, thinkDelayMaxMs);
   }
 
-  public GameSnapshot takeTurnIfBot(String roomId, BotDifficulty difficulty) {
-    return takeTurnIfBot(roomId, difficulty, null);
-  }
-
-  public GameSnapshot takeTurnIfBot(
-      String roomId,
-      BotDifficulty difficulty,
-      Consumer<GameSnapshot> onStep
-  ) {
+  /**
+   * One atomic bot step: roll XOR move (or skip). No Thread.sleep.
+   * Used by the deadline-driven {@link BotTurnCoordinator}.
+   */
+  public GameSnapshot executeOneBotAction(
+      String roomId, BotDifficulty difficulty, Consumer<GameSnapshot> onStep) {
     GameSnapshot snap = gameEngineService.getSnapshot(roomId);
     if (!GameEngineService.PHASE_ROLL.equals(snap.getPhase())
         && !GameEngineService.PHASE_MOVE.equals(snap.getPhase())) {
@@ -73,67 +55,86 @@ public class BotService {
 
     BotDifficulty diff = difficulty == null ? BotDifficulty.HARD : difficulty;
 
-    int guard = 0;
-    while (guard++ < 12
-        && snap.getIsBot() != null
-        && seat < snap.getIsBot().length
-        && snap.getIsBot()[seat]
-        && snap.getCurrentSeatIndex() == seat
-        && !GameEngineService.PHASE_FINISHED.equals(snap.getPhase())) {
-
-      try {
-        if (GameEngineService.PHASE_ROLL.equals(snap.getPhase())) {
-          sleepBeforeDiceRoll();
-          // LudoGame-style: fair dice only — never force a face
-          snap = gameEngineService.rollDiceAsSeat(roomId, seat, null);
-          publish(onStep, snap);
-          if (snap.getCurrentSeatIndex() != seat
-              || !GameEngineService.PHASE_MOVE.equals(snap.getPhase())) {
-            break;
-          }
-          continue;
-        }
-
-        if (GameEngineService.PHASE_MOVE.equals(snap.getPhase())) {
-          List<int[]> moves = gameEngineService.legalMoves(roomId);
-          if (moves == null || moves.isEmpty()) {
-            log.info("Bot seat {} in room {} has no legal moves — skipping turn", seat, roomId);
-            snap = gameEngineService.skipTurn(roomId);
-            publish(onStep, snap);
-            break;
-          }
-          int[] chosen = chooseMove(roomId, seat, moves, diff);
-          sleepThinking();
-          snap = gameEngineService.moveTokenAsSeat(roomId, seat, chosen[0], chosen[1]);
-          publish(onStep, snap);
-          continue;
-        }
-      } catch (RuntimeException ex) {
-        String msg = ex.getMessage() != null ? ex.getMessage() : "";
-        if (msg.contains("Dice already rolled")
-            || msg.contains("Not your turn")
-            || msg.contains("Cannot roll")
-            || msg.contains("Cannot move")) {
-          log.debug("Bot turn noop roomId={} seat={}: {}", roomId, seat, msg);
-          snap = gameEngineService.getSnapshot(roomId);
-          publish(onStep, snap);
-          break;
-        }
-        log.warn(
-            "Bot turn failed roomId={} seat={}: {} — forcing PASS",
-            roomId,
-            seat,
-            ex.toString());
-        try {
-          snap = gameEngineService.skipTurn(roomId);
-          publish(onStep, snap);
-        } catch (RuntimeException skipEx) {
-          log.error("Bot force-pass failed roomId={} seat={}", roomId, seat, skipEx);
-        }
-        break;
+    try {
+      if (GameEngineService.PHASE_ROLL.equals(snap.getPhase())) {
+        snap = gameEngineService.rollDiceAsSeat(roomId, seat, null);
+        publish(onStep, snap);
+        return snap;
       }
 
-      break;
+      if (GameEngineService.PHASE_MOVE.equals(snap.getPhase())) {
+        List<int[]> moves = gameEngineService.legalMoves(roomId);
+        if (moves == null || moves.isEmpty()) {
+          log.info("Bot seat {} in room {} has no legal moves — skipping turn", seat, roomId);
+          snap = gameEngineService.skipTurn(roomId);
+          publish(onStep, snap);
+          return snap;
+        }
+        int[] chosen = chooseMove(roomId, seat, moves, diff);
+        snap = gameEngineService.moveTokenAsSeat(roomId, seat, chosen[0], chosen[1]);
+        publish(onStep, snap);
+        return snap;
+      }
+    } catch (RuntimeException ex) {
+      String msg = ex.getMessage() != null ? ex.getMessage() : "";
+      if (msg.contains("Dice already rolled")
+          || msg.contains("Not your turn")
+          || msg.contains("Cannot roll")
+          || msg.contains("Cannot move")) {
+        log.debug("Bot action noop roomId={} seat={}: {}", roomId, seat, msg);
+        snap = gameEngineService.getSnapshot(roomId);
+        publish(onStep, snap);
+        return snap;
+      }
+      log.warn(
+          "Bot action failed roomId={} seat={}: {} — forcing PASS",
+          roomId,
+          seat,
+          ex.toString());
+      try {
+        snap = gameEngineService.skipTurn(roomId);
+        publish(onStep, snap);
+      } catch (RuntimeException skipEx) {
+        log.error("Bot force-pass failed roomId={} seat={}", roomId, seat, skipEx);
+        snap = gameEngineService.getSnapshot(roomId);
+      }
+    }
+    return snap;
+  }
+
+  /** @deprecated Prefer {@link #executeOneBotAction}; kept for tests. */
+  public GameSnapshot takeTurnIfBot(String roomId, BotDifficulty difficulty) {
+    return takeTurnIfBot(roomId, difficulty, null);
+  }
+
+  /** @deprecated Prefer coordinator-driven single steps (no sleep). */
+  public GameSnapshot takeTurnIfBot(
+      String roomId, BotDifficulty difficulty, Consumer<GameSnapshot> onStep) {
+    GameSnapshot snap = gameEngineService.getSnapshot(roomId);
+    int guard = 0;
+    while (guard++ < 12) {
+      if (snap.getIsBot() == null) {
+        break;
+      }
+      int seat = snap.getCurrentSeatIndex();
+      if (seat < 0
+          || seat >= snap.getIsBot().length
+          || !snap.getIsBot()[seat]
+          || GameEngineService.PHASE_FINISHED.equals(snap.getPhase())) {
+        break;
+      }
+      if (!GameEngineService.PHASE_ROLL.equals(snap.getPhase())
+          && !GameEngineService.PHASE_MOVE.equals(snap.getPhase())) {
+        break;
+      }
+      long seq = snap.getActionSeq();
+      snap = executeOneBotAction(roomId, difficulty, onStep);
+      if (snap.getActionSeq() == seq) {
+        break;
+      }
+      if (snap.getCurrentSeatIndex() != seat) {
+        break;
+      }
     }
     return snap;
   }
@@ -145,11 +146,7 @@ public class BotService {
   }
 
   private int[] chooseMove(
-      String roomId,
-      int seat,
-      List<int[]> moves,
-      BotDifficulty difficulty
-  ) {
+      String roomId, int seat, List<int[]> moves, BotDifficulty difficulty) {
     GameSnapshot snap = gameEngineService.getSnapshot(roomId);
     String colorName = resolveSeatColor(snap, seat);
     if (colorName == null || snap.getDiceList() == null) {
@@ -167,9 +164,7 @@ public class BotService {
   }
 
   private static List<int[]> soleActivePawnOnlyMoves(
-      List<int[]> moves,
-      List<Integer> ownPositions
-  ) {
+      List<int[]> moves, List<Integer> ownPositions) {
     if (moves == null || moves.isEmpty() || ownPositions == null) {
       return null;
     }
@@ -205,21 +200,5 @@ public class BotService {
       return seatColors.get(seat);
     }
     return snap.getCurrentColor();
-  }
-
-  private void sleepBeforeDiceRoll() {
-    sleepRandom(rollDelayMinMs, rollDelayMaxMs);
-  }
-
-  private void sleepThinking() {
-    sleepRandom(thinkDelayMinMs, thinkDelayMaxMs);
-  }
-
-  private void sleepRandom(int minMs, int maxMs) {
-    try {
-      Thread.sleep(ThreadLocalRandom.current().nextInt(minMs, maxMs + 1));
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-    }
   }
 }

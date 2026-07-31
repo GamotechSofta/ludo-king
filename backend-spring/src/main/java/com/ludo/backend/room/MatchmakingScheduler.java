@@ -12,7 +12,7 @@ public class MatchmakingScheduler {
     this.roomService = roomService;
   }
 
-  @Scheduled(fixedDelay = 1000)
+  @Scheduled(fixedDelay = 1000, scheduler = "matchmakingTaskScheduler")
   public void tick() {
     roomService.processQueues();
     roomService.processExpiredFills();

@@ -6,6 +6,10 @@ import com.ludo.backend.room.RoomService;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+/**
+ * AFK timeout tick. Only visits rooms whose turn deadline elapsed
+ * (LudoGame-style) — does not snapshot every live match every second.
+ */
 @Component
 public class TurnTimeoutScheduler {
 
@@ -26,15 +30,12 @@ public class TurnTimeoutScheduler {
     this.botTurnCoordinator = botTurnCoordinator;
   }
 
-  @Scheduled(fixedDelay = 1000)
+  @Scheduled(fixedDelay = 1000, scheduler = "timeoutTaskScheduler")
   public void tick() {
-    for (String roomId : gameEngineService.activeRoomIds()) {
+    for (String roomId : gameEngineService.dueTimedOutRoomIds()) {
       try {
         GameSnapshot before = gameEngineService.getSnapshot(roomId);
         if (GameEngineService.PHASE_FINISHED.equals(before.getPhase())) {
-          continue;
-        }
-        if (before.getTurnSecondsRemaining() > 0) {
           continue;
         }
         int seatBefore = before.getCurrentSeatIndex();

@@ -162,9 +162,17 @@ public class RoomService {
     int playerRating = rating > 0 ? rating : 1000;
     String playerAvatar = avatarId == null || avatarId.isBlank() ? "default" : avatarId.trim();
 
-    // Serialize joins per bucket so two 2P players don't each open a solo room.
+    // Serialize seat assignment per bucket; wallet HTTP stays OUTSIDE the lock
+    // so one slow Aakda debit cannot stall every other join on this stake tier.
     String bucket = maxPlayers + "|" + tier;
     Object joinLock = joinLocks.computeIfAbsent(bucket, k -> new Object());
+
+    Room room;
+    RoomPlayer joined;
+    double fee;
+    boolean createdNew;
+    boolean shouldEnterReady;
+
     synchronized (joinLock) {
       List<Room> waiting = roomRepository
           .findByStatusAndMaxPlayersAndStakeTier(RoomStatus.WAITING, maxPlayers, tier)
@@ -177,68 +185,84 @@ public class RoomService {
               Math.abs(averageHumanRating(b) - playerRating)))
           .toList();
 
+      Room seated = null;
+      RoomPlayer seatPlayer = null;
+      boolean isNew = false;
+
       if (!waiting.isEmpty()) {
-        Room room = waiting.get(0);
-        // Re-load under lock to reduce seat overwrite races
-        room = roomRepository.findById(room.getId()).orElse(room);
-        if (room.getStatus() != RoomStatus.WAITING
-            || room.getPlayers().size() >= room.getMaxPlayers()
-            || room.getPlayers().stream().anyMatch(p -> userId.equals(p.getUserId()))) {
-          // Fall through to create a new room
-        } else {
+        Room candidate = waiting.get(0);
+        candidate = roomRepository.findById(candidate.getId()).orElse(candidate);
+        if (candidate.getStatus() == RoomStatus.WAITING
+            && candidate.getPlayers().size() < candidate.getMaxPlayers()
+            && candidate.getPlayers().stream().noneMatch(p -> userId.equals(p.getUserId()))) {
           List<LudoColor> colors = LudoColor.forPlayerCount(maxPlayers);
-          int seat = room.getPlayers().size();
-          RoomPlayer joined = new RoomPlayer(userId, username, colors.get(seat).name(), false, seat);
-          joined.setRating(playerRating);
-          joined.setAvatar(playerAvatar);
-          room.getPlayers().add(joined);
-          if (room.getFillDeadlineAt() == null) {
-            room.setFillDeadlineAt(Instant.now().plus(FILL_SECONDS, ChronoUnit.SECONDS));
+          int seat = candidate.getPlayers().size();
+          RoomPlayer jp = new RoomPlayer(userId, username, colors.get(seat).name(), false, seat);
+          jp.setRating(playerRating);
+          jp.setAvatar(playerAvatar);
+          candidate.getPlayers().add(jp);
+          if (candidate.getFillDeadlineAt() == null) {
+            candidate.setFillDeadlineAt(Instant.now().plus(FILL_SECONDS, ChronoUnit.SECONDS));
           }
-          room = roomRepository.save(room);
-          try {
-            double fee = room.getEntryFee() > 0 ? room.getEntryFee() : bet;
-            matchEconomy.reserveEntry(room.getId(), userId, fee);
-          } catch (RuntimeException e) {
-            room.getPlayers().removeIf(p -> userId.equals(p.getUserId()));
-            roomRepository.save(room);
-            throw e;
-          }
-          broadcastPlayerJoined(room, joined);
-          if (room.getPlayers().size() == room.getMaxPlayers()) {
-            room = enterReadyPhase(room);
-            return new QueueResponse("MATCHED", room.getId(), room.getRoomCode(), room);
-          }
-          return new QueueResponse("WAITING", room.getId(), room.getRoomCode(), room);
+          seated = roomRepository.save(candidate);
+          seatPlayer = jp;
         }
       }
 
-      Room room = newEmptyRoom(maxPlayers, tier);
-      room.setRegion(playerRegion);
-      if (bet > 0) {
-        room.setEntryFee(Math.round(bet));
+      if (seated == null) {
+        Room created = newEmptyRoom(maxPlayers, tier);
+        created.setRegion(playerRegion);
+        if (bet > 0) {
+          created.setEntryFee(Math.round(bet));
+        }
+        List<LudoColor> colors = LudoColor.forPlayerCount(maxPlayers);
+        RoomPlayer host = new RoomPlayer(userId, username, colors.get(0).name(), false, 0);
+        host.setRating(playerRating);
+        host.setAvatar(playerAvatar);
+        created.getPlayers().add(host);
+        created.setFillDeadlineAt(Instant.now().plus(FILL_SECONDS, ChronoUnit.SECONDS));
+        seated = roomRepository.save(created);
+        seatPlayer = host;
+        isNew = true;
       }
-      List<LudoColor> colors = LudoColor.forPlayerCount(maxPlayers);
-      RoomPlayer host = new RoomPlayer(userId, username, colors.get(0).name(), false, 0);
-      host.setRating(playerRating);
-      host.setAvatar(playerAvatar);
-      room.getPlayers().add(host);
-      room.setFillDeadlineAt(Instant.now().plus(FILL_SECONDS, ChronoUnit.SECONDS));
-      room = roomRepository.save(room);
-      try {
-        matchEconomy.reserveEntry(room.getId(), userId, bet);
-      } catch (RuntimeException e) {
-        roomRepository.delete(room);
-        throw e;
+
+      room = seated;
+      joined = seatPlayer;
+      createdNew = isNew;
+      fee = room.getEntryFee() > 0 ? room.getEntryFee() : bet;
+      shouldEnterReady = room.getPlayers().size() == room.getMaxPlayers();
+    }
+
+    try {
+      matchEconomy.reserveEntry(room.getId(), userId, fee);
+    } catch (RuntimeException e) {
+      synchronized (joinLock) {
+        Room fresh = roomRepository.findById(room.getId()).orElse(null);
+        if (fresh != null) {
+          fresh.getPlayers().removeIf(p -> userId.equals(p.getUserId()));
+          if (fresh.getPlayers().isEmpty()) {
+            roomRepository.delete(fresh);
+          } else {
+            roomRepository.save(fresh);
+          }
+        }
       }
+      throw e;
+    }
+
+    if (createdNew) {
       if (redisMatchQueue != null) {
         redisMatchQueue.enqueue(maxPlayers, tier, userId, username);
       }
       events.toUser(userId, MatchmakingEventPublisher.EVENT_ROOM_CREATED, roomPayload(room));
       events.toRoom(room.getId(), MatchmakingEventPublisher.EVENT_ROOM_CREATED, roomPayload(room));
-      broadcastPlayerJoined(room, host);
-      return new QueueResponse("WAITING", room.getId(), room.getRoomCode(), room);
     }
+    broadcastPlayerJoined(room, joined);
+    if (shouldEnterReady) {
+      room = enterReadyPhase(room);
+      return new QueueResponse("MATCHED", room.getId(), room.getRoomCode(), room);
+    }
+    return new QueueResponse("WAITING", room.getId(), room.getRoomCode(), room);
   }
 
   public void cancelQueue(String userId) {
@@ -551,7 +575,7 @@ public class RoomService {
           true,
           seat
       );
-      bot.setBotDifficulty(BotDifficulty.HARD);
+      bot.setBotDifficulty(BotDifficulty.MEDIUM);
       bot.setReady(true);
       bot.setAvatar(randomBotAvatar());
       bot.setRating(900 + random.nextInt(400));

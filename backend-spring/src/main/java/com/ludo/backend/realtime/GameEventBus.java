@@ -1,5 +1,6 @@
 package com.ludo.backend.realtime;
 
+import com.ludo.backend.game.GameEngineService;
 import com.ludo.backend.game.GameEvent;
 import com.ludo.backend.game.GameSnapshot;
 import com.ludo.backend.room.RoomService;
@@ -15,25 +16,31 @@ import org.springframework.stereotype.Service;
 
 /**
  * Ordered multiplayer fan-out: compact {@link GameEvent} on the room topic.
- * Redis cache + Mongo persistence run async after STOMP send.
+ * Redis cache stays hot; Mongo checkpoints are time-coalesced under load.
  */
 @Service
 public class GameEventBus {
 
   private static final Logger log = LoggerFactory.getLogger(GameEventBus.class);
+  /** Min gap between Mongo writes per room (FINISHED always flushes). */
+  private static final long PERSIST_MIN_MS = 5_000L;
 
   private final SimpMessagingTemplate messagingTemplate;
   private final RoomService roomService;
   private final Optional<RedisGameBridge> redisBridge;
   private final ConcurrentHashMap<String, Long> lastPublishedSeq = new ConcurrentHashMap<>();
-  /** Only the newest snapshot per room needs persisting — older writes are dropped. */
   private final ConcurrentHashMap<String, GameSnapshot> pendingPersist =
       new ConcurrentHashMap<>();
-  private final ExecutorService asyncIo = Executors.newFixedThreadPool(2, r -> {
-    Thread t = new Thread(r, "ludo-game-async-io");
-    t.setDaemon(true);
-    return t;
-  });
+  private final ConcurrentHashMap<String, Long> lastPersistAt = new ConcurrentHashMap<>();
+  private final ConcurrentHashMap<String, Boolean> persistFlushing = new ConcurrentHashMap<>();
+  private final ExecutorService asyncIo =
+      Executors.newFixedThreadPool(
+          Math.min(16, Math.max(6, Runtime.getRuntime().availableProcessors() * 2)),
+          r -> {
+            Thread t = new Thread(r, "ludo-game-async-io");
+            t.setDaemon(true);
+            return t;
+          });
 
   public GameEventBus(
       SimpMessagingTemplate messagingTemplate,
@@ -55,15 +62,19 @@ public class GameEventBus {
 
   public void publishSnapshotAndMeta(String roomId, GameSnapshot snap) {
     publishSnapshot(roomId, snap);
-    asyncIo.execute(() -> {
-      try {
-        roomService.getRoom(roomId).ifPresent(room ->
-            messagingTemplate.convertAndSend("/topic/room/" + roomId + "/meta", room)
-        );
-      } catch (Exception e) {
-        log.debug("async meta publish: {}", e.getMessage());
-      }
-    });
+    asyncIo.execute(
+        () -> {
+          try {
+            roomService
+                .getRoom(roomId)
+                .ifPresent(
+                    room ->
+                        messagingTemplate.convertAndSend(
+                            "/topic/room/" + roomId + "/meta", room));
+          } catch (Exception e) {
+            log.debug("async meta publish: {}", e.getMessage());
+          }
+        });
   }
 
   private void publishEvent(String roomId, GameEvent event, boolean force) {
@@ -81,23 +92,51 @@ public class GameEventBus {
 
     GameSnapshot snap = event.getState();
     if (snap != null) {
-      redisBridge.ifPresent(bridge -> asyncIo.execute(() -> {
-        try {
-          bridge.cacheAndPublish(roomId, snap);
-        } catch (Exception e) {
-          log.debug("async redis publish: {}", e.getMessage());
-        }
-      }));
-      // Coalesce: Mongo Atlas round-trips are slow enough to back up this pool.
-      if (pendingPersist.put(roomId, snap) == null) {
-        asyncIo.execute(() -> {
-          GameSnapshot latest = pendingPersist.remove(roomId);
-          if (latest != null) {
-            roomService.persistLiveSnapshot(roomId, latest);
+      redisBridge.ifPresent(
+          bridge ->
+              asyncIo.execute(
+                  () -> {
+                    try {
+                      bridge.cacheAndPublish(roomId, snap);
+                    } catch (Exception e) {
+                      log.debug("async redis publish: {}", e.getMessage());
+                    }
+                  }));
+      schedulePersist(roomId, snap);
+    }
+  }
+
+  private void schedulePersist(String roomId, GameSnapshot snap) {
+    pendingPersist.put(roomId, snap);
+    boolean force =
+        snap.getPhase() != null
+            && GameEngineService.PHASE_FINISHED.equals(snap.getPhase());
+    long now = System.currentTimeMillis();
+    Long last = lastPersistAt.get(roomId);
+    if (!force && last != null && now - last < PERSIST_MIN_MS) {
+      return;
+    }
+    if (persistFlushing.putIfAbsent(roomId, Boolean.TRUE) != null) {
+      return;
+    }
+    asyncIo.execute(
+        () -> {
+          try {
+            GameSnapshot latest = pendingPersist.remove(roomId);
+            if (latest != null) {
+              roomService.persistLiveSnapshot(roomId, latest);
+              lastPersistAt.put(roomId, System.currentTimeMillis());
+            }
+          } catch (Exception e) {
+            log.debug("async mongo persist roomId={}: {}", roomId, e.getMessage());
+          } finally {
+            persistFlushing.remove(roomId);
+            GameSnapshot newer = pendingPersist.get(roomId);
+            if (newer != null) {
+              schedulePersist(roomId, newer);
+            }
           }
         });
-      }
-    }
   }
 
   public Optional<GameSnapshot> loadCachedSnapshot(String roomId) {
@@ -113,5 +152,7 @@ public class GameEventBus {
   public void clearRoom(String roomId) {
     lastPublishedSeq.remove(roomId);
     pendingPersist.remove(roomId);
+    lastPersistAt.remove(roomId);
+    persistFlushing.remove(roomId);
   }
 }

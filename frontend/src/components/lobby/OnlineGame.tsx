@@ -1106,11 +1106,8 @@ const OnlineGame = ({
         isMoveSnapshot(snap, lastAnimatedMoveSeqRef.current);
 
       if (animatingRef.current && !isRemoteMove) {
-        const q = pendingSnapRef.current;
-        const last = q[q.length - 1];
-        if (!last || (last.actionSeq || 0) !== (snap.actionSeq || 0)) {
-          q.push(snap);
-        }
+        // Coalesce: keep only the newest snap (LudoGame board queue) — don't grow forever
+        pendingSnapRef.current = [snap];
         return;
       }
 

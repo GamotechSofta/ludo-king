@@ -154,8 +154,8 @@ ludo:
       enabled: ${LUDO_BOT_SACRIFICE_ENABLED:true}
     # Smart Dice Assistance (HARD only, non-kill).
     smartDice:
-      enabled: ${LUDO_BOT_SMART_DICE_ENABLED:true}
-      weighted: ${LUDO_BOT_SMART_DICE_WEIGHTED:true}
+      enabled: ${LUDO_BOT_SMART_DICE_ENABLED:false}
+      weighted: ${LUDO_BOT_SMART_DICE_WEIGHTED:false}
       maxAssist: ${LUDO_BOT_SMART_DICE_MAX_ASSIST:0.45}
       early: ${LUDO_BOT_SMART_DICE_EARLY:0.15}
       mid: ${LUDO_BOT_SMART_DICE_MID:0.25}
@@ -199,24 +199,22 @@ ludo:
       history: ${LUDO_BOT_BEHAVIOR_HISTORY:30}
       maxInfluence: ${LUDO_BOT_BEHAVIOR_MAX_INFLUENCE:0.10}
       confidenceThreshold: ${LUDO_BOT_BEHAVIOR_CONFIDENCE:0.65}
-    # Human-like pauses. Raise for slower bots, lower for snappier turns.
-    roll-delay-min-ms: ${BOT_ROLL_DELAY_MIN_MS:1100}
-    roll-delay-max-ms: ${BOT_ROLL_DELAY_MAX_MS:1700}
-    think-delay-min-ms: ${BOT_THINK_DELAY_MIN_MS:450}
-    think-delay-max-ms: ${BOT_THINK_DELAY_MAX_MS:750}
+    # LudoGame-style deadline delays (workers free during wait — no Thread.sleep).
+    roll-delay-ms: ${BOT_ROLL_DELAY_MS:700}
+    move-delay-ms: ${BOT_MOVE_DELAY_MS:850}
+    scheduler-pool-size: ${BOT_SCHEDULER_POOL_SIZE:0}
   human-jail-exit-assist:
-    # Human only: boost six chance when all jailed and opponent is 1–6 cells from start.
-    enabled: ${HUMAN_JAIL_EXIT_ASSIST:true}
+    # Off by default — fair dice like LudoGame (set true only for local tuning).
+    enabled: ${HUMAN_JAIL_EXIT_ASSIST:false}
     assist-chance-pct: ${HUMAN_JAIL_EXIT_ASSIST_CHANCE:70}
   human-jail-assist:
-    enabled: ${HUMAN_JAIL_ASSIST:true}
+    enabled: ${HUMAN_JAIL_ASSIST:false}
     max-assist-attempts: ${MAX_ASSIST_ATTEMPTS:6}
     normal-rolls-before-boost: ${JAIL_ASSIST_NORMAL_ROLLS:2}
     boost-step: ${JAIL_ASSIST_BOOST_STEP:0.05}
     max-six-probability: ${JAIL_ASSIST_MAX_SIX_PROB:0.45}
   human-capture-dice-assist:
-    # Human only: ~60% exact capture die when a bot pawn is 1–6 steps ahead on same path.
-    enabled: ${HUMAN_CAPTURE_DICE_ASSIST:true}
+    enabled: ${HUMAN_CAPTURE_DICE_ASSIST:false}
     assist-chance-pct: ${HUMAN_CAPTURE_DICE_ASSIST_CHANCE:60}
 
 logging:

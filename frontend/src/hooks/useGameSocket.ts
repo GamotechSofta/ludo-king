@@ -11,8 +11,10 @@ import {
 import { onlinePerf } from "../utils/onlinePerf";
 
 const STOMP_JSON = { "content-type": "application/json" };
-const POLL_DISCONNECTED_MS = 800;
-const POLL_CONNECTED_MS = 6000;
+/** Poll only when WS is down — connected clients rely on STOMP (LudoGame-style). */
+const POLL_DISCONNECTED_MS = 2000;
+/** Rare safety net while connected (was 6s and hammered the server under load). */
+const POLL_CONNECTED_MS = 20000;
 const ACTION_HTTP_FALLBACK_MS = 2500;
 /** Never gate roll/move longer than this, even if no snapshot ever lands. */
 const ACTION_GATE_MAX_MS = 4500;

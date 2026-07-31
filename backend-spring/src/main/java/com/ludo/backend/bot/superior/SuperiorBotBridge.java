@@ -97,13 +97,15 @@ public class SuperiorBotBridge {
   }
 
   public static SuperiorBotDifficulty mapDifficulty(BotDifficulty roomDifficulty) {
+    // Do NOT map HARD→SUPER: SUPER expectimax feels over-aggressive vs humans on live.
+    // LudoGame exposes SUPER as an explicit tier; queue bots use HARD/MEDIUM.
     if (roomDifficulty == null) {
-      return SuperiorBotDifficulty.SUPER;
+      return SuperiorBotDifficulty.HARD;
     }
     return switch (roomDifficulty) {
       case EASY -> SuperiorBotDifficulty.EASY;
       case MEDIUM -> SuperiorBotDifficulty.MEDIUM;
-      case HARD -> SuperiorBotDifficulty.SUPER;
+      case HARD -> SuperiorBotDifficulty.HARD;
     };
   }
 

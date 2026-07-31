@@ -60,6 +60,11 @@ public class GameEngineService {
   private static final int MAX_CONSECUTIVE_SIXES = 3;
 
   private final ConcurrentHashMap<String, MatchRuntime> matches = new ConcurrentHashMap<>();
+  /**
+   * LudoGame-style turn deadlines — timeout tick only visits due rooms
+   * instead of snapshotting every live match every second.
+   */
+  private final ConcurrentHashMap<String, Instant> turnDeadlines = new ConcurrentHashMap<>();
   private final SecureRandom secureRandom = new SecureRandom();
   private final ObjectProvider<HumanBehaviorEngine> humanBehaviorEngine;
 
@@ -247,12 +252,14 @@ public class GameEngineService {
       }
       matches.remove(roomId, existing);
       clearHumanBehavior(roomId);
+      clearTurnDeadline(roomId);
     }
     MatchRuntime rt = new MatchRuntime(roomId, seats);
     MatchRuntime raced = matches.putIfAbsent(roomId, rt);
     if (raced != null) {
       return getSnapshot(roomId);
     }
+    touchTurnDeadline(rt);
     return snapshot(rt);
   }
 
@@ -278,6 +285,7 @@ public class GameEngineService {
           return snapshot(existing);
         }
         applySnapshotFields(existing, snap);
+        touchTurnDeadline(existing);
         return snapshot(existing);
       } finally {
         existing.lock.unlock();
@@ -289,12 +297,45 @@ public class GameEngineService {
     if (raced != null) {
       return restoreFromSnapshot(snap);
     }
+    touchTurnDeadline(rt);
     return snapshot(rt);
   }
 
   /** @return true if this JVM holds the live session for the room */
   public boolean hasMatch(String roomId) {
     return matches.containsKey(roomId);
+  }
+
+  /**
+   * Rooms whose AFK turn deadline has elapsed — O(due) not O(all matches).
+   * Avoids locking + full snapshot build on every timeout tick.
+   */
+  public List<String> dueTimedOutRoomIds() {
+    Instant now = Instant.now();
+    List<String> due = new ArrayList<>();
+    for (var e : turnDeadlines.entrySet()) {
+      if (!e.getValue().isAfter(now) && matches.containsKey(e.getKey())) {
+        due.add(e.getKey());
+      }
+    }
+    return due;
+  }
+
+  private void touchTurnDeadline(MatchRuntime rt) {
+    if (rt == null || rt.roomId == null) {
+      return;
+    }
+    if (PHASE_FINISHED.equals(rt.phase)) {
+      turnDeadlines.remove(rt.roomId);
+      return;
+    }
+    turnDeadlines.put(rt.roomId, rt.turnStartedAt.plusSeconds(TURN_TIMEOUT_SECONDS));
+  }
+
+  private void clearTurnDeadline(String roomId) {
+    if (roomId != null) {
+      turnDeadlines.remove(roomId);
+    }
   }
 
   public GameSnapshot getSnapshot(String roomId) {
@@ -594,6 +635,7 @@ public class GameEngineService {
 
     rt.phase = PHASE_MOVE;
     rt.turnStartedAt = Instant.now();
+    touchTurnDeadline(rt);
     recordAction(rt, "ROLL", seat, null, value);
     observeHumanRoll(rt, seat, value);
     return snapshot(rt);
@@ -665,6 +707,7 @@ public class GameEngineService {
       }
       rt.phase = PHASE_ROLL;
       rt.turnStartedAt = Instant.now();
+      touchTurnDeadline(rt);
       return snapshot(rt);
     }
 
@@ -743,6 +786,7 @@ public class GameEngineService {
     }
     rt.phase = PHASE_FINISHED;
     clearHumanBehavior(rt.roomId);
+    clearTurnDeadline(rt.roomId);
   }
 
   private void checkFinished(MatchRuntime rt, int seat) {
@@ -769,6 +813,7 @@ public class GameEngineService {
     }
     rt.phase = PHASE_FINISHED;
     clearHumanBehavior(rt.roomId);
+    clearTurnDeadline(rt.roomId);
   }
 
   private void observeHumanRoll(MatchRuntime rt, int seat, int dice) {
@@ -853,11 +898,13 @@ public class GameEngineService {
           clearDice(rt);
           rt.consecutiveSixes = 0;
           rt.turnStartedAt = Instant.now();
+          touchTurnDeadline(rt);
           return;
         }
       }
     }
     rt.phase = PHASE_FINISHED;
+    clearTurnDeadline(rt.roomId);
   }
 
   private List<int[]> computeLegalMoves(MatchRuntime rt, int seat) {
