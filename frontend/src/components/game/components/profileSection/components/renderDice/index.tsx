@@ -1,6 +1,6 @@
 import "./styles.css";
 import { ROLL_TIME_VALUE } from "../../../../../../utils/constants";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import ReactDice, { ReactDiceRef } from "react-dice-complete";
 import type { TDicevalues } from "../../../../../../interfaces";
 
@@ -59,8 +59,6 @@ const RenderDice = ({
   const lastAnimatedRollRef = useRef("");
   const activeRollRef = useRef("");
   const rollDoneTimerRef = useRef<number | null>(null);
-  const holdVisibleTimerRef = useRef<number | null>(null);
-  const [holdVisible, setHoldVisible] = useState(false);
 
   useEffect(() => {
     handleDoneDiceRef.current = handleDoneDice;
@@ -69,19 +67,6 @@ const RenderDice = ({
   useEffect(() => {
     valueRef.current = value;
   }, [value]);
-
-  useEffect(() => {
-    if (!hasTurn) return;
-    if (value === 0 || diceRollNumber === 0) return;
-    setHoldVisible(true);
-    if (holdVisibleTimerRef.current != null) {
-      window.clearTimeout(holdVisibleTimerRef.current);
-    }
-    holdVisibleTimerRef.current = window.setTimeout(() => {
-      setHoldVisible(false);
-      holdVisibleTimerRef.current = null;
-    }, Math.round(ROLL_TIME_VALUE * 1000) + 240);
-  }, [hasTurn, value, diceRollNumber]);
 
   useEffect(() => {
     // New turn baseline: allow same face to animate again (e.g. 4 then 4).
@@ -93,9 +78,6 @@ const RenderDice = ({
 
   useEffect(
     () => () => {
-      if (holdVisibleTimerRef.current != null) {
-        window.clearTimeout(holdVisibleTimerRef.current);
-      }
       if (rollDoneTimerRef.current != null) {
         window.clearTimeout(rollDoneTimerRef.current);
       }
@@ -115,7 +97,7 @@ const RenderDice = ({
     if (valueRef.current !== 0 && doneKey) handleDoneDiceRef.current();
   }, []);
 
-  // Same as original: tumble when value + diceRollNumber arrive for this seat.
+  // Tumble only on the active seat — other profiles keep their own last face.
   useEffect(() => {
     if (!hasTurn) return;
     if (value === 0 || diceRollNumber === 0) return;
@@ -153,8 +135,6 @@ const RenderDice = ({
       }
     };
 
-    // Die stays mounted (hidden) while !hasTurn, so ref is usually ready;
-    // still retry a few frames for first paint.
     requestAnimationFrame(() => {
       requestAnimationFrame(() => kick(0));
     });
@@ -168,13 +148,12 @@ const RenderDice = ({
   }, [hasTurn, value, diceRollNumber]);
 
   if (!showDice) return null;
-  const showFace = hasTurn || holdVisible;
 
   return (
     <div
       className={`game-profile-dice ${
         hasTurn && !disabledDice ? "ready" : "rolled"
-      }${showArrow ? " has-arrow" : ""}${showFace ? " has-die" : " empty"}`}
+      }${showArrow ? " has-arrow" : ""} has-die`}
     >
       {showArrow && <span className="game-profile-dice-arrow" aria-hidden />}
       <button
@@ -184,12 +163,7 @@ const RenderDice = ({
         onClick={handleSelectDice}
         aria-label={hasTurn ? "Roll dice" : "Waiting for turn"}
       />
-      {/* Keep die mounted always — original behaviour; hide when not this seat */}
-      <div
-        className={`game-profile-dice-face${
-          showFace ? "" : " game-profile-dice-face-hidden"
-        }`}
-      >
+      <div className="game-profile-dice-face">
         <StableReactDice ref={refDice} onRollDone={onRollDone} />
       </div>
     </div>
