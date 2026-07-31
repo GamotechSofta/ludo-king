@@ -2022,6 +2022,11 @@ const OnlineGame = ({
     }
   }, [myEliminated, isTwoPlayerMatch, matchEnded, voluntaryExit]);
 
+  const resultEntries: IResultEntry[] = useMemo(
+    () => buildResults(snapshot, guest.id, roomId),
+    [snapshot, guest.id, roomId]
+  );
+
   /** Match ended as a loss without mid-match elimination popup — play lose SFX once. */
   useEffect(() => {
     if (voluntaryExit || !matchEnded || !showResults) return;
@@ -2032,11 +2037,6 @@ const OnlineGame = ({
     stopBackgroundMusic();
     playSound("playerLost");
   }, [matchEnded, showResults, resultEntries, voluntaryExit]);
-
-  const resultEntries: IResultEntry[] = useMemo(
-    () => buildResults(snapshot, guest.id, roomId),
-    [snapshot, guest.id, roomId]
-  );
 
   // Local perspective: compact profile list (my home = bottom-left).
   const renderPlayers =
