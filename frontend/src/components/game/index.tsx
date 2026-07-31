@@ -192,9 +192,7 @@ const Game = ({
               (p) => !p.isBot && p.index === 0 && p.ranking === 1
             );
             stopBackgroundMusic();
-            if (!youWon) {
-              playSound("playerLost");
-            }
+            playSound(youWon ? "playerWin" : "playerLost");
           }
         }
         setPlayers(finalPlayers);

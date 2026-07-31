@@ -2025,15 +2025,15 @@ const OnlineGame = ({
     [snapshot, guest.id, roomId]
   );
 
-  /** Match ended as a loss without mid-match elimination popup — play lose SFX once. */
+  /** Match ended — play win/lose SFX once (Results has playOutcomeSound=false). */
   useEffect(() => {
     if (voluntaryExit || !matchEnded || !showResults) return;
     if (lostSummaryShownRef.current) return;
     const me = resultEntries.find((e) => e.isYou);
-    if (!me || me.won) return;
+    if (!me) return;
     lostSummaryShownRef.current = true;
     stopBackgroundMusic();
-    playSound("playerLost");
+    playSound(me.won ? "playerWin" : "playerLost");
   }, [matchEnded, showResults, resultEntries, voluntaryExit]);
 
   // Local perspective: compact profile list (my home = bottom-left).

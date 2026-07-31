@@ -34,9 +34,9 @@ const Results = ({
     : potAmount.toFixed(2);
 
   useEffect(() => {
-    if (!playOutcomeSound || didWin) return;
+    if (!playOutcomeSound) return;
     stopBackgroundMusic();
-    playSound("playerLost");
+    playSound(didWin ? "playerWin" : "playerLost");
   }, [playOutcomeSound, didWin]);
 
   return (

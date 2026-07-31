@@ -7,6 +7,7 @@ const SOUND_FILES = {
   matchStart: "/sounds/match%20start.mp3",
   countdownDing: "/sounds/tunetank.com_scroll-ding-counting-slow.mp3",
   playerLost: "/sounds/mixkit-player-losing-or-failing-2042.mp3",
+  playerWin: "/sounds/win-audio.mp3",
 } as const;
 
 export type TGameSound = keyof typeof SOUND_FILES;
@@ -25,6 +26,7 @@ const DEFAULT_VOLUME: Record<TGameSound, number> = {
   matchStart: 0.78,
   countdownDing: 0.62,
   playerLost: 0.8,
+  playerWin: 0.85,
 };
 
 const cache = new Map<TGameSound, HTMLAudioElement>();
@@ -128,7 +130,8 @@ export const playSound = (name: TGameSound, volume?: number) => {
       name === "star" ||
       name === "matchStart" ||
       name === "countdownDing" ||
-      name === "playerLost"
+      name === "playerLost" ||
+      name === "playerWin"
         ? (base.cloneNode(true) as HTMLAudioElement)
         : base;
     audio.volume = Math.min(
