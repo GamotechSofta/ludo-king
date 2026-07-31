@@ -4,7 +4,6 @@ import static com.ludo.backend.game.BoardConstants.EXIT_LEN;
 import static com.ludo.backend.game.BoardConstants.HOME;
 import static com.ludo.backend.game.BoardConstants.HOME_STEPS;
 import static com.ludo.backend.game.BoardConstants.JAIL;
-import static com.ludo.backend.game.BoardConstants.MAX_STACK;
 import static com.ludo.backend.game.BoardConstants.SAFE_AREAS;
 import static com.ludo.backend.game.BoardConstants.TOTAL_TILES;
 import static com.ludo.backend.game.BoardConstants.exitIndex;
@@ -12,7 +11,6 @@ import static com.ludo.backend.game.BoardConstants.isExit;
 import static com.ludo.backend.game.BoardConstants.isHome;
 import static com.ludo.backend.game.BoardConstants.isJail;
 import static com.ludo.backend.game.BoardConstants.isMain;
-import static com.ludo.backend.game.BoardConstants.isSafe;
 import static com.ludo.backend.game.BoardConstants.toExit;
 
 import java.security.SecureRandom;
@@ -31,15 +29,14 @@ import org.springframework.stereotype.Service;
 /**
  * Server-authoritative Ludo engine.
  *
- * <p>Defaults locked from product spec:
+ * <p>Playing rules aligned with LudoGame ({@code GameplayModule} / fair dice):
  * <ul>
- *   <li>Extra turn on 6 only if a move was executed with that 6</li>
+ *   <li>Fair dice only — no human/bot dice assists</li>
+ *   <li>After two consecutive sixes, next roll is forced into 1–5 (no third six)</li>
+ *   <li>Extra turn on 6 (after a successful move) or capture; home alone does not bonus</li>
  *   <li>No legal moves after any roll (including 6) → pass immediately</li>
- *   <li>Third consecutive six voided (no move) → pass</li>
- *   <li>Capture grants bonus roll; does not count toward three-six limit</li>
- *   <li>Home finish does NOT grant bonus roll</li>
- *   <li>Own stack max 2 (block); third token cannot join</li>
- *   <li>Opponent blocks: can pass through; cannot land on / capture</li>
+ *   <li>Landing on a non-safe main cell captures ALL opponent tokens there (no block immunity)</li>
+ *   <li>No landing restrictions from opponent stacks or own max-stack</li>
  *   <li>AFK timeout 20s: turn is passed to the next player</li>
  *   <li>3 turn timeouts (lifetime) → AFK eliminated (skipped, tokens removed)</li>
  *   <li>First player with all 4 tokens home wins (rank 1); all others LOST (rank 0)</li>
@@ -64,20 +61,9 @@ public class GameEngineService {
 
   private final ConcurrentHashMap<String, MatchRuntime> matches = new ConcurrentHashMap<>();
   private final SecureRandom secureRandom = new SecureRandom();
-  private final HumanJailDiceAssist humanJailDiceAssist;
-  private final HumanJailExitAssist humanJailExitAssist;
-  private final HumanCaptureDiceAssist humanCaptureDiceAssist;
   private final ObjectProvider<HumanBehaviorEngine> humanBehaviorEngine;
 
-  public GameEngineService(
-      HumanJailDiceAssist humanJailDiceAssist,
-      HumanJailExitAssist humanJailExitAssist,
-      HumanCaptureDiceAssist humanCaptureDiceAssist,
-      ObjectProvider<HumanBehaviorEngine> humanBehaviorEngine
-  ) {
-    this.humanJailDiceAssist = humanJailDiceAssist;
-    this.humanJailExitAssist = humanJailExitAssist;
-    this.humanCaptureDiceAssist = humanCaptureDiceAssist;
+  public GameEngineService(ObjectProvider<HumanBehaviorEngine> humanBehaviorEngine) {
     this.humanBehaviorEngine = humanBehaviorEngine;
   }
 
@@ -564,40 +550,19 @@ public class GameEngineService {
       throw new IllegalStateException("Dice already rolled this turn");
     }
 
+    // LudoGame fair dice: after two consecutive sixes, face is drawn from 1–5 only
     int value;
-    boolean allJailedBeforeRoll = allTokensInJail(rt, seat);
-    boolean humanSeat = !rt.isBot[seat];
-    boolean opponentNearStart =
-        humanSeat
-            && allJailedBeforeRoll
-            && humanJailExitAssist.isEnabled()
-            && humanJailExitAssist.isOpponentNearStartingPath(
-                rt.colors[seat].startTile(),
-                rt.maxPlayers,
-                rt.tokens,
-                rt.eliminated,
-                rt.finished,
-                seat);
     if (forcedValue != null && forcedValue >= 1 && forcedValue <= 6) {
       value = forcedValue;
-    } else if (opponentNearStart) {
-      value = humanJailExitAssist.rollDice(secureRandom);
-    } else if (humanSeat && allJailedBeforeRoll && humanJailDiceAssist.isEnabled()) {
-      value = humanJailDiceAssist.rollDice(secureRandom, rt.jailAssistFailedRolls[seat]);
-    } else if (
-        humanSeat
-            && !allJailedBeforeRoll
-            && humanCaptureDiceAssist.isEnabled()
-            && humanCaptureDiceAssist.hasPawnOnBoard(rt, seat)
-    ) {
-      Integer captureDice =
-          humanCaptureDiceAssist.maybePickCaptureDice(
-              rt, seat, (token, dice) -> canUseDice(rt, seat, token, dice), secureRandom);
-      value = captureDice != null ? captureDice : secureRandom.nextInt(6) + 1;
+    } else if (rt.consecutiveSixes >= 2) {
+      value = secureRandom.nextInt(5) + 1;
     } else {
       value = secureRandom.nextInt(6) + 1;
     }
-    if (humanSeat && allJailedBeforeRoll && humanJailDiceAssist.isEnabled() && !opponentNearStart) {
+    boolean allJailedBeforeRoll = allTokensInJail(rt, seat);
+    boolean humanSeat = !rt.isBot[seat];
+    if (humanSeat && allJailedBeforeRoll) {
+      // Track jail streaks for legacy fields only — no dice assist
       if (value == 6) {
         rt.jailAssistFailedRolls[seat] = 0;
       } else {
@@ -614,15 +579,6 @@ public class GameEngineService {
       rt.consecutiveSixes += 1;
     } else {
       rt.consecutiveSixes = 0;
-    }
-
-    // Third consecutive six: voided — no move, turn passes, streak reset
-    if (rt.consecutiveSixes >= MAX_CONSECUTIVE_SIXES) {
-      rt.consecutiveSixes = 0;
-      clearDice(rt);
-      nextTurn(rt);
-      recordAction(rt, "PASS", seat, null, value);
-      return snapshot(rt);
     }
 
     rt.lastRollWasSix = value == 6;
@@ -858,27 +814,20 @@ public class GameEngineService {
   }
 
   private boolean resolveCapture(MatchRuntime rt, int moverSeat, int moverToken, int landPos) {
+    // LudoGame: any non-safe main landing captures ALL opponent tokens on that cell
     if (!isMain(landPos) || SAFE_AREAS.contains(landPos)) {
       return false;
     }
     boolean captured = false;
-    Map<Integer, List<int[]>> bySeat = new LinkedHashMap<>();
     for (int s = 0; s < rt.maxPlayers; s++) {
       if (s == moverSeat || rt.finished[s]) {
         continue;
       }
       for (int t = 0; t < 4; t++) {
         if (rt.tokens[s][t] == landPos) {
-          bySeat.computeIfAbsent(s, k -> new ArrayList<>()).add(new int[] {s, t});
+          rt.tokens[s][t] = JAIL;
+          captured = true;
         }
-      }
-    }
-    for (List<int[]> group : bySeat.values()) {
-      // Block (2+) is immune; only a single opponent token can be cut
-      if (group.size() == 1) {
-        int[] hit = group.get(0);
-        rt.tokens[hit[0]][hit[1]] = JAIL;
-        captured = true;
       }
     }
     return captured;
@@ -924,20 +873,13 @@ public class GameEngineService {
   }
 
   private boolean canUseDice(MatchRuntime rt, int seat, int tokenIndex, int dice) {
+    // LudoGame canMoveToken: jail needs 6; otherwise progress + dice <= finish (exact home)
     int pos = rt.tokens[seat][tokenIndex];
     if (isHome(pos)) {
       return false;
     }
     if (isJail(pos)) {
-      if (dice != 6) {
-        return false;
-      }
-      int start = rt.colors[seat].startTile();
-      // Start is always safe: mixed/own stacking unrestricted on safe cells
-      if (isSafe(start)) {
-        return true;
-      }
-      return countOwnOnCell(rt, seat, start, -1) < MAX_STACK;
+      return dice == 6;
     }
 
     int remaining = remainingDistance(rt.colors[seat], pos);
@@ -946,57 +888,10 @@ public class GameEngineService {
     }
 
     int dest = applySteps(rt.colors[seat], pos, dice);
-
     if (isHome(dest) && dice != remaining) {
       return false;
     }
-
-    if (isMain(dest)) {
-      // Safe cells: mixed occupancy OK; exempt from block / max-stack limits
-      if (isSafe(dest)) {
-        return true;
-      }
-      // Non-safe: cannot land on opponent block; own stack max MAX_STACK
-      if (hasOpponentBlock(rt, seat, dest)) {
-        return false;
-      }
-      if (countOwnOnCell(rt, seat, dest, tokenIndex) >= MAX_STACK) {
-        return false;
-      }
-    }
-
     return true;
-  }
-
-  private int countOwnOnCell(MatchRuntime rt, int seat, int cell, int excludeToken) {
-    if (!isMain(cell)) {
-      return 0;
-    }
-    int count = 0;
-    for (int t = 0; t < 4; t++) {
-      if (t == excludeToken) {
-        continue;
-      }
-      if (rt.tokens[seat][t] == cell) {
-        count++;
-      }
-    }
-    return count;
-  }
-
-  private boolean hasOpponentBlock(MatchRuntime rt, int moverSeat, int landPos) {
-    Map<Integer, Integer> counts = new LinkedHashMap<>();
-    for (int s = 0; s < rt.maxPlayers; s++) {
-      if (s == moverSeat) {
-        continue;
-      }
-      for (int t = 0; t < 4; t++) {
-        if (rt.tokens[s][t] == landPos) {
-          counts.merge(s, 1, Integer::sum);
-        }
-      }
-    }
-    return counts.values().stream().anyMatch(c -> c >= MAX_STACK);
   }
 
   private int remainingDistance(LudoColor color, int pos) {

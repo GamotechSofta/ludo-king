@@ -258,7 +258,13 @@ export const getInitialActionsTurnValue = (
  * Función que devuelve el valor aleatorio de un dado...
  * @returns
  */
-export const randomValueDice = () => randomNumber(1, 6) as TDicevalues;
+/**
+ * Fair dice like LudoGame: after two consecutive sixes, draw from 1–5 only.
+ */
+export const randomValueDice = (consecutiveSixes = 0) =>
+  (consecutiveSixes >= 2
+    ? randomNumber(1, 5)
+    : randomNumber(1, 6)) as TDicevalues;
 
 /**
  * Obtiene un valor aleatorio del dado,
@@ -279,7 +285,9 @@ export const getRandomValueDice = (
    */
   return {
     ...actionsTurn,
-    diceValue: diceValue || randomValueDice(),
+    diceValue:
+      diceValue ||
+      randomValueDice(actionsTurn.consecutiveSixes ?? 0),
     timerActivated: false,
     disabledDice: true,
     // Monotonic — wrapping 1..9 reused roll keys and skipped CSS spin.

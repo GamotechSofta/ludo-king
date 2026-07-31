@@ -45,8 +45,12 @@
     "safeCellsExemptFromBlockLimits": true,
     "homeColumnPrivateNoCapture": true,
     "homeTriangleFinishedPermanent": true,
-    "nonSafeMaxSameColorStack": 2,
-    "nonSafeOpponentBlockImmuneAndCannotLand": true,
-    "nonSafeOpponentBlockPassThroughAllowed": true
+    "nonSafeMaxSameColorStack": null,
+    "nonSafeOpponentBlockImmuneAndCannotLand": false,
+    "nonSafeOpponentBlockPassThroughAllowed": true,
+    "nonSafeCaptureAllOpponentTokensOnLand": true,
+    "fairDiceOnly": true,
+    "afterTwoConsecutiveSixesRollOneToFive": true,
+    "alignedWith": "LudoGame/GameplayModule"
   }
 }

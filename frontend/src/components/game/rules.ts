@@ -217,9 +217,7 @@ export const canTokenUseDice = (
   if (token.typeTile === EtypeTile.END) return false;
 
   if (token.typeTile === EtypeTile.JAIL) {
-    if (dice !== DICE_VALUE_GET_OUT_JAIL) return false;
-    // Start cell is always safe — stacking unrestricted there
-    return true;
+    return dice === DICE_VALUE_GET_OUT_JAIL;
   }
 
   const remaining = getRemainingDistance(token, positionGame);
@@ -228,88 +226,18 @@ export const canTokenUseDice = (
   const path = buildMovePath(token, positionGame, dice);
   if (!path.length || path.length !== dice) return false;
 
-  const finalCell = path[path.length - 1];
-  if (!finalCell) return false;
-
-  if (finalCell.typeTile === EtypeTile.NORMAL) {
-    // Safe cells: mixed occupancy OK; exempt from block / max-stack limits
-    if (SAFE_AREAS.includes(finalCell.positionTile)) {
-      return true;
-    }
-    // Spec default: opponent blocks may be passed through; cannot land on them
-    if (
-      hasOpponentBlock(
-        listTokens,
-        playerIndex,
-        finalCell.typeTile,
-        finalCell.positionTile
-      )
-    ) {
-      return false;
-    }
-    if (
-      countOwnOnCell(
-        listTokens,
-        playerIndex,
-        finalCell.positionTile,
-        token.index
-      ) >= 2
-    ) {
-      return false;
-    }
-  }
-
+  // LudoGame: no block / max-stack landing bans — only distance legality
   return true;
-};
-
-const countOwnOnCell = (
-  listTokens: IListTokens[],
-  playerIndex: number,
-  positionTile: number,
-  excludeTokenIndex: number
-) => {
-  let count = 0;
-  listTokens[playerIndex].tokens.forEach((token, idx) => {
-    if (idx === excludeTokenIndex) return;
-    if (
-      token.typeTile === EtypeTile.NORMAL &&
-      token.positionTile === positionTile
-    ) {
-      count += 1;
-    }
-  });
-  return count;
-};
-
-const hasOpponentBlock = (
-  listTokens: IListTokens[],
-  moverPlayerIndex: number,
-  typeTile: TtypeTile,
-  positionTile: number
-) => {
-  const onCell = getTokensOnCell(listTokens, typeTile, positionTile).filter(
-    (t) => t.playerIndex !== moverPlayerIndex
-  );
-  const byPlayer: Record<number, number> = {};
-  onCell.forEach(({ playerIndex }) => {
-    byPlayer[playerIndex] = (byPlayer[playerIndex] || 0) + 1;
-  });
-  return Object.values(byPlayer).some((count) => count >= 2);
 };
 
 export const isSafeCell = (
   typeTile: TtypeTile,
   positionTile: number,
-  tokensOnCell: { playerIndex: number; token: IToken }[]
+  _tokensOnCell?: { playerIndex: number; token: IToken }[]
 ) => {
+  // LudoGame: only marked safe tiles (starts + stars) — stacks are not safe
   if (typeTile !== EtypeTile.NORMAL) return true;
-  if (SAFE_AREAS.includes(positionTile)) return true;
-
-  const byPlayer: Record<number, number> = {};
-  tokensOnCell.forEach(({ playerIndex }) => {
-    byPlayer[playerIndex] = (byPlayer[playerIndex] || 0) + 1;
-  });
-  return Object.values(byPlayer).some((count) => count >= 2);
+  return SAFE_AREAS.includes(positionTile);
 };
 
 export const recomputeStacking = (listTokens: IListTokens[]): IListTokens[] => {
@@ -474,7 +402,7 @@ export const sendTokenToJail = (
   return applyTokenCell(token, positionGame, EtypeTile.JAIL, token.index, false);
 };
 
-/** Opponents that would be sent to jail if this mover lands (single pawn, unsafe). */
+/** Opponents sent to jail on landing — LudoGame captures all on non-safe cells. */
 export const findCaptureVictims = (
   listTokens: IListTokens[],
   playerIndex: number,
@@ -493,23 +421,12 @@ export const findCaptureVictims = (
 
   if (isSafeCell(mover.typeTile, mover.positionTile, onCell)) return [];
 
-  const opponents = onCell.filter((t) => t.playerIndex !== playerIndex);
-  const byPlayer: Record<number, typeof opponents> = {};
-  opponents.forEach((o) => {
-    if (!byPlayer[o.playerIndex]) byPlayer[o.playerIndex] = [];
-    byPlayer[o.playerIndex].push(o);
-  });
-
-  const victims: Array<{ playerIndex: number; tokenIndex: number }> = [];
-  Object.values(byPlayer).forEach((tokens) => {
-    if (tokens.length === 1) {
-      victims.push({
-        playerIndex: tokens[0].playerIndex,
-        tokenIndex: tokens[0].tokenIndex,
-      });
-    }
-  });
-  return victims;
+  return onCell
+    .filter((t) => t.playerIndex !== playerIndex)
+    .map((t) => ({
+      playerIndex: t.playerIndex,
+      tokenIndex: t.tokenIndex,
+    }));
 };
 
 export const resolveLanding = (

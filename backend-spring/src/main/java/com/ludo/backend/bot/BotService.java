@@ -4,9 +4,9 @@ import static com.ludo.backend.game.BoardConstants.JAIL;
 import static com.ludo.backend.game.BoardConstants.isHome;
 import static com.ludo.backend.game.BoardConstants.isJail;
 
+import com.ludo.backend.bot.superior.SuperiorBotBridge;
 import com.ludo.backend.game.GameEngineService;
 import com.ludo.backend.game.GameSnapshot;
-import com.ludo.backend.game.LudoColor;
 import com.ludo.backend.room.BotDifficulty;
 import java.util.ArrayList;
 import java.util.List;
@@ -18,8 +18,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
- * Bot turn loop. Decision-making is delegated to {@link BotDynamicAiEngine}.
- * Does not alter dice physics, movement rules, or sync — only chooses among legal options.
+ * Bot turn loop. Move selection uses LudoGame {@link SuperiorBotBridge} / SuperiorBotEngine.
+ * Dice are never manipulated — only chooses among legal options after a fair roll.
  */
 @Service
 public class BotService {
@@ -27,7 +27,7 @@ public class BotService {
   private static final Logger log = LoggerFactory.getLogger(BotService.class);
 
   private final GameEngineService gameEngineService;
-  private final BotDynamicAiEngine aiEngine;
+  private final SuperiorBotBridge superiorBotBridge;
   private final int rollDelayMinMs;
   private final int rollDelayMaxMs;
   private final int thinkDelayMinMs;
@@ -35,14 +35,14 @@ public class BotService {
 
   public BotService(
       GameEngineService gameEngineService,
-      BotDynamicAiEngine aiEngine,
+      SuperiorBotBridge superiorBotBridge,
       @Value("${ludo.bot.roll-delay-min-ms:450}") int rollDelayMinMs,
       @Value("${ludo.bot.roll-delay-max-ms:750}") int rollDelayMaxMs,
       @Value("${ludo.bot.think-delay-min-ms:180}") int thinkDelayMinMs,
       @Value("${ludo.bot.think-delay-max-ms:350}") int thinkDelayMaxMs
   ) {
     this.gameEngineService = gameEngineService;
-    this.aiEngine = aiEngine;
+    this.superiorBotBridge = superiorBotBridge;
     this.rollDelayMinMs = Math.max(0, rollDelayMinMs);
     this.rollDelayMaxMs = Math.max(this.rollDelayMinMs + 1, rollDelayMaxMs);
     this.thinkDelayMinMs = Math.max(0, thinkDelayMinMs);
@@ -84,16 +84,8 @@ public class BotService {
       try {
         if (GameEngineService.PHASE_ROLL.equals(snap.getPhase())) {
           sleepBeforeDiceRoll();
-          Integer assistDice =
-              aiEngine.maybeAssistDice(
-                  roomId,
-                  snap,
-                  seat,
-                  diff,
-                  (token, dice) ->
-                      gameEngineService.canBotUseDiceForAssist(roomId, seat, token, dice),
-                  ThreadLocalRandom.current());
-          snap = gameEngineService.rollDiceAsSeat(roomId, seat, assistDice);
+          // LudoGame-style: fair dice only — never force a face
+          snap = gameEngineService.rollDiceAsSeat(roomId, seat, null);
           publish(onStep, snap);
           if (snap.getCurrentSeatIndex() != seat
               || !GameEngineService.PHASE_MOVE.equals(snap.getPhase())) {
@@ -163,7 +155,6 @@ public class BotService {
     if (colorName == null || snap.getDiceList() == null) {
       return moves.get(0);
     }
-    LudoColor color = LudoColor.valueOf(colorName);
     List<Integer> ownPositions = snap.getTokenPositions().get(colorName);
     if (ownPositions == null) {
       return moves.get(0);
@@ -171,8 +162,8 @@ public class BotService {
 
     List<int[]> sole = soleActivePawnOnlyMoves(moves, ownPositions);
     List<int[]> candidates = sole != null ? sole : moves;
-    return aiEngine.pickBestMove(
-        roomId, snap, seat, difficulty, color, ownPositions, candidates);
+    int[] chosen = superiorBotBridge.chooseMove(snap, seat, candidates, difficulty);
+    return chosen != null ? chosen : candidates.get(0);
   }
 
   private static List<int[]> soleActivePawnOnlyMoves(
