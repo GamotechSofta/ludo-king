@@ -429,6 +429,7 @@ const OnlineGame = ({
         seat,
         diceList: [value],
       };
+      diceOwnerSeatRef.current = seat;
       applyDiceOwnerTurn(snap, seat);
       // Always bump diceRollNumber — bonus 6 after 6 must not reuse the same
       // visual key or RenderDice skips tumble / handleDoneDice for bots.
@@ -812,12 +813,18 @@ const OnlineGame = ({
         );
         applyDiceOwnerTurn(snapshot, snapshot.currentSeatIndex);
       } else {
+        // Next seat owns the die. Never carry the previous player's face/roll#
+        // onto them — that retriggers a ghost tumble on handoff. Real rolls for
+        // the new seat come from flashDiceOnSeat / apply() with a fresh roll#.
         applyDiceOwnerTurn(snapshot, snapshot.currentSeatIndex);
-        setActionsTurn((prev) => ({
-          ...actionsTurnFromSnapshot(snapshot, mySeat, prev),
-          diceValue: prev.diceValue,
-          diceRollNumber: prev.diceRollNumber,
-        }));
+        setActionsTurn((prev) =>
+          actionsTurnFromSnapshot(
+            snapshot,
+            mySeat,
+            prev,
+            prevOwner >= 0 ? prevOwner : undefined
+          )
+        );
       }
     }
   }, [snapshot, mySeat, applyDiceOwnerTurn]);
@@ -1829,13 +1836,42 @@ const OnlineGame = ({
         syncBoardFromSnapshot(live);
       } else if (live.phase === "AWAITING_MOVE") {
         setListTokens(listTokensFromSnapshot(live, mySeat, false));
-        setActionsTurn((prev) => ({
-          ...prev,
-          ...actionsTurnFromSnapshot(live, mySeat, prev),
-          diceValue: prev.diceValue,
-          diceRollNumber: prev.diceRollNumber,
-          actionsBoardGame: EActionsBoardGame.SELECT_TOKEN,
-        }));
+        // Seat already moved — reset prior roll identity so the new profile
+        // does not reuse this tumble key (ghost spin on dice pass).
+        setActionsTurn((prev) => {
+          const next = actionsTurnFromSnapshot(
+            live,
+            mySeat,
+            prev,
+            owner >= 0 && owner !== live.currentSeatIndex ? owner : undefined
+          );
+          const serverFace =
+            (live.diceList?.length ?? 0) > 0
+              ? live.diceList![live.diceList!.length - 1]
+              : 0;
+          if (
+            serverFace >= 1 &&
+            serverFace <= 6 &&
+            diceOwnerSeatRef.current === live.currentSeatIndex &&
+            prev.diceValue === serverFace &&
+            (prev.diceRollNumber || 0) > 0
+          ) {
+            // Keep an in-progress flash for the active seat only.
+            return {
+              ...next,
+              diceValue: prev.diceValue,
+              diceRollNumber: prev.diceRollNumber,
+              actionsBoardGame: EActionsBoardGame.SELECT_TOKEN,
+            };
+          }
+          return {
+            ...next,
+            actionsBoardGame: EActionsBoardGame.SELECT_TOKEN,
+          };
+        });
+        if (diceOwnerSeatRef.current !== live.currentSeatIndex) {
+          diceOwnerSeatRef.current = live.currentSeatIndex;
+        }
       }
       return;
     }
