@@ -35,10 +35,28 @@ export function isDuplicateOpponentRollFlash(
   const [lastSeat, lastValue, lastSeq, lastKind] = lastFlashKey.split("|");
   if (Number(lastSeat) !== seat || Number(lastValue) !== value) return false;
   if (Number(lastSeq) === actionSeq) return true;
+  // ROLL → MOVE for the same roll (seq may jump by more than 1 under load)
+  if (kind === "MOVE" && lastKind === "ROLL") {
+    const delta = actionSeq - Number(lastSeq);
+    return delta >= 1 && delta <= 3;
+  }
+  return false;
+}
+
+/** True when this seat already showed `diceValue` this turn (skip second tumble). */
+export function opponentDiceAlreadyShowing(
+  ownerSeat: number,
+  diceFace: number,
+  diceRollNumber: number,
+  seat: number,
+  diceValue: number
+): boolean {
   return (
-    kind === "MOVE" &&
-    lastKind === "ROLL" &&
-    actionSeq === Number(lastSeq) + 1
+    ownerSeat === seat &&
+    diceFace === diceValue &&
+    diceFace >= 1 &&
+    diceFace <= 6 &&
+    diceRollNumber > 0
   );
 }
 
@@ -112,6 +130,7 @@ export function canRequestOnlineRoll(
 /**
  * Human roll gate: do not block the active player on generic isBusy or a stuck
  * rolling flag after the network request has finished.
+ * Always block while local bot/opponent dice or pawn playback is still running.
  */
 export function buildHumanOnlineRollGate(
   snapshot: IGameSnapshot | null,
@@ -122,6 +141,8 @@ export function buildHumanOnlineRollGate(
     isRolling: boolean;
     isActionInFlight: boolean;
     disabledDice: boolean;
+    /** Bot/opponent dice tumble, move hop, or queued snap still playing locally. */
+    localPlaybackPending?: boolean;
   }
 ): OnlineRollGate {
   const humanRollTurn =
@@ -129,17 +150,23 @@ export function buildHumanOnlineRollGate(
     mySeat >= 0 &&
     snapshot.currentSeatIndex === mySeat &&
     isAwaitingRoll(snapshot);
+  const playback = !!state.localPlaybackPending;
 
   return {
     mySeat,
-    isBusy: humanRollTurn ? state.isAnimating : state.isBusy,
-    isAnimating: state.isAnimating,
-    isRolling: humanRollTurn
-      ? state.isRolling && state.isActionInFlight
-      : state.isRolling,
+    isBusy: playback || (humanRollTurn ? state.isAnimating : state.isBusy),
+    isAnimating: playback || state.isAnimating,
+    isRolling: playback
+      ? true
+      : humanRollTurn
+        ? state.isRolling && state.isActionInFlight
+        : state.isRolling,
     isActionInFlight: state.isActionInFlight,
-    disabledDice:
-      humanRollTurn && !state.isActionInFlight ? false : state.disabledDice,
+    disabledDice: playback
+      ? true
+      : humanRollTurn && !state.isActionInFlight
+        ? false
+        : state.disabledDice,
   };
 }
 

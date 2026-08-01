@@ -186,6 +186,9 @@ export const ROLL_TIME_VALUE = 0.5;
 /** Online: wait for dice spin before pawn hops / rollDone side-effects. */
 export const DICE_ROLL_ANIM_MS = Math.round(ROLL_TIME_VALUE * 1000);
 
+/** After bot/opponent dice tumble, pause before pawn starts moving. */
+export const BOT_POST_DICE_DELAY_MS = 450;
+
 /** Pause before the die handoff to the next player (online). */
 export const ONLINE_TURN_PASS_DELAY_MS = 700;
 

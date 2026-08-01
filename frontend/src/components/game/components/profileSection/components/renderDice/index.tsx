@@ -106,7 +106,6 @@ const RenderDice = ({
     if (lastAnimatedRollRef.current === rollKey) return;
 
     let cancelled = false;
-    let started = false;
 
     const kick = (attempt: number) => {
       if (cancelled) return;
@@ -125,7 +124,6 @@ const RenderDice = ({
             handleDoneDiceRef.current();
           }
         }, Math.round(ROLL_TIME_VALUE * 1000) + 220);
-        started = true;
         return;
       }
       if (attempt < 20) {
@@ -141,9 +139,8 @@ const RenderDice = ({
 
     return () => {
       cancelled = true;
-      if (!started && lastAnimatedRollRef.current === rollKey) {
-        lastAnimatedRollRef.current = "";
-      }
+      // Keep lastAnimatedRollRef — clearing it re-triggers tumble under React
+      // Strict Mode / fast remount (looks like a double bot dice roll).
     };
   }, [hasTurn, value, diceRollNumber]);
 

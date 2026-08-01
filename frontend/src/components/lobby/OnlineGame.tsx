@@ -20,6 +20,7 @@ import {
   EPositionProfiles,
   EtypeTile,
   DICE_ROLL_ANIM_MS,
+  BOT_POST_DICE_DELAY_MS,
   ONLINE_TURN_PASS_DELAY_MS,
   ONLINE_TOKEN_MOVEMENT_INTERVAL_VALUE,
   MAX_PLAYER_CHANCES,
@@ -90,6 +91,7 @@ import {
   isNoMovePassSnapshot,
   moveDiceValueFromSnapshot,
   onlineDiceDisabled,
+  opponentDiceAlreadyShowing,
   opponentRollFlashKey,
   priorOpponentRollVisible,
   rollFlashKind,
@@ -1166,6 +1168,9 @@ const OnlineGame = ({
         if (snap.currentSeatIndex !== mySeat) {
           playDiceRollingOnce(flashKey);
           setPlayers(playersForView(snap, mySeat, roomId));
+          // Lock human dice until bot/opponent tumble + move fully finish.
+          isBusyRef.current = true;
+          setIsBusy(true);
           flashDiceOnSeat(snap, snap.currentSeatIndex, value);
           prevSnapRef.current = {
             ...snap,
@@ -1178,7 +1183,7 @@ const OnlineGame = ({
             finishDiceRollAnimation();
             const next = pendingSnapRef.current.shift();
             if (next) drain(next);
-          }, DICE_ROLL_ANIM_MS + 80);
+          }, DICE_ROLL_ANIM_MS + BOT_POST_DICE_DELAY_MS);
         }
         return;
       }
@@ -1208,6 +1213,9 @@ const OnlineGame = ({
         lastProcessedRollIdRef.current = "";
         lastDiceSigRef.current = diceSig;
         setPlayers(playersForView(snap, mySeat, roomId));
+        // Lock human dice until pass flash + handoff complete.
+        isBusyRef.current = true;
+        setIsBusy(true);
 
         const rollerSeat =
           snap.lastActionSeat ?? prev?.currentSeatIndex ?? snap.currentSeatIndex;
@@ -1328,15 +1336,32 @@ const OnlineGame = ({
           return;
         }
 
-        // Bot/opponent often emit MOVE without a prior AWAITING_MOVE — flash die first.
+        // Bot/opponent: one tumble per roll. Never re-flash on MOVE if ROLL
+        // already showed this face (or the die is still spinning).
         const flashKey = `${snap.actionSeq || 0}|${moved.seat}|${diceValue}`;
         const priorRollAlreadyVisible = priorOpponentRollVisible(
           prev,
           moved.seat,
           diceValue as number
         );
+        const alreadyShowing = opponentDiceAlreadyShowing(
+          diceOwnerSeatRef.current,
+          (actionsTurnRef.current.diceValue || 0) as number,
+          actionsTurnRef.current.diceRollNumber || 0,
+          moved.seat,
+          diceValue as number
+        );
+        const pendingSameRoll =
+          !!pendingDiceRef.current &&
+          pendingDiceRef.current.seat === moved.seat &&
+          (pendingDiceRef.current.diceList || []).includes(diceValue as number);
 
-        if (!diceRollPendingRef.current && !priorRollAlreadyVisible) {
+        if (
+          !diceRollPendingRef.current &&
+          !priorRollAlreadyVisible &&
+          !alreadyShowing &&
+          !pendingSameRoll
+        ) {
           const flashed = flashDiceOnSeat(
             snap,
             moved.seat,
@@ -1347,10 +1372,25 @@ const OnlineGame = ({
           }
         }
 
+        // Bot/opponent: lock human dice for the whole tumble → delay → hop.
+        if (moved.seat !== mySeat) {
+          animatingRef.current = true;
+          isBusyRef.current = true;
+          setIsBusy(true);
+        }
+
         await waitForDiceRollAnimation();
         if (cancelled) {
           if (seq === applySeqRef.current) abandonAnimation();
           return;
+        }
+        // Bot/opponent: brief pause after dice face settles, then pawn hops.
+        if (moved.seat !== mySeat) {
+          await rafDelay(BOT_POST_DICE_DELAY_MS, animCancelRef.current);
+          if (cancelled || seq !== applySeqRef.current) {
+            if (seq === applySeqRef.current) abandonAnimation();
+            return;
+          }
         }
         // Freeze board BEFORE any paint of destination positions
         animatingRef.current = true;
@@ -1456,6 +1496,11 @@ const OnlineGame = ({
   const handleSelectDice = useCallback(
     (_diceValue?: TDicevalues) => {
       const live = snapshotRef.current ?? snapshot;
+      const localPlaybackPending =
+        animatingRef.current ||
+        diceRollPendingRef.current ||
+        passFlashUntilRef.current > performance.now() ||
+        pendingSnapRef.current.length > 0;
       if (
         !canRequestOnlineRoll(
           live,
@@ -1465,6 +1510,7 @@ const OnlineGame = ({
             isRolling: rollingRef.current,
             isActionInFlight: isActionInFlight(),
             disabledDice: actionsTurnRef.current.disabledDice,
+            localPlaybackPending,
           })
         )
       ) {
@@ -1773,6 +1819,8 @@ const OnlineGame = ({
       if (diceRollPendingRef.current || isActionInFlight()) return;
       // Let a PASS roll-flash finish on the previous seat first
       if (passFlashUntilRef.current > performance.now()) return;
+      // Bot/opponent snap still queued — human must not roll yet
+      if (pendingSnapRef.current.length > 0) return;
       if (onlineDiceDisabled(live, mySeat)) return;
 
       // Pawns still carrying an earlier AWAITING_MOVE's selectable rings look
@@ -2073,6 +2121,12 @@ const OnlineGame = ({
     turnColor,
     actionsTurn: {
       ...actionsTurn,
+      // Keep dice locked while bot/opponent local playback (busy/rolling) runs.
+      disabledDice:
+        !!actionsTurn.disabledDice ||
+        diceRolling ||
+        isBusy ||
+        (snapshot != null && onlineDiceDisabled(snapshot, mySeat)),
       timerActivated:
         snapshot?.phase === "AWAITING_ROLL" ||
         snapshot?.phase === "AWAITING_MOVE",

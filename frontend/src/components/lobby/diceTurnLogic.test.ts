@@ -30,14 +30,39 @@ describe("buildHumanOnlineRollGate", () => {
     expect(gate.isRolling).toBe(false);
     expect(gate.disabledDice).toBe(false);
   });
+
+  it("blocks human dice while local bot/opponent playback is pending", () => {
+    const snap: IGameSnapshot = {
+      roomId: "r1",
+      phase: "AWAITING_ROLL",
+      currentSeatIndex: 0,
+      currentColor: "YELLOW",
+      diceValue: 0,
+      diceList: [],
+      tokenPositions: { YELLOW: [-1, -1, -1, -1] },
+      legalTokenIndexes: [],
+    };
+    const gate = buildHumanOnlineRollGate(snap, 0, {
+      isBusy: false,
+      isAnimating: false,
+      isRolling: false,
+      isActionInFlight: false,
+      disabledDice: false,
+      localPlaybackPending: true,
+    });
+    expect(gate.disabledDice).toBe(true);
+    expect(gate.isAnimating).toBe(true);
+    expect(gate.isRolling).toBe(true);
+  });
 });
 
 describe("opponent roll flash dedup", () => {
   it("treats ROLL and MOVE actionSeq as one visual roll", () => {
     const rollKey = opponentRollFlashKey(1, 4, 10, "ROLL");
     expect(isDuplicateOpponentRollFlash(rollKey, 1, 4, 11, "MOVE")).toBe(true);
+    expect(isDuplicateOpponentRollFlash(rollKey, 1, 4, 12, "MOVE")).toBe(true);
     expect(isDuplicateOpponentRollFlash(rollKey, 1, 4, 10, "ROLL")).toBe(true);
-    expect(isDuplicateOpponentRollFlash(rollKey, 1, 4, 12, "MOVE")).toBe(false);
+    expect(isDuplicateOpponentRollFlash(rollKey, 1, 4, 14, "MOVE")).toBe(false);
     expect(isDuplicateOpponentRollFlash(rollKey, 1, 6, 11, "MOVE")).toBe(false);
   });
 
