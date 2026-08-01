@@ -659,6 +659,14 @@ export const pickBotMove = (
   const moves = getPossibleMoves(listTokens, playerIndex, diceList);
   if (!moves.length) return null;
 
+  // Kill first whenever a legal move captures an opponent.
+  const killMoves = moves.filter((m) =>
+    moveWouldCapture(listTokens, playerIndex, m.tokenIndex, diceList[m.diceIndex].value)
+  );
+  if (killMoves.length) {
+    return killMoves[0];
+  }
+
   const jailMoves = moves.filter(
     (m) =>
       listTokens[playerIndex].tokens[m.tokenIndex].typeTile === EtypeTile.JAIL
@@ -669,6 +677,32 @@ export const pickBotMove = (
     (a, b) => diceList[b.diceIndex].value - diceList[a.diceIndex].value
   );
   return sorted[0];
+};
+
+/** True if moving this token by `dice` lands on a capturable opponent. */
+const moveWouldCapture = (
+  listTokens: IListTokens[],
+  playerIndex: number,
+  tokenIndex: number,
+  dice: number
+): boolean => {
+  const group = listTokens[playerIndex];
+  const token = group?.tokens[tokenIndex];
+  if (!token || !group) return false;
+  const path = buildMovePath(token, group.positionGame, dice);
+  if (!path.length) return false;
+  const land = path[path.length - 1];
+  if (land.typeTile !== EtypeTile.NORMAL) return false;
+
+  const onCell = getTokensOnCell(
+    listTokens,
+    land.typeTile,
+    land.positionTile
+  ).filter(
+    (t) => !(t.playerIndex === playerIndex && t.tokenIndex === tokenIndex)
+  );
+  if (isSafeCell(land.typeTile, land.positionTile, onCell)) return false;
+  return onCell.some((t) => t.playerIndex !== playerIndex);
 };
 
 export const isGameOver = (players: IPlayer[]) =>

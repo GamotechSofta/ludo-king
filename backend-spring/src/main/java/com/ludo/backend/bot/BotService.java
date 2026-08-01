@@ -7,9 +7,11 @@ import static com.ludo.backend.game.BoardConstants.isJail;
 import com.ludo.backend.bot.superior.SuperiorBotBridge;
 import com.ludo.backend.game.GameEngineService;
 import com.ludo.backend.game.GameSnapshot;
+import com.ludo.backend.game.LudoColor;
 import com.ludo.backend.room.BotDifficulty;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -159,8 +161,56 @@ public class BotService {
 
     List<int[]> sole = soleActivePawnOnlyMoves(moves, ownPositions);
     List<int[]> candidates = sole != null ? sole : moves;
+
+    // Hard rule on real board cells: if any legal move kills, always take a kill.
+    List<int[]> kills = captureMoves(snap, seat, colorName, ownPositions, candidates);
+    if (!kills.isEmpty()) {
+      if (kills.size() == 1) {
+        return kills.get(0);
+      }
+      int[] amongKills = superiorBotBridge.chooseMove(snap, seat, kills, difficulty);
+      return amongKills != null ? amongKills : kills.get(0);
+    }
+
     int[] chosen = superiorBotBridge.chooseMove(snap, seat, candidates, difficulty);
     return chosen != null ? chosen : candidates.get(0);
+  }
+
+  /** Legal moves that land on a capturable opponent (unsafe main cell, single token). */
+  private static List<int[]> captureMoves(
+      GameSnapshot snap,
+      int seat,
+      String colorName,
+      List<Integer> ownPositions,
+      List<int[]> moves) {
+    LudoColor color = BotBoardMath.parseColor(colorName);
+    if (color == null || moves == null || snap.getDiceList() == null) {
+      return List.of();
+    }
+    Map<String, List<Integer>> all = snap.getTokenPositions();
+    List<String> colors = snap.getSeatColors();
+    boolean[] isBot = snap.getIsBot();
+    List<int[]> kills = new ArrayList<>();
+    for (int[] m : moves) {
+      if (m == null || m.length < 2) {
+        continue;
+      }
+      int token = m[0];
+      int diceIndex = m[1];
+      if (token < 0 || token >= ownPositions.size()) {
+        continue;
+      }
+      if (diceIndex < 0 || diceIndex >= snap.getDiceList().size()) {
+        continue;
+      }
+      int from = ownPositions.get(token) == null ? JAIL : ownPositions.get(token);
+      int dice = snap.getDiceList().get(diceIndex);
+      int to = BotBoardMath.applySteps(color, from, dice);
+      if (BotBoardMath.findCaptureVictim(seat, to, all, colors, isBot) != null) {
+        kills.add(m);
+      }
+    }
+    return kills;
   }
 
   private static List<int[]> soleActivePawnOnlyMoves(
