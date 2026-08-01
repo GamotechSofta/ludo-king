@@ -1,5 +1,6 @@
 package com.ludo.backend.bot;
 
+import static com.ludo.backend.game.BoardConstants.HOME;
 import static com.ludo.backend.game.BoardConstants.JAIL;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -14,6 +15,54 @@ import java.util.Random;
 import org.junit.jupiter.api.Test;
 
 class BotKillDiceAssistTest {
+
+  @Test
+  void forcesKillDice1to5WhenHumanHasTwoHome() {
+    // HOME = 200. Bot GREEN at 13 can capture human YELLOW at 16 with dice 3.
+    GameSnapshot snap =
+        snapshot(
+            new boolean[] {true, false},
+            Map.of(
+                "GREEN", Arrays.asList(13, JAIL, JAIL, JAIL),
+                "YELLOW", Arrays.asList(16, HOME, HOME, JAIL)),
+            List.of("GREEN", "YELLOW"));
+
+    assertEquals(
+        3,
+        BotKillDiceAssist.maybeForceKillDiceWhenHumanHasTwoHome(
+            snap, 0, (token, d) -> token == 0 && d >= 1 && d <= 5 && d == 3));
+  }
+
+  @Test
+  void doesNotForceKillWhenHumanHasFewerThanTwoHome() {
+    GameSnapshot snap =
+        snapshot(
+            new boolean[] {true, false},
+            Map.of(
+                "GREEN", Arrays.asList(13, JAIL, JAIL, JAIL),
+                "YELLOW", Arrays.asList(16, HOME, JAIL, JAIL)),
+            List.of("GREEN", "YELLOW"));
+
+    assertNull(
+        BotKillDiceAssist.maybeForceKillDiceWhenHumanHasTwoHome(
+            snap, 0, (token, d) -> token == 0 && d == 3));
+  }
+
+  @Test
+  void doesNotForceKillDiceOutsideOneToFive() {
+    // Only legal capture would need dice 6 — must not force it.
+    GameSnapshot snap =
+        snapshot(
+            new boolean[] {true, false},
+            Map.of(
+                "GREEN", Arrays.asList(13, JAIL, JAIL, JAIL),
+                "YELLOW", Arrays.asList(19, HOME, HOME, JAIL)),
+            List.of("GREEN", "YELLOW"));
+
+    assertNull(
+        BotKillDiceAssist.maybeForceKillDiceWhenHumanHasTwoHome(
+            snap, 0, (token, d) -> token == 0 && d == 6));
+  }
 
   @Test
   void returnsExactLegalCaptureDice() {

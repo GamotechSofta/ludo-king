@@ -21,7 +21,9 @@ import org.springframework.stereotype.Service;
  * Bot action executor. Delays live in {@link BotTurnCoordinator} (LudoGame-style
  * deadlines) — this class never sleeps, so workers stay free under load.
  *
- * <p>Dice are never manipulated; move pick uses SuperiorBotEngine.
+ * <p>Fair dice by default; one exception: when a human has 2+ pawns home and a
+ * human pawn is in kill range 1–5, force that capture die. Move pick uses
+ * SuperiorBotEngine (kill-first among legal moves).
  */
 @Service
 public class BotService {
@@ -59,7 +61,13 @@ public class BotService {
 
     try {
       if (GameEngineService.PHASE_ROLL.equals(snap.getPhase())) {
-        snap = gameEngineService.rollDiceAsSeat(roomId, seat, null);
+        Integer forced =
+            BotKillDiceAssist.maybeForceKillDiceWhenHumanHasTwoHome(
+                snap,
+                seat,
+                (token, dice) ->
+                    gameEngineService.canBotUseDiceForAssist(roomId, seat, token, dice));
+        snap = gameEngineService.rollDiceAsSeat(roomId, seat, forced);
         publish(onStep, snap);
         return snap;
       }

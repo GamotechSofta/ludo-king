@@ -71,6 +71,42 @@ final class BotKillDiceAssist {
     return best.dice;
   }
 
+  /**
+   * When any human has 2+ pawns home, force a legal kill die in range 1–5 if a
+   * human pawn is reachable. Guaranteed (no probability). Returns null otherwise.
+   */
+  static Integer maybeForceKillDiceWhenHumanHasTwoHome(
+      GameSnapshot snap, int botSeat, MoveLegality legality
+  ) {
+    if (snap == null || legality == null || botSeat < 0) {
+      return null;
+    }
+    if (!humanHasAtLeastTwoHome(snap)) {
+      return null;
+    }
+    CaptureOpportunity best =
+        pickBestOpportunityInDiceRange(snap, botSeat, legality, 1, 5, true);
+    return best == null ? null : best.dice;
+  }
+
+  private static boolean humanHasAtLeastTwoHome(GameSnapshot snap) {
+    boolean[] isBot = snap.getIsBot();
+    List<String> seatColors = snap.getSeatColors();
+    Map<String, List<Integer>> all = snap.getTokenPositions();
+    if (isBot == null || seatColors == null || all == null) {
+      return false;
+    }
+    for (int s = 0; s < seatColors.size(); s++) {
+      if (s < isBot.length && isBot[s]) {
+        continue;
+      }
+      if (BotBoardMath.countHome(all.get(seatColors.get(s))) >= 2) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   static Integer pickBestCaptureDice(
       GameSnapshot snap,
       int botSeat,
@@ -88,25 +124,80 @@ final class BotKillDiceAssist {
       MoveLegality legality,
       BotMatchAnalysis analysis
   ) {
-    if (snap == null || legality == null || botSeat < 0) {
+    List<CaptureOpportunity> ops =
+        collectOpportunities(snap, botSeat, legality, 1, 6, false, analysis);
+    CaptureOpportunity top = selectBest(ops);
+    if (top == null) {
       return null;
+    }
+    // Anti-gang: if hunting leader human but not designated, pick next non-leader if any
+    if (analysis != null
+        && top.victimIsLeader
+        && top.victim.isHuman
+        && !analysis.allowAggressiveLeaderHunt) {
+      for (CaptureOpportunity o : ops) {
+        if (!o.victimIsLeader) {
+          return o;
+        }
+      }
+    }
+    return top;
+  }
+
+  private static CaptureOpportunity pickBestOpportunityInDiceRange(
+      GameSnapshot snap,
+      int botSeat,
+      MoveLegality legality,
+      int minDice,
+      int maxDice,
+      boolean humanVictimsOnly
+  ) {
+    return selectBest(
+        collectOpportunities(snap, botSeat, legality, minDice, maxDice, humanVictimsOnly, null));
+  }
+
+  private static CaptureOpportunity selectBest(List<CaptureOpportunity> ops) {
+    if (ops == null || ops.isEmpty()) {
+      return null;
+    }
+    // Target priority: leader → closest home → progress → unsafe victim → safe landing
+    ops.sort(
+        Comparator
+            .comparing((CaptureOpportunity o) -> !o.victimIsLeader)
+            .thenComparingInt(o -> o.victimRemaining)
+            .thenComparing(Comparator.comparingInt((CaptureOpportunity o) -> o.victimProgress).reversed())
+            .thenComparing(o -> !o.safeAfter));
+    return ops.get(0);
+  }
+
+  private static List<CaptureOpportunity> collectOpportunities(
+      GameSnapshot snap,
+      int botSeat,
+      MoveLegality legality,
+      int minDice,
+      int maxDice,
+      boolean humanVictimsOnly,
+      BotMatchAnalysis analysis
+  ) {
+    if (snap == null || legality == null || botSeat < 0) {
+      return List.of();
     }
     if (snap.getIsBot() == null
         || botSeat >= snap.getIsBot().length
         || !snap.getIsBot()[botSeat]) {
-      return null;
+      return List.of();
     }
 
     List<String> seatColors = snap.getSeatColors();
     if (seatColors == null || botSeat >= seatColors.size()) {
-      return null;
+      return List.of();
     }
     String colorName = seatColors.get(botSeat);
     LudoColor color = BotBoardMath.parseColor(colorName);
     List<Integer> own = snap.getTokenPositions().get(colorName);
     Map<String, List<Integer>> all = snap.getTokenPositions();
     if (color == null || own == null || all == null) {
-      return null;
+      return List.of();
     }
 
     boolean[] isBot = analysis != null ? analysis.isBot : snap.getIsBot();
@@ -118,13 +209,16 @@ final class BotKillDiceAssist {
       if (isJail(from) || isHome(from)) {
         continue;
       }
-      for (int dice = 1; dice <= 6; dice++) {
+      for (int dice = minDice; dice <= maxDice; dice++) {
         if (!legality.canMove(t, dice)) {
           continue;
         }
         int land = BotBoardMath.applySteps(color, from, dice);
         VictimInfo victim = BotBoardMath.findCaptureVictim(botSeat, land, all, seatColors, isBot);
         if (victim == null) {
+          continue;
+        }
+        if (humanVictimsOnly && !victim.isHuman) {
           continue;
         }
         int rem = BotBoardMath.remainingDistance(victim.color, land);
@@ -138,30 +232,6 @@ final class BotKillDiceAssist {
                 dice, victim, rem, prog, victim.seat == leaderSeat, safe));
       }
     }
-    if (ops.isEmpty()) {
-      return null;
-    }
-
-    // Target priority: leader → closest home → progress → unsafe victim → safe landing
-    ops.sort(
-        Comparator
-            .comparing((CaptureOpportunity o) -> !o.victimIsLeader)
-            .thenComparingInt(o -> o.victimRemaining)
-            .thenComparing(Comparator.comparingInt((CaptureOpportunity o) -> o.victimProgress).reversed())
-            .thenComparing(o -> !o.safeAfter));
-
-    CaptureOpportunity top = ops.get(0);
-    // Anti-gang: if hunting leader human but not designated, pick next non-leader if any
-    if (analysis != null
-        && top.victimIsLeader
-        && top.victim.isHuman
-        && !analysis.allowAggressiveLeaderHunt) {
-      for (CaptureOpportunity o : ops) {
-        if (!o.victimIsLeader) {
-          return o;
-        }
-      }
-    }
-    return top;
+    return ops;
   }
 }
