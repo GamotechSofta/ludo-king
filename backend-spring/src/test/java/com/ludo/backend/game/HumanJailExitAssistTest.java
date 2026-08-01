@@ -2,39 +2,69 @@ package com.ludo.backend.game;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.util.Random;
 import org.junit.jupiter.api.Test;
 
 class HumanJailExitAssistTest {
 
   private HumanJailExitAssist assist() {
-    return new HumanJailExitAssist(true, 70);
+    return new HumanJailExitAssist(true, 2);
   }
 
   @Test
-  void detectsOpponentOneCellBeforeStart() {
+  void detectsBotOneCellBeforeStart() {
     HumanJailExitAssist assist = assist();
     int[][] tokens = {
         {-1, -1, -1, -1},
         {51, -1, -1, -1},
     };
     assertTrue(
-        assist.isOpponentNearStartingPath(
-            0, 2, tokens, new boolean[] {false, false}, new boolean[] {false, false}, 0));
+        assist.isBotNearStartingPath(
+            0,
+            2,
+            tokens,
+            new boolean[] {false, true},
+            new boolean[] {false, false},
+            new boolean[] {false, false},
+            0));
   }
 
   @Test
-  void detectsOpponentSixCellsAheadOfStart() {
+  void detectsBotSixCellsAheadOfStart() {
     HumanJailExitAssist assist = assist();
     int[][] tokens = {
         {-1, -1, -1, -1},
         {6, -1, -1, -1},
     };
     assertTrue(
-        assist.isOpponentNearStartingPath(
-            0, 2, tokens, new boolean[] {false, false}, new boolean[] {false, false}, 0));
+        assist.isBotNearStartingPath(
+            0,
+            2,
+            tokens,
+            new boolean[] {false, true},
+            new boolean[] {false, false},
+            new boolean[] {false, false},
+            0));
+  }
+
+  @Test
+  void ignoresHumanOpponentNearStart() {
+    HumanJailExitAssist assist = assist();
+    int[][] tokens = {
+        {-1, -1, -1, -1},
+        {51, -1, -1, -1},
+    };
+    assertFalse(
+        assist.isBotNearStartingPath(
+            0,
+            2,
+            tokens,
+            new boolean[] {false, false},
+            new boolean[] {false, false},
+            new boolean[] {false, false},
+            0));
   }
 
   @Test
@@ -43,61 +73,113 @@ class HumanJailExitAssistTest {
   }
 
   @Test
-  void ignoresOpponentTooFarFromStart() {
+  void ignoresBotTooFarFromStart() {
     HumanJailExitAssist assist = assist();
     int[][] tokens = {
         {-1, -1, -1, -1},
         {20, -1, -1, -1},
     };
     assertFalse(
-        assist.isOpponentNearStartingPath(
-            0, 2, tokens, new boolean[] {false, false}, new boolean[] {false, false}, 0));
+        assist.isBotNearStartingPath(
+            0,
+            2,
+            tokens,
+            new boolean[] {false, true},
+            new boolean[] {false, false},
+            new boolean[] {false, false},
+            0));
   }
 
   @Test
-  void ignoresSelfTokens() {
+  void forcesSixWhenBotInRangeAndHumanHasJailedPawn() {
     HumanJailExitAssist assist = assist();
     int[][] tokens = {
-        {1, -1, -1, -1},
-        {-1, -1, -1, -1},
+        {-1, -1, 10, -1}, // human: 1 out, 3 jailed
+        {2, -1, -1, -1}, // bot near RED start 0
     };
-    assertFalse(
-        assist.isOpponentNearStartingPath(
-            0, 2, tokens, new boolean[] {false, false}, new boolean[] {false, false}, 0));
+    assertEquals(
+        6,
+        assist.maybeForceJailExitSix(
+            true,
+            0,
+            0,
+            tokens[0],
+            2,
+            tokens,
+            new boolean[] {false, true},
+            new boolean[] {false, false},
+            new boolean[] {false, false},
+            0));
   }
 
   @Test
-  void rollDiceReturnsValidValues() {
+  void allowsSecondForcedSixButNotThird() {
     HumanJailExitAssist assist = assist();
-    Random rng = new Random(3L);
-    for (int i = 0; i < 500; i++) {
-      int value = assist.rollDice(rng);
-      assertTrue(value >= 1 && value <= 6);
-    }
+    int[][] tokens = {
+        {-1, -1, -1, -1},
+        {3, -1, -1, -1},
+    };
+    boolean[] isBot = {false, true};
+    boolean[] flags = {false, false};
+
+    assertEquals(
+        6,
+        assist.maybeForceJailExitSix(
+            true, 0, 0, tokens[0], 2, tokens, isBot, flags, flags, 0));
+    assertEquals(
+        6,
+        assist.maybeForceJailExitSix(
+            true, 0, 0, tokens[0], 2, tokens, isBot, flags, flags, 1));
+    assertNull(
+        assist.maybeForceJailExitSix(
+            true, 0, 0, tokens[0], 2, tokens, isBot, flags, flags, 2));
   }
 
   @Test
-  void boostedRollsSixMoreOftenThanFairDice() {
-    HumanJailExitAssist assist = new HumanJailExitAssist(true, 70);
-    Random fairRng = new Random(19L);
-    Random boostedRng = new Random(19L);
-    int fairSixes = 0;
-    int boostedSixes = 0;
-    int trials = 20_000;
-    for (int i = 0; i < trials; i++) {
-      if (fairRng.nextInt(6) + 1 == 6) {
-        fairSixes++;
-      }
-      if (assist.rollDice(boostedRng) == 6) {
-        boostedSixes++;
-      }
-    }
-    assertTrue(boostedSixes > fairSixes);
+  void doesNotForceForBotSeats() {
+    HumanJailExitAssist assist = assist();
+    int[][] tokens = {
+        {-1, -1, -1, -1},
+        {2, -1, -1, -1},
+    };
+    assertNull(
+        assist.maybeForceJailExitSix(
+            false,
+            0,
+            0,
+            tokens[0],
+            2,
+            tokens,
+            new boolean[] {true, true},
+            new boolean[] {false, false},
+            new boolean[] {false, false},
+            0));
   }
 
   @Test
-  void assistChanceIsClampedBelowGuarantee() {
-    HumanJailExitAssist assist = new HumanJailExitAssist(true, 100);
-    assertEquals(99, assist.assistChancePct());
+  void doesNotForceWhenNoJailedPawn() {
+    HumanJailExitAssist assist = assist();
+    int[][] tokens = {
+        {1, 2, 3, 4},
+        {5, -1, -1, -1},
+    };
+    assertNull(
+        assist.maybeForceJailExitSix(
+            true,
+            0,
+            0,
+            tokens[0],
+            2,
+            tokens,
+            new boolean[] {false, true},
+            new boolean[] {false, false},
+            new boolean[] {false, false},
+            0));
+  }
+
+  @Test
+  void maxExitsClampedToTwo() {
+    HumanJailExitAssist assist = new HumanJailExitAssist(true, 99);
+    assertEquals(2, assist.maxExits());
   }
 }

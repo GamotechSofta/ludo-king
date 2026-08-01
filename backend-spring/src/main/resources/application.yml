@@ -204,9 +204,9 @@ ludo:
     move-delay-ms: ${BOT_MOVE_DELAY_MS:850}
     scheduler-pool-size: ${BOT_SCHEDULER_POOL_SIZE:0}
   human-jail-exit-assist:
-    # Off by default — fair dice like LudoGame (set true only for local tuning).
-    enabled: ${HUMAN_JAIL_EXIT_ASSIST:false}
-    assist-chance-pct: ${HUMAN_JAIL_EXIT_ASSIST_CHANCE:70}
+    # Human-only: when a bot pawn is in jail/start range, force six so a pawn can exit (max 2).
+    enabled: ${HUMAN_JAIL_EXIT_ASSIST:true}
+    max-exits: ${HUMAN_JAIL_EXIT_ASSIST_MAX:2}
   human-jail-assist:
     enabled: ${HUMAN_JAIL_ASSIST:false}
     max-assist-attempts: ${MAX_ASSIST_ATTEMPTS:6}

@@ -4,16 +4,19 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "ludo.human-jail-exit-assist")
 public record HumanJailExitAssistProperties(
-    /** Master switch — smart six boost when all jailed and opponent near start path. */
+    /** Master switch — force a six when a bot is in range of the human jail/start. */
     boolean enabled,
-    /** Percent chance (0–100) to roll a six when the threat condition is met. Never 100. */
-    int assistChancePct
+    /**
+     * Max forced jail-exit sixes while bot remains in range (1, else up to 2).
+     * Resets when no bot is in range.
+     */
+    int maxExits
 ) {
   public HumanJailExitAssistProperties {
-    if (assistChancePct < 1) {
-      assistChancePct = 70;
-    } else if (assistChancePct > 99) {
-      assistChancePct = 99;
+    if (maxExits < 1) {
+      maxExits = 1;
+    } else if (maxExits > 2) {
+      maxExits = 2;
     }
   }
 }

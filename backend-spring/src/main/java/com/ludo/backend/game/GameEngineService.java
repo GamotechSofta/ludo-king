@@ -24,6 +24,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 import com.ludo.backend.bot.ai.HumanBehaviorEngine;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
@@ -67,9 +68,20 @@ public class GameEngineService {
   private final ConcurrentHashMap<String, Instant> turnDeadlines = new ConcurrentHashMap<>();
   private final SecureRandom secureRandom = new SecureRandom();
   private final ObjectProvider<HumanBehaviorEngine> humanBehaviorEngine;
+  private final ObjectProvider<HumanJailExitAssist> humanJailExitAssist;
 
+  /** Test helper — jail-exit assist disabled. */
   public GameEngineService(ObjectProvider<HumanBehaviorEngine> humanBehaviorEngine) {
+    this(humanBehaviorEngine, null);
+  }
+
+  @Autowired
+  public GameEngineService(
+      ObjectProvider<HumanBehaviorEngine> humanBehaviorEngine,
+      ObjectProvider<HumanJailExitAssist> humanJailExitAssist
+  ) {
     this.humanBehaviorEngine = humanBehaviorEngine;
+    this.humanJailExitAssist = humanJailExitAssist;
   }
 
   public static class SeatInfo {
@@ -100,6 +112,15 @@ public class GameEngineService {
     final int[] consecutiveTimeouts;
     /** Human jail assist: consecutive non-6 rolls while all four tokens were jailed. */
     final int[] jailAssistFailedRolls;
+    /** Human jail-exit assist: forced sixes used while a bot remains in start/jail range (max 2). */
+    final int[] jailExitAssistsUsed;
+    /**
+     * Early kill delay (Bot vs Human only): per-seat count of skipped cross-side
+     * capture opportunities (0..{@link EarlyKillDelay#SKIPS_BEFORE_ALLOW}).
+     */
+    final int[] earlyKillSkipCount;
+    /** When true, cross-side capture moves are filtered out for this seat's move phase. */
+    final boolean[] earlyKillSuppressActive;
     final List<Integer> diceList = new ArrayList<>();
     final ReentrantLock lock = new ReentrantLock();
     int currentSeat;
@@ -130,6 +151,9 @@ public class GameEngineService {
       this.ranking = new int[maxPlayers];
       this.consecutiveTimeouts = new int[maxPlayers];
       this.jailAssistFailedRolls = new int[maxPlayers];
+      this.jailExitAssistsUsed = new int[maxPlayers];
+      this.earlyKillSkipCount = new int[maxPlayers];
+      this.earlyKillSuppressActive = new boolean[maxPlayers];
       this.lastActionType = null;
       this.lastActionSeat = null;
       this.lastActionTokenIndex = null;
@@ -576,6 +600,49 @@ public class GameEngineService {
     return HumanJailDiceAssist.allTokensInJail(rt.tokens[seat]);
   }
 
+  /** Reset jail-exit assist counter when no bot remains in this human's start range. */
+  private void updateJailExitAssistWindow(MatchRuntime rt, int seat, boolean humanSeat) {
+    if (!humanSeat) {
+      return;
+    }
+    HumanJailExitAssist assist =
+        humanJailExitAssist != null ? humanJailExitAssist.getIfAvailable() : null;
+    if (assist == null || !assist.isEnabled()) {
+      return;
+    }
+    boolean botNear =
+        assist.isBotNearStartingPath(
+            rt.colors[seat].startTile(),
+            rt.maxPlayers,
+            rt.tokens,
+            rt.isBot,
+            rt.eliminated,
+            rt.finished,
+            seat);
+    if (!botNear) {
+      rt.jailExitAssistsUsed[seat] = 0;
+    }
+  }
+
+  private Integer maybeHumanJailExitSix(MatchRuntime rt, int seat, boolean humanSeat) {
+    HumanJailExitAssist assist =
+        humanJailExitAssist != null ? humanJailExitAssist.getIfAvailable() : null;
+    if (assist == null) {
+      return null;
+    }
+    return assist.maybeForceJailExitSix(
+        humanSeat,
+        seat,
+        rt.colors[seat].startTile(),
+        rt.tokens[seat],
+        rt.maxPlayers,
+        rt.tokens,
+        rt.isBot,
+        rt.eliminated,
+        rt.finished,
+        rt.jailExitAssistsUsed[seat]);
+  }
+
   private GameSnapshot rollInternal(MatchRuntime rt, int seat, Integer forcedValue) {
     assertActive(rt);
     if (rt.eliminated[seat] || rt.finished[seat]) {
@@ -591,19 +658,28 @@ public class GameEngineService {
       throw new IllegalStateException("Dice already rolled this turn");
     }
 
+    boolean humanSeat = !rt.isBot[seat];
+    updateJailExitAssistWindow(rt, seat, humanSeat);
+
     // LudoGame fair dice: after two consecutive sixes, face is drawn from 1–5 only
     int value;
     if (forcedValue != null && forcedValue >= 1 && forcedValue <= 6) {
       value = forcedValue;
     } else if (rt.consecutiveSixes >= 2) {
+      // After two sixes: fair 1–5 only (no third six), even if jail-exit assist wants 6
       value = secureRandom.nextInt(5) + 1;
     } else {
-      value = secureRandom.nextInt(6) + 1;
+      Integer jailExitSix = maybeHumanJailExitSix(rt, seat, humanSeat);
+      if (jailExitSix != null) {
+        value = jailExitSix;
+        rt.jailExitAssistsUsed[seat] += 1;
+      } else {
+        value = secureRandom.nextInt(6) + 1;
+      }
     }
     boolean allJailedBeforeRoll = allTokensInJail(rt, seat);
-    boolean humanSeat = !rt.isBot[seat];
     if (humanSeat && allJailedBeforeRoll) {
-      // Track jail streaks for legacy fields only — no dice assist
+      // Track jail streaks for legacy fields only
       if (value == 6) {
         rt.jailAssistFailedRolls[seat] = 0;
       } else {
@@ -623,10 +699,14 @@ public class GameEngineService {
     }
 
     rt.lastRollWasSix = value == 6;
-    List<int[]> moves = computeLegalMoves(rt, seat);
+    List<int[]> rawMoves = computeLegalMovesRaw(rt, seat);
+    EarlyKillDelay.CaptureProbe probe = (s, t, d) -> wouldCaptureCrossSide(rt, s, t, d);
+    EarlyKillDelay.noteOpportunity(rt, seat, rawMoves, probe);
+    List<int[]> moves = EarlyKillDelay.filterMoves(rt, seat, rawMoves, probe);
 
     // No legal moves (including on a 6) → pass immediately; 6 does NOT grant extra roll
     if (moves.isEmpty()) {
+      rt.earlyKillSuppressActive[seat] = false;
       clearDice(rt);
       nextTurn(rt);
       recordAction(rt, "PASS", seat, null, value);
@@ -660,7 +740,7 @@ public class GameEngineService {
     }
 
     int dice = rt.diceList.get(diceIndex);
-    if (!canUseDice(rt, seat, tokenIndex, dice)) {
+    if (!isAllowedMove(rt, seat, tokenIndex, diceIndex)) {
       throw new IllegalStateException("Illegal move");
     }
 
@@ -675,6 +755,10 @@ public class GameEngineService {
     }
 
     boolean captured = resolveCapture(rt, seat, tokenIndex, to);
+    if (captured) {
+      EarlyKillDelay.onSuccessfulCapture(rt, seat);
+    }
+    rt.earlyKillSuppressActive[seat] = false;
     boolean reachedHome = isHome(to);
     if (reachedHome) {
       checkFinished(rt, seat);
@@ -908,6 +992,13 @@ public class GameEngineService {
   }
 
   private List<int[]> computeLegalMoves(MatchRuntime rt, int seat) {
+    List<int[]> raw = computeLegalMovesRaw(rt, seat);
+    return EarlyKillDelay.filterMoves(
+        rt, seat, raw, (s, t, d) -> wouldCaptureCrossSide(rt, s, t, d));
+  }
+
+  /** Physics-only legal moves (no early-kill delay filter). */
+  private List<int[]> computeLegalMovesRaw(MatchRuntime rt, int seat) {
     List<int[]> moves = new ArrayList<>();
     for (int t = 0; t < 4; t++) {
       for (int d = 0; d < rt.diceList.size(); d++) {
@@ -917,6 +1008,51 @@ public class GameEngineService {
       }
     }
     return moves;
+  }
+
+  private boolean isAllowedMove(MatchRuntime rt, int seat, int tokenIndex, int diceIndex) {
+    for (int[] m : computeLegalMoves(rt, seat)) {
+      if (m[0] == tokenIndex && m[1] == diceIndex) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * True when moving {@code tokenIndex} by {@code dice} would capture at least one
+   * opponent seat of the opposite type (human↔bot) on a non-safe main cell.
+   */
+  private boolean wouldCaptureCrossSide(MatchRuntime rt, int seat, int tokenIndex, int dice) {
+    if (rt == null || seat < 0 || seat >= rt.maxPlayers) {
+      return false;
+    }
+    if (tokenIndex < 0 || tokenIndex > 3) {
+      return false;
+    }
+    int from = rt.tokens[seat][tokenIndex];
+    if (!canUseDice(rt, seat, tokenIndex, dice)) {
+      return false;
+    }
+    int landPos = applySteps(rt.colors[seat], from, dice);
+    if (!isMain(landPos) || SAFE_AREAS.contains(landPos)) {
+      return false;
+    }
+    boolean moverIsBot = rt.isBot[seat];
+    for (int s = 0; s < rt.maxPlayers; s++) {
+      if (s == seat || rt.finished[s] || rt.eliminated[s]) {
+        continue;
+      }
+      if (rt.isBot[s] == moverIsBot) {
+        continue;
+      }
+      for (int t = 0; t < 4; t++) {
+        if (rt.tokens[s][t] == landPos) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   private boolean canUseDice(MatchRuntime rt, int seat, int tokenIndex, int dice) {
