@@ -20,6 +20,7 @@ import {
   EPositionProfiles,
   EtypeTile,
   DICE_ROLL_ANIM_MS,
+  DICE_ROLL_SETTLE_MS,
   BOT_POST_DICE_DELAY_MS,
   ONLINE_TURN_PASS_DELAY_MS,
   ONLINE_TOKEN_MOVEMENT_INTERVAL_VALUE,
@@ -347,7 +348,7 @@ const OnlineGame = ({
         diceRollWaitersRef.current.push(resolve);
       }),
       new Promise<void>((resolve) => {
-        window.setTimeout(resolve, DICE_ROLL_ANIM_MS + 250);
+        window.setTimeout(resolve, DICE_ROLL_ANIM_MS + DICE_ROLL_SETTLE_MS);
       }),
     ]);
     finishDiceRollAnimation();
@@ -359,9 +360,10 @@ const OnlineGame = ({
     if (diceRollFallbackRef.current != null) {
       window.clearTimeout(diceRollFallbackRef.current);
     }
+    // Must cover full tumble + settle — shorter fallback cut spins mid-rotate.
     diceRollFallbackRef.current = window.setTimeout(() => {
       finishDiceRollAnimation();
-    }, DICE_ROLL_ANIM_MS + 120);
+    }, DICE_ROLL_ANIM_MS + DICE_ROLL_SETTLE_MS);
   }, [finishDiceRollAnimation]);
 
   const playDiceRollingOnce = useCallback((soundKey: string) => {
@@ -477,13 +479,16 @@ const OnlineGame = ({
       applyDiceOwnerTurn(snapshot, snapshot.lastActionSeat);
       return;
     }
-    // PASS/TIMEOUT: apply() shows roll on roller then hands off — never jump early
+    // PASS/TIMEOUT: keep die on the roller until flash window ends (smooth pass).
     if (
       isNoMovePassSnapshot(snapshot) &&
       snapshot.lastActionSeat != null &&
       snapshot.lastActionSeat !== snapshot.currentSeatIndex
     ) {
-      if (performance.now() < passFlashUntilRef.current) {
+      if (
+        performance.now() < passFlashUntilRef.current ||
+        diceRollPendingRef.current
+      ) {
         applyDiceOwnerTurn(snapshot, snapshot.lastActionSeat);
       }
       return;
@@ -1153,7 +1158,7 @@ const OnlineGame = ({
           humanMoveDoneFallbackRef.current = window.setTimeout(() => {
             humanMoveDoneFallbackRef.current = null;
             handleDoneDiceRef.current();
-          }, DICE_ROLL_ANIM_MS + 300);
+          }, DICE_ROLL_ANIM_MS + DICE_ROLL_SETTLE_MS + 80);
           prevSnapRef.current = {
             ...snap,
             tokenPositions:
@@ -1251,7 +1256,7 @@ const OnlineGame = ({
             beginDiceRollAnimation();
             passDelayMs = Math.max(
               ONLINE_TURN_PASS_DELAY_MS,
-              DICE_ROLL_ANIM_MS + 250
+              DICE_ROLL_ANIM_MS + DICE_ROLL_SETTLE_MS + 200
             );
           } else {
             const flashKey = `${snap.actionSeq || 0}|${rollerSeat}|${rolledValue}`;
@@ -1263,7 +1268,7 @@ const OnlineGame = ({
             );
             passDelayMs = Math.max(
               ONLINE_TURN_PASS_DELAY_MS,
-              DICE_ROLL_ANIM_MS + 250
+              DICE_ROLL_ANIM_MS + DICE_ROLL_SETTLE_MS + 200
             );
           }
         }
@@ -1923,6 +1928,35 @@ const OnlineGame = ({
       return;
     }
 
+    // Human's turn to roll (after bot/opponent) — idle die only. Never keep a
+    // foreign tumble face/roll# or the die spins without a click.
+    if (
+      live.phase === "AWAITING_ROLL" &&
+      (live.diceList?.length ?? 0) === 0
+    ) {
+      const prevOwner = diceOwnerSeatRef.current;
+      diceOwnerSeatRef.current = mySeat;
+      applyDiceOwnerTurn(live, mySeat);
+      setActionsTurn((prev) => ({
+        ...actionsTurnFromSnapshot(
+          live,
+          mySeat,
+          prev,
+          prevOwner >= 0 && prevOwner !== mySeat ? prevOwner : undefined
+        ),
+        diceValue: 0,
+        diceRollNumber: 0,
+        disabledDice: onlineDiceDisabled(live, mySeat),
+        actionsBoardGame: EActionsBoardGame.ROLL_DICE,
+      }));
+      return;
+    }
+
+    // Human rollDone only applies after they actually rolled (AWAITING_MOVE).
+    if (!isMyMovePhase) {
+      return;
+    }
+
     const actions = actionsTurnRef.current as IActionsTurn & { rollId?: string };
     const rollId = buildRollDedupKey(
       live,
@@ -1954,7 +1988,14 @@ const OnlineGame = ({
     }));
 
     scheduleHumanAutoMove(live);
-  }, [snapshot, mySeat, syncBoardFromSnapshot, scheduleHumanAutoMove, finishDiceRollAnimation]);
+  }, [
+    snapshot,
+    mySeat,
+    syncBoardFromSnapshot,
+    scheduleHumanAutoMove,
+    finishDiceRollAnimation,
+    applyDiceOwnerTurn,
+  ]);
 
   handleDoneDiceRef.current = handleDoneDice;
 

@@ -60,6 +60,7 @@
   }
 }
 
+/* Centering transform stays FIXED — never animate this node (breaks 3D tumble). */
 .game-profile-dice-face {
   position: absolute;
   left: 50%;
@@ -67,10 +68,37 @@
   transform: translate(-50%, -50%);
   z-index: 3;
   pointer-events: none;
+  perspective: 480px;
+  perspective-origin: 50% 45%;
 }
 
 .game-profile-dice-face-hidden {
   visibility: hidden;
+}
+
+/* Idle bob on an inner wrapper so the die's 3D transforms stay clean. */
+.game-profile-dice-bob {
+  transform: translateY(0);
+  will-change: transform;
+}
+
+.game-profile-dice.ready:not(.is-rolling) .game-profile-dice-bob {
+  animation: dice-idle-bob 1.1s ease-in-out infinite;
+}
+
+.game-profile-dice.is-rolling .game-profile-dice-bob {
+  animation: none;
+  transform: translateY(0);
+}
+
+@keyframes dice-idle-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
 }
 
 .game-profile-dice-face .dice {
@@ -79,23 +107,12 @@
 
 .game-profile-dice-face .die-container {
   margin: 0 !important;
+  transform-style: preserve-3d;
 }
 
-/* Library transition fights tumble keyframes */
+/* Library CSS transition fights tumble keyframes — kill it. */
 .game-profile-dice-face .die {
   transition: none !important;
-}
-
-.game-profile-dice.ready .game-profile-dice-face {
-  animation: dice-idle-bob 1.1s ease-in-out infinite;
-}
-
-@keyframes dice-idle-bob {
-  0%,
-  100% {
-    transform: translate(-50%, -50%);
-  }
-  50% {
-    transform: translate(-50%, calc(-50% - 2px));
-  }
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
 }

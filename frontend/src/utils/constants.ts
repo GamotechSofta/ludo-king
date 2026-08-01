@@ -179,18 +179,22 @@ export const CAPTURE_RETURN_MAX_TOTAL_MS = 850;
 export const CAPTURE_RETURN_FRAME_MS = 16;
 
 /**
- * Dice spin duration (seconds) for react-dice-complete (original).
+ * Dice spin duration (seconds) for react-dice-complete.
+ * Slightly longer than 0.5 so the 3D tumble reads clearly before settle/pass.
  */
-export const ROLL_TIME_VALUE = 0.5;
+export const ROLL_TIME_VALUE = 0.75;
 
 /** Online: wait for dice spin before pawn hops / rollDone side-effects. */
 export const DICE_ROLL_ANIM_MS = Math.round(ROLL_TIME_VALUE * 1000);
 
-/** After bot/opponent dice tumble, pause before pawn starts moving. */
-export const BOT_POST_DICE_DELAY_MS = 450;
+/** Extra ms after tumble for face settle + library rollDone (OnlineGame waits). */
+export const DICE_ROLL_SETTLE_MS = 280;
 
-/** Pause before the die handoff to the next player (online). */
-export const ONLINE_TURN_PASS_DELAY_MS = 700;
+/** After bot/opponent dice tumble, pause before pawn starts moving. */
+export const BOT_POST_DICE_DELAY_MS = 400;
+
+/** Pause before the die handoff to the next player (online) — face must be readable. */
+export const ONLINE_TURN_PASS_DELAY_MS = 850;
 
 /**
  * Valor para el delay que se aplica antes de enviar la confirmación al socket
