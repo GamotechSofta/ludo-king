@@ -61,12 +61,21 @@ public class BotService {
 
     try {
       if (GameEngineService.PHASE_ROLL.equals(snap.getPhase())) {
+        // Home finish 1–4 first; else existing human-2-home kill assist.
         Integer forced =
-            BotKillDiceAssist.maybeForceKillDiceWhenHumanHasTwoHome(
+            BotHomeDiceAssist.maybeForceHomeDice(
                 snap,
                 seat,
                 (token, dice) ->
                     gameEngineService.canBotUseDiceForAssist(roomId, seat, token, dice));
+        if (forced == null) {
+          forced =
+              BotKillDiceAssist.maybeForceKillDiceWhenHumanHasTwoHome(
+                  snap,
+                  seat,
+                  (token, dice) ->
+                      gameEngineService.canBotUseDiceForAssist(roomId, seat, token, dice));
+        }
         snap = gameEngineService.rollDiceAsSeat(roomId, seat, forced);
         publish(onStep, snap);
         return snap;
@@ -170,6 +179,12 @@ public class BotService {
     List<int[]> sole = soleActivePawnOnlyMoves(moves, ownPositions);
     List<int[]> candidates = sole != null ? sole : moves;
 
+    // Exact home finish (1–4 assist): always take home when legal.
+    List<int[]> homes = homeFinishMoves(snap, colorName, ownPositions, candidates);
+    if (!homes.isEmpty()) {
+      return homes.get(0);
+    }
+
     // Hard rule on real board cells: if any legal move kills, always take a kill.
     List<int[]> kills = captureMoves(snap, seat, colorName, ownPositions, candidates);
     if (!kills.isEmpty()) {
@@ -182,6 +197,39 @@ public class BotService {
 
     int[] chosen = superiorBotBridge.chooseMove(snap, seat, candidates, difficulty);
     return chosen != null ? chosen : candidates.get(0);
+  }
+
+  /** Legal moves that land exactly on HOME. */
+  private static List<int[]> homeFinishMoves(
+      GameSnapshot snap,
+      String colorName,
+      List<Integer> ownPositions,
+      List<int[]> moves) {
+    LudoColor color = BotBoardMath.parseColor(colorName);
+    if (color == null || moves == null || snap.getDiceList() == null || ownPositions == null) {
+      return List.of();
+    }
+    List<int[]> homes = new ArrayList<>();
+    for (int[] m : moves) {
+      if (m == null || m.length < 2) {
+        continue;
+      }
+      int token = m[0];
+      int diceIndex = m[1];
+      if (token < 0 || token >= ownPositions.size()) {
+        continue;
+      }
+      if (diceIndex < 0 || diceIndex >= snap.getDiceList().size()) {
+        continue;
+      }
+      int from = ownPositions.get(token) == null ? JAIL : ownPositions.get(token);
+      int dice = snap.getDiceList().get(diceIndex);
+      int to = BotBoardMath.applySteps(color, from, dice);
+      if (isHome(to)) {
+        homes.add(m);
+      }
+    }
+    return homes;
   }
 
   /** Legal moves that land on a capturable opponent (unsafe main cell, single token). */
