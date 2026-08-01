@@ -180,9 +180,8 @@ export const CAPTURE_RETURN_FRAME_MS = 16;
 
 /**
  * Dice spin duration (seconds) for react-dice-complete.
- * Slightly longer than 0.5 so the 3D tumble reads clearly before settle/pass.
  */
-export const ROLL_TIME_VALUE = 0.75;
+export const ROLL_TIME_VALUE = 0.4;
 
 /** Online: wait for dice spin before pawn hops / rollDone side-effects. */
 export const DICE_ROLL_ANIM_MS = Math.round(ROLL_TIME_VALUE * 1000);
