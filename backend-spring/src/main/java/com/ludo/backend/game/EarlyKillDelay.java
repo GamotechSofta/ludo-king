@@ -1,25 +1,21 @@
 package com.ludo.backend.game;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Early-game kill delay for <em>bot</em> seats in Bot vs Human matches only.
+ * Early-game kill delay hooks for Bot vs Human matches.
  *
- * <p>The first three legal cross-side capture opportunities for a bot are
- * skipped (capture moves removed from the legal set); the fourth is allowed.
- * Counter resets after a successful capture.
+ * <p>Legal capture moves are <strong>never</strong> filtered out — if a kill
+ * chance exists (1st, 2nd, or later opportunity), it stays selectable and bots
+ * already prioritize capture via {@code BotService}. Counters remain available
+ * for future tuning but do not suppress kills.
  *
- * <p>Humans always keep kill moves selectable — filtering human captures made
- * kill pawns look "inactive" in the UI.
- *
- * <p>Does not change dice, movement physics, or capture resolution — only which
- * otherwise-legal moves are offered to bots during the delayed opportunities.
+ * <p>Does not change dice, movement physics, or capture resolution.
  */
 final class EarlyKillDelay {
 
-  /** Opportunities that must be skipped before a capture is allowed. */
-  static final int SKIPS_BEFORE_ALLOW = 3;
+  /** Kept at 0 so kill opportunities are never suppressed from the legal set. */
+  static final int SKIPS_BEFORE_ALLOW = 0;
 
   private EarlyKillDelay() {}
 
@@ -40,9 +36,8 @@ final class EarlyKillDelay {
   }
 
   /**
-   * Called once per bot roll that yields legal moves: if this bot has a cross-side
-   * capture opportunity and still has skips remaining, increment the counter and
-   * arm suppress for this move phase. No-op for human seats.
+   * Tracks cross-side capture opportunities per seat but does not arm suppress —
+   * kill moves always remain in the legal set (kill priority).
    */
   static void noteOpportunity(
       GameEngineService.MatchRuntime rt, int seat, List<int[]> rawMoves, CaptureProbe probe
@@ -51,7 +46,7 @@ final class EarlyKillDelay {
       return;
     }
     rt.earlyKillSuppressActive[seat] = false;
-    if (!rt.isBot[seat] || !isBotVsHumanMatch(rt.isBot)) {
+    if (!isBotVsHumanMatch(rt.isBot)) {
       return;
     }
     if (rawMoves == null || rawMoves.isEmpty()) {
@@ -60,13 +55,14 @@ final class EarlyKillDelay {
     if (!hasCrossSideCapture(rt, seat, rawMoves, probe)) {
       return;
     }
-    if (rt.earlyKillSkipCount[seat] < SKIPS_BEFORE_ALLOW) {
+    // Count opportunities for diagnostics only — never suppress kills.
+    if (SKIPS_BEFORE_ALLOW > 0 && rt.earlyKillSkipCount[seat] < SKIPS_BEFORE_ALLOW) {
       rt.earlyKillSkipCount[seat] += 1;
       rt.earlyKillSuppressActive[seat] = true;
     }
   }
 
-  /** Filter out cross-side capture moves while suppress is armed for this seat. */
+  /** No-op while {@link #SKIPS_BEFORE_ALLOW} is 0 — returns moves unchanged. */
   static List<int[]> filterMoves(
       GameEngineService.MatchRuntime rt, int seat, List<int[]> rawMoves, CaptureProbe probe
   ) {
@@ -79,7 +75,7 @@ final class EarlyKillDelay {
         || probe == null) {
       return rawMoves;
     }
-    List<int[]> kept = new ArrayList<>(rawMoves.size());
+    java.util.ArrayList<int[]> kept = new java.util.ArrayList<>(rawMoves.size());
     for (int[] m : rawMoves) {
       if (m == null || m.length < 2) {
         continue;

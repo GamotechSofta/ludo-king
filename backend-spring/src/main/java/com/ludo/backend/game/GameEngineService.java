@@ -115,8 +115,8 @@ public class GameEngineService {
     /** Human jail-exit assist: forced sixes used while a bot remains in start/jail range (max 2). */
     final int[] jailExitAssistsUsed;
     /**
-     * Early kill delay (Bot vs Human only): per-seat count of skipped cross-side
-     * capture opportunities (0..{@link EarlyKillDelay#SKIPS_BEFORE_ALLOW}).
+     * Early kill delay counters (Bot vs Human). Kill moves are never filtered —
+     * capture stays legal whenever the physics allow it (kill priority).
      */
     final int[] earlyKillSkipCount;
     /** When true, cross-side capture moves are filtered out for this seat's move phase. */

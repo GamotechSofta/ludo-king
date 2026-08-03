@@ -18,63 +18,37 @@ class EarlyKillDelayTest {
   }
 
   @Test
-  void skipsFirstThreeCaptureOpportunitiesThenAllowsFourth() {
+  void neverSuppressesKillMovesWhenKillChanceExists() {
     GameEngineService.MatchRuntime rt = runtime(true, false);
     rt.diceList.add(2);
     List<int[]> raw = List.of(new int[] {0, 0}, new int[] {1, 0});
     EarlyKillDelay.CaptureProbe killOnToken0 = (seat, token, dice) -> token == 0;
 
-    for (int i = 1; i <= 3; i++) {
+    // Even on first / second opportunity, kills stay in the legal set
+    for (int i = 0; i < 3; i++) {
       EarlyKillDelay.noteOpportunity(rt, 0, raw, killOnToken0);
-      assertEquals(i, rt.earlyKillSkipCount[0]);
-      assertTrue(rt.earlyKillSuppressActive[0]);
+      assertFalse(rt.earlyKillSuppressActive[0]);
       List<int[]> filtered = EarlyKillDelay.filterMoves(rt, 0, raw, killOnToken0);
-      assertEquals(1, filtered.size());
-      assertEquals(1, filtered.get(0)[0]); // non-kill token only
-      rt.earlyKillSuppressActive[0] = false;
+      assertEquals(2, filtered.size());
     }
-
-    EarlyKillDelay.noteOpportunity(rt, 0, raw, killOnToken0);
-    assertEquals(3, rt.earlyKillSkipCount[0]);
-    assertFalse(rt.earlyKillSuppressActive[0]);
-    List<int[]> allowed = EarlyKillDelay.filterMoves(rt, 0, raw, killOnToken0);
-    assertEquals(2, allowed.size());
   }
 
   @Test
-  void separateCountersPerBotSeatOnly() {
-    // seat0 bot, seat1 human — only bot opportunities are counted
-    GameEngineService.MatchRuntime rt = runtime(true, false);
-    rt.diceList.add(3);
-    List<int[]> raw = List.of(new int[] {0, 0});
-    EarlyKillDelay.CaptureProbe always = (seat, token, dice) -> true;
-
-    EarlyKillDelay.noteOpportunity(rt, 0, raw, always);
-    assertEquals(1, rt.earlyKillSkipCount[0]);
-    assertEquals(0, rt.earlyKillSkipCount[1]);
-
-    EarlyKillDelay.noteOpportunity(rt, 1, raw, always);
-    assertEquals(1, rt.earlyKillSkipCount[0]);
-    assertEquals(0, rt.earlyKillSkipCount[1]);
-    assertFalse(rt.earlyKillSuppressActive[1]);
-  }
-
-  @Test
-  void doesNotSuppressHumanKillMoves() {
+  void humanKillAlsoNeverSuppressed() {
     GameEngineService.MatchRuntime rt = runtime(true, false);
     rt.diceList.add(2);
     List<int[]> raw = List.of(new int[] {0, 0}, new int[] {1, 0});
     EarlyKillDelay.CaptureProbe killOnToken0 = (seat, token, dice) -> token == 0;
 
     EarlyKillDelay.noteOpportunity(rt, 1, raw, killOnToken0);
-    assertEquals(0, rt.earlyKillSkipCount[1]);
+    assertFalse(rt.earlyKillSuppressActive[1]);
     assertEquals(raw, EarlyKillDelay.filterMoves(rt, 1, raw, killOnToken0));
   }
 
   @Test
   void resetAfterSuccessfulCapture() {
     GameEngineService.MatchRuntime rt = runtime(false, true);
-    rt.earlyKillSkipCount[0] = 3;
+    rt.earlyKillSkipCount[0] = 2;
     rt.earlyKillSuppressActive[0] = true;
 
     EarlyKillDelay.onSuccessfulCapture(rt, 0);
