@@ -110,9 +110,9 @@ export interface IPlayer extends IUser {
   chatMessage?: string;
   typeMessage?: ITypeChatMessage;
   counterMessage: number;
-  /** Consecutive turn timeouts used (online); drives chance dots under name. */
+  /** Missed turns used this match (online); drives chance dots under name. */
   timeoutStreak?: number;
-  /** Removed from match after 2 timeouts (online). */
+  /** Removed from match after 2 missed turns (online). */
   isEliminated?: boolean;
 }
 

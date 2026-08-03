@@ -54,6 +54,7 @@ public class GameEngineService {
   public static final String PHASE_FINISHED = "FINISHED";
 
   public static final int TURN_TIMEOUT_SECONDS = 20;
+  /** Missed turns allowed per player for the whole match (not reset by playing). */
   public static final int MAX_CONSECUTIVE_TIMEOUTS = 2;
   /** Only rank assigned besides LOST (0). */
   public static final int RANK_WIN = 1;
@@ -493,6 +494,7 @@ public class GameEngineService {
         return snapshot(rt);
       }
       clearDice(rt);
+      // Match-total miss chances (not streak): playing again does not restore chances.
       rt.consecutiveTimeouts[seat] += 1;
       boolean eliminated = rt.consecutiveTimeouts[seat] >= MAX_CONSECUTIVE_TIMEOUTS;
       if (eliminated) {
@@ -683,8 +685,7 @@ public class GameEngineService {
         rt.jailAssistFailedRolls[seat] += 1;
       }
     }
-    // Rolling proves the seat is present — the AFK streak must not carry over
-    rt.consecutiveTimeouts[seat] = 0;
+    // Miss chances are match-total — do not reset on a successful roll.
     rt.lastDice = value;
     rt.diceList.clear();
     rt.diceList.add(value);
@@ -742,7 +743,7 @@ public class GameEngineService {
     }
 
     boolean usedSix = dice == 6;
-    rt.consecutiveTimeouts[seat] = 0;
+    // Miss chances are match-total — do not reset on a successful move.
     int from = rt.tokens[seat][tokenIndex];
     int to = applySteps(rt.colors[seat], from, dice);
     rt.tokens[seat][tokenIndex] = to;
@@ -842,7 +843,7 @@ public class GameEngineService {
     Arrays.fill(rt.tokens[seat], JAIL);
   }
 
-  /** 2 timeouts used → remove player from the match. */
+  /** 2 missed turns in the match → remove player. */
   private void eliminateAfk(MatchRuntime rt, int seat) {
     if (rt.finished[seat]) {
       return;
