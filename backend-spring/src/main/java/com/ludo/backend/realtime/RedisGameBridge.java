@@ -93,10 +93,11 @@ public class RedisGameBridge implements MessageListener {
           log.debug("restore on fan-in: {}", e.getMessage());
         }
       }
-      // Re-emit as GameEvent for local WS subscribers
+      // Re-emit compact GameEvent for local WS subscribers
+      String type = com.ludo.backend.game.GameEvent.typeFor(snap);
       com.ludo.backend.game.GameEvent event =
           com.ludo.backend.game.GameEvent.fromSnapshot(
-              com.ludo.backend.game.GameEvent.typeFor(snap), snap);
+              type, snap, com.ludo.backend.game.GameEvent.shouldEmbedFullState(type));
       messagingTemplate.convertAndSend("/topic/room/" + env.roomId(), event);
     } catch (Exception e) {
       log.warn("Redis fan-in failed: {}", e.getMessage());

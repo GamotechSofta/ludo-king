@@ -1,14 +1,15 @@
 package com.ludo.backend.game;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
  * Compact ordered multiplayer event. Clients apply by actionSeq.
- * Full {@link #state} is included for STATE/reconnect and as authority payload.
+ * Full {@link #state} is included for STATE/reconnect/finished; routine
+ * ROLL/MOVE events carry top-level fields only (no nested snapshot).
  */
 public class GameEvent {
 
@@ -40,18 +41,30 @@ public class GameEvent {
   private Instant turnStartedAt;
   private Integer turnSecondsRemaining;
   private Integer consecutiveSixes;
-  private Map<String, List<Integer>> tokenPositions = new LinkedHashMap<>();
+  /** Miss chances used this match (match-total — never reset on successful play). */
+  private List<Integer> consecutiveTimeouts;
+  @JsonInclude(JsonInclude.Include.NON_EMPTY)
+  private Map<String, List<Integer>> tokenPositions;
   private List<String> seatColors = new ArrayList<>();
   private List<Integer> legalTokenIndexes = new ArrayList<>();
   private List<Map<String, Integer>> legalMoves = new ArrayList<>();
   private boolean[] finished;
   private Integer winnerSeat;
   private String lastActionType;
+  private boolean[] isBot;
+  private boolean[] eliminated;
+  private List<String> userIds;
+  private List<String> usernames;
 
-  /** Full authority snapshot (always present so reconnect/old clients stay correct). */
+  /** Full authority snapshot — only on STATE / finish / forced resync. */
+  @JsonInclude(JsonInclude.Include.NON_NULL)
   private GameSnapshot state;
 
   public static GameEvent fromSnapshot(String type, GameSnapshot snap) {
+    return fromSnapshot(type, snap, shouldEmbedFullState(type));
+  }
+
+  public static GameEvent fromSnapshot(String type, GameSnapshot snap, boolean includeFullState) {
     GameEvent e = new GameEvent();
     e.type = type;
     e.roomId = snap.getRoomId();
@@ -63,7 +76,10 @@ public class GameEvent {
     e.turnStartedAt = snap.getTurnStartedAt();
     e.turnSecondsRemaining = snap.getTurnSecondsRemaining();
     e.consecutiveSixes = snap.getConsecutiveSixes();
-    e.tokenPositions = snap.getTokenPositions();
+    e.consecutiveTimeouts =
+        snap.getConsecutiveTimeouts() != null
+            ? new ArrayList<>(snap.getConsecutiveTimeouts())
+            : new ArrayList<>();
     e.seatColors = snap.getSeatColors();
     e.legalTokenIndexes = snap.getLegalTokenIndexes();
     e.legalMoves = snap.getLegalMoves();
@@ -74,11 +90,36 @@ public class GameEvent {
     e.tokenIndex = snap.getLastActionTokenIndex();
     e.from = snap.getLastActionFrom();
     e.to = snap.getLastActionTo();
+    e.isBot = snap.getIsBot();
+    e.eliminated = snap.getEliminated();
+    e.userIds = snap.getUserIds();
+    e.usernames = snap.getUsernames();
     if (e.dice == null || e.dice == 0) {
       e.dice = snap.getLastActionDice();
     }
-    e.state = snap;
+    // ROLL/PASS board does not change — omit positions; client merges prior board.
+    if (!omitTokenPositions(type)) {
+      e.tokenPositions = snap.getTokenPositions();
+    }
+    if (includeFullState) {
+      e.state = snap;
+    }
     return e;
+  }
+
+  /** Embed full snapshot for join/resync/terminal events only. */
+  public static boolean shouldEmbedFullState(String type) {
+    if (type == null) {
+      return true;
+    }
+    return switch (type) {
+      case STATE, FINISHED, FORFEIT, ELIMINATED, PLAYER_JOIN, PLAYER_LEFT -> true;
+      default -> false;
+    };
+  }
+
+  private static boolean omitTokenPositions(String type) {
+    return ROLL.equals(type) || PASS.equals(type) || TURN_CHANGE.equals(type);
   }
 
   public static String typeFor(GameSnapshot snap) {
@@ -222,6 +263,14 @@ public class GameEvent {
     this.consecutiveSixes = consecutiveSixes;
   }
 
+  public List<Integer> getConsecutiveTimeouts() {
+    return consecutiveTimeouts;
+  }
+
+  public void setConsecutiveTimeouts(List<Integer> consecutiveTimeouts) {
+    this.consecutiveTimeouts = consecutiveTimeouts;
+  }
+
   public Map<String, List<Integer>> getTokenPositions() {
     return tokenPositions;
   }
@@ -276,6 +325,38 @@ public class GameEvent {
 
   public void setLastActionType(String lastActionType) {
     this.lastActionType = lastActionType;
+  }
+
+  public boolean[] getIsBot() {
+    return isBot;
+  }
+
+  public void setIsBot(boolean[] isBot) {
+    this.isBot = isBot;
+  }
+
+  public boolean[] getEliminated() {
+    return eliminated;
+  }
+
+  public void setEliminated(boolean[] eliminated) {
+    this.eliminated = eliminated;
+  }
+
+  public List<String> getUserIds() {
+    return userIds;
+  }
+
+  public void setUserIds(List<String> userIds) {
+    this.userIds = userIds;
+  }
+
+  public List<String> getUsernames() {
+    return usernames;
+  }
+
+  public void setUsernames(List<String> usernames) {
+    this.usernames = usernames;
   }
 
   public GameSnapshot getState() {

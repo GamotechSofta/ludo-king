@@ -91,6 +91,39 @@
   transform: translateY(0);
 }
 
+/* Pre-face optimistic tumble (awaiting server ROLL) — hides network RTT. */
+.game-profile-dice.is-optimistic .game-profile-dice-bob {
+  animation: dice-optimistic-spin 0.28s linear infinite;
+}
+
+.game-profile-dice.is-optimistic .game-profile-dice-face .die {
+  animation: dice-optimistic-flip 0.28s linear infinite;
+}
+
+@keyframes dice-optimistic-spin {
+  from {
+    transform: rotate(0deg) scale(1);
+  }
+  50% {
+    transform: rotate(180deg) scale(0.92);
+  }
+  to {
+    transform: rotate(360deg) scale(1);
+  }
+}
+
+@keyframes dice-optimistic-flip {
+  0% {
+    transform: rotateX(0deg) rotateY(0deg);
+  }
+  50% {
+    transform: rotateX(200deg) rotateY(120deg);
+  }
+  100% {
+    transform: rotateX(360deg) rotateY(240deg);
+  }
+}
+
 @keyframes dice-idle-bob {
   0%,
   100% {

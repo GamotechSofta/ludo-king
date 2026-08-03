@@ -15,6 +15,8 @@ interface RenderDiceProps {
   showArrow?: boolean;
   value: 0 | TDicevalues;
   diceRollNumber: number;
+  /** Spin before server face is known (online click). */
+  optimisticRolling?: boolean;
   handleDoneDice: () => void;
   handleSelectDice: () => void;
 }
@@ -57,6 +59,7 @@ const RenderDice = ({
   showArrow = false,
   value = 0,
   diceRollNumber = 0,
+  optimisticRolling = false,
   handleDoneDice,
   handleSelectDice,
 }: RenderDiceProps) => {
@@ -193,7 +196,10 @@ const RenderDice = ({
 
   if (!showDice) return null;
 
-  const canClick = hasTurn && !disabledDice && !spinning;
+  const showOptimistic = Boolean(
+    optimisticRolling && hasTurn && !spinning && (value === 0 || diceRollNumber === 0)
+  );
+  const canClick = hasTurn && !disabledDice && !spinning && !showOptimistic;
 
   return (
     <div
@@ -201,7 +207,7 @@ const RenderDice = ({
         canClick ? "ready" : "rolled"
       }${showArrow && canClick ? " has-arrow" : ""}${
         spinning ? " is-rolling" : ""
-      } has-die`}
+      }${showOptimistic ? " is-optimistic" : ""} has-die`}
     >
       {showArrow && canClick && (
         <span className="game-profile-dice-arrow" aria-hidden />

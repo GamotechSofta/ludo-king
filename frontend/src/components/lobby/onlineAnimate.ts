@@ -68,8 +68,8 @@ export async function runCellByCellSteps(
     if (cancel?.cancelled) return;
 
     onStep(i);
-    // Yield so React commits and the browser paints this cell before waiting
-    await afterPaint();
+    // One paint frame is enough — double-rAF stacked lag on every cell hop.
+    await nextFrame();
     if (cancel?.cancelled) return;
 
     // Let CSS slide finish on this box only

@@ -24,6 +24,8 @@ import {
   DICE_ROLL_SETTLE_MS,
   BOT_POST_DICE_DELAY_MS,
   ONLINE_TURN_PASS_DELAY_MS,
+  BOT_TURN_PASS_DELAY_MS,
+  POST_CAPTURE_TURN_DELAY_MS,
   ONLINE_TOKEN_MOVEMENT_INTERVAL_VALUE,
   MAX_PLAYER_CHANCES,
   TOKEN_STEP_PAUSE_MS,
@@ -108,6 +110,11 @@ import { isHumanOnlineMatch } from "./humanMatch";
 async function paintUpdate(update: () => void): Promise<void> {
   update();
   await afterPaint();
+}
+
+/** Client turn-pass delay — bots already waited on the server. */
+function turnPassDelayForSeat(snap: IGameSnapshot, seat: number): number {
+  return snap.isBot?.[seat] ? BOT_TURN_PASS_DELAY_MS : ONLINE_TURN_PASS_DELAY_MS;
 }
 
 /** Last resort unlock for a MOVE whose animation never completed. */
@@ -268,6 +275,11 @@ const OnlineGame = ({
   const applySeqRef = useRef(0);
   /** actionSeq of MOVE we already finished animating — prevents double-play */
   const lastAnimatedMoveSeqRef = useRef(0);
+  /**
+   * actionSeq currently in hop/kill playback. Null until playback actually
+   * starts — useLayoutEffect may set animatingRef early for the same MOVE.
+   */
+  const playingMoveSeqRef = useRef<number | null>(null);
   const rollingRef = useRef(false);
   const lastProcessedRollIdRef = useRef("");
   /** Server seat that owns the dice UI until their turn fully ends. */
@@ -345,6 +357,9 @@ const OnlineGame = ({
       window.clearTimeout(diceRollFallbackRef.current);
       diceRollFallbackRef.current = null;
     }
+    setActionsTurn((prev) =>
+      prev.optimisticRolling ? { ...prev, optimisticRolling: false } : prev
+    );
     const waiters = diceRollWaitersRef.current.splice(0);
     waiters.forEach((resolve) => resolve());
   }, []);
@@ -461,6 +476,7 @@ const OnlineGame = ({
         const rolled = applyServerDiceVisual(base, value);
         rolled.diceList = base.diceList;
         rolled.actionsBoardGame = EActionsBoardGame.SELECT_TOKEN;
+        rolled.optimisticRolling = false;
         return rolled;
       });
       return true;
@@ -658,7 +674,12 @@ const OnlineGame = ({
       const isMoveSnap = snap.lastActionType === "MOVE";
       if (isMoveSnap && !forceTokens) {
         const prev = prevSnapRef.current;
-        setPlayers(playersForView(snap, mySeat, roomId));
+        const boardSnap: IGameSnapshot = {
+          ...snap,
+          consecutiveTimeouts:
+            snap.consecutiveTimeouts ?? prev?.consecutiveTimeouts,
+        };
+        setPlayers(playersForView(boardSnap, mySeat, roomId));
         // Keep dice on the mover until hop finishes — do not jump to next seat yet
         const moverSeat =
           snap.lastActionSeat != null
@@ -677,7 +698,7 @@ const OnlineGame = ({
         );
         // Keep prior tokenPositions as display source of truth
         prevSnapRef.current = {
-          ...snap,
+          ...boardSnap,
           tokenPositions:
             prev?.tokenPositions && Object.keys(prev.tokenPositions).length
               ? prev.tokenPositions
@@ -787,6 +808,7 @@ const OnlineGame = ({
       lastAutoMoveKeyRef.current = "";
       lastProcessedRollIdRef.current = "";
       lastAnimatedMoveSeqRef.current = snapshot.actionSeq || 0;
+      playingMoveSeqRef.current = null;
       lastDiceSigRef.current = `${snapshot.actionSeq || 0}|${
         snapshot.currentSeatIndex
       }|${snapshot.phase}|${(snapshot.diceList || []).join(",")}`;
@@ -1086,6 +1108,7 @@ const OnlineGame = ({
   const abandonAnimation = useCallback(() => {
     if (exitingRef.current) return;
     animatingRef.current = false;
+    playingMoveSeqRef.current = null;
     suppressMoveAnimRef.current = false;
     rollingRef.current = false;
     isBusyRef.current = false;
@@ -1116,12 +1139,14 @@ const OnlineGame = ({
       }
 
       const moveSeq = snap.actionSeq || 0;
-      const isRemoteMove =
-        !suppressMoveAnimRef.current &&
-        isMoveSnapshot(snap, lastAnimatedMoveSeqRef.current);
 
-      if (animatingRef.current && !isRemoteMove) {
-        // Coalesce: keep only the newest snap (LudoGame board queue) — don't grow forever
+      // Another MOVE/snap arrived while hop/kill is still playing — wait.
+      // Do not treat useLayoutEffect's pre-lock of animatingRef as "busy"
+      // until playingMoveSeqRef is set (that is this MOVE starting).
+      if (animatingRef.current && playingMoveSeqRef.current != null) {
+        if (moveSeq === playingMoveSeqRef.current) {
+          return;
+        }
         pendingSnapRef.current = [snap];
         return;
       }
@@ -1157,7 +1182,10 @@ const OnlineGame = ({
           setPlayers(playersForView(snap, mySeat, roomId));
           setActionsTurn((prev) => {
             const base = actionsTurnFromSnapshot(snap, mySeat, prev);
-            return applyServerDiceVisual(base, value);
+            return {
+              ...applyServerDiceVisual(base, value),
+              optimisticRolling: false,
+            };
           });
           beginDiceRollAnimation();
           if (humanMoveDoneFallbackRef.current != null) {
@@ -1233,7 +1261,7 @@ const OnlineGame = ({
         const rollerSeat =
           snap.lastActionSeat ?? prev?.currentSeatIndex ?? snap.currentSeatIndex;
         const rolledValue = snap.lastActionDice;
-        let passDelayMs = ONLINE_TURN_PASS_DELAY_MS;
+        let passDelayMs = turnPassDelayForSeat(snap, rollerSeat);
 
         if (
           rolledValue != null &&
@@ -1259,11 +1287,14 @@ const OnlineGame = ({
                 mySeat,
                 prev
               );
-              return applyServerDiceVisual(base, rolledValue as TDicevalues);
+              return {
+                ...applyServerDiceVisual(base, rolledValue as TDicevalues),
+                optimisticRolling: false,
+              };
             });
             beginDiceRollAnimation();
             passDelayMs = Math.max(
-              ONLINE_TURN_PASS_DELAY_MS,
+              turnPassDelayForSeat(snap, rollerSeat),
               DICE_ROLL_ANIM_MS + DICE_ROLL_SETTLE_MS + 200
             );
           } else {
@@ -1275,7 +1306,7 @@ const OnlineGame = ({
               rolledValue as TDicevalues
             );
             passDelayMs = Math.max(
-              ONLINE_TURN_PASS_DELAY_MS,
+              turnPassDelayForSeat(snap, rollerSeat),
               DICE_ROLL_ANIM_MS + DICE_ROLL_SETTLE_MS + 200
             );
           }
@@ -1392,6 +1423,7 @@ const OnlineGame = ({
           setIsBusy(true);
         }
 
+        playingMoveSeqRef.current = moveSeq;
         await waitForDiceRollAnimation();
         if (cancelled) {
           if (seq === applySeqRef.current) abandonAnimation();
@@ -1444,8 +1476,9 @@ const OnlineGame = ({
         lastAnimatedMoveSeqRef.current = moveSeq;
         pendingDiceRef.current = null;
         suppressMoveAnimRef.current = false;
+        let didCapture = false;
         if (ok) {
-          await runPostMoveCaptureReturn(
+          didCapture = await runPostMoveCaptureReturn(
             moved.seat,
             moved.tokenIndex,
             prev
@@ -1456,7 +1489,15 @@ const OnlineGame = ({
             if (seq === applySeqRef.current) abandonAnimation();
             return;
           }
+          if (didCapture) {
+            await rafDelay(POST_CAPTURE_TURN_DELAY_MS, animCancelRef.current);
+            if (cancelled || seq !== applySeqRef.current) {
+              if (seq === applySeqRef.current) abandonAnimation();
+              return;
+            }
+          }
         }
+        playingMoveSeqRef.current = null;
         animatingRef.current = false;
         setIsBusy(false);
         isBusyRef.current = false;
@@ -1466,7 +1507,7 @@ const OnlineGame = ({
           snap.currentSeatIndex !== moved.seat &&
           snap.phase === "AWAITING_ROLL"
         ) {
-          await rafDelay(ONLINE_TURN_PASS_DELAY_MS, animCancelRef.current);
+          await rafDelay(turnPassDelayForSeat(snap, moved.seat), animCancelRef.current);
           if (cancelled) return;
         }
         syncBoardFromSnapshot(snap, false, true);
@@ -1502,6 +1543,16 @@ const OnlineGame = ({
 
     drain(snapshot);
     return () => {
+      // Mid hop/kill: keep this apply alive so capture return finishes before
+      // the queued bonus-turn snap runs. Exit/unmount still aborts.
+      if (exitingRef.current) {
+        cancelled = true;
+        animCancelRef.current = { cancelled: true };
+        return;
+      }
+      if (playingMoveSeqRef.current != null) {
+        return;
+      }
       cancelled = true;
     };
   }, [snapshot, mySeat, resyncTick, abandonAnimation, syncBoardFromSnapshot, runMoveAnimation, runPostMoveCaptureReturn, beginDiceRollAnimation, waitForDiceRollAnimation, flashDiceOnSeat, playDiceRollingOnce]);
@@ -1531,10 +1582,12 @@ const OnlineGame = ({
       }
       rollingRef.current = true;
       playSound("diceRolling");
+      beginDiceRollAnimation();
       setActionsTurn((prev) => ({
         ...prev,
         disabledDice: true,
         timerActivated: false,
+        optimisticRolling: true,
       }));
       rollDice();
       if (rollRecoveryTimerRef.current != null) {
@@ -1563,6 +1616,7 @@ const OnlineGame = ({
       mySeat,
       rollDice,
       isActionInFlight,
+      beginDiceRollAnimation,
       finishDiceRollAnimation,
     ]
   );
@@ -1699,7 +1753,7 @@ const OnlineGame = ({
           confirm.currentSeatIndex !== mySeat &&
           confirm.phase === "AWAITING_ROLL"
         ) {
-          await rafDelay(ONLINE_TURN_PASS_DELAY_MS, animCancelRef.current);
+          await rafDelay(turnPassDelayForSeat(confirm, mySeat), animCancelRef.current);
         }
         syncBoardFromSnapshot(confirm, false, true);
       } else if (ok && live) {

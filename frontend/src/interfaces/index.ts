@@ -170,6 +170,11 @@ export interface IActionsTurn {
   turnSecondsRemaining?: number | null;
   /** Online: full turn length in seconds (default 20). */
   turnTimeoutSeconds?: number;
+  /**
+   * Online: spin the die immediately on click before the server face arrives
+   * (LudoGame-style optimistic tumble).
+   */
+  optimisticRolling?: boolean;
 }
 
 export type TTokenByPositionType = Record<TtypeTile, IToken[]>;

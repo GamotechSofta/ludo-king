@@ -189,11 +189,20 @@ export const DICE_ROLL_ANIM_MS = Math.round(ROLL_TIME_VALUE * 1000);
 /** Extra ms after tumble for face settle + library rollDone (OnlineGame waits). */
 export const DICE_ROLL_SETTLE_MS = 280;
 
-/** After bot/opponent dice tumble, pause before pawn starts moving. */
-export const BOT_POST_DICE_DELAY_MS = 400;
+/**
+ * After bot/opponent dice tumble, pause before pawn starts moving.
+ * Keep short — server BotTurnCoordinator already waited ~850ms before MOVE.
+ */
+export const BOT_POST_DICE_DELAY_MS = 120;
 
-/** Pause before the die handoff to the next player (online) — face must be readable. */
-export const ONLINE_TURN_PASS_DELAY_MS = 850;
+/** Pause before the die handoff to the next human (online) — face must be readable. */
+export const ONLINE_TURN_PASS_DELAY_MS = 550;
+
+/** After a bot seat finishes, shorter handoff (server advance delay already applied). */
+export const BOT_TURN_PASS_DELAY_MS = 320;
+
+/** Extra beat after a kill/capture return before the next turn plays. */
+export const POST_CAPTURE_TURN_DELAY_MS = 650;
 
 /**
  * Valor para el delay que se aplica antes de enviar la confirmación al socket

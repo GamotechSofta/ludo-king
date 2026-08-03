@@ -119,6 +119,7 @@ const Profile = ({
             }
             diceRollNumber={actionsTurn.diceRollNumber}
             value={actionsTurn.diceValue}
+            optimisticRolling={!!actionsTurn.optimisticRolling}
             handleDoneDice={handleDoneDice}
             handleSelectDice={onSelectDice}
           />

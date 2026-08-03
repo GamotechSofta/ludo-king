@@ -53,11 +53,22 @@ public class GameEventBus {
   }
 
   public void publishSnapshot(String roomId, GameSnapshot snap) {
-    publishEvent(roomId, GameEvent.fromSnapshot(GameEvent.typeFor(snap), snap), false);
+    String type = GameEvent.typeFor(snap);
+    publishEvent(
+        roomId,
+        GameEvent.fromSnapshot(type, snap, GameEvent.shouldEmbedFullState(type)),
+        false,
+        snap
+    );
   }
 
   public void publishSnapshotForced(String roomId, GameSnapshot snap) {
-    publishEvent(roomId, GameEvent.fromSnapshot(GameEvent.STATE, snap), true);
+    publishEvent(
+        roomId,
+        GameEvent.fromSnapshot(GameEvent.STATE, snap, true),
+        true,
+        snap
+    );
   }
 
   public void publishSnapshotAndMeta(String roomId, GameSnapshot snap) {
@@ -77,7 +88,7 @@ public class GameEventBus {
         });
   }
 
-  private void publishEvent(String roomId, GameEvent event, boolean force) {
+  private void publishEvent(String roomId, GameEvent event, boolean force, GameSnapshot snap) {
     long seq = event.getActionSeq();
     if (!force) {
       Long prev = lastPublishedSeq.put(roomId, seq);
@@ -90,7 +101,6 @@ public class GameEventBus {
 
     messagingTemplate.convertAndSend("/topic/room/" + roomId, event);
 
-    GameSnapshot snap = event.getState();
     if (snap != null) {
       redisBridge.ifPresent(
           bridge ->

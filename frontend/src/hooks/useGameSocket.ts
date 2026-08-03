@@ -64,7 +64,10 @@ function normalizeSnapshot(raw: unknown): IGameSnapshot | null {
 }
 
 /** Unwrap GameEvent → authoritative snapshot (prefer embedded state). */
-function eventToSnapshot(raw: unknown): IGameSnapshot | null {
+function eventToSnapshot(
+  raw: unknown,
+  previous: IGameSnapshot | null = null
+): IGameSnapshot | null {
   if (!raw || typeof raw !== "object") return null;
   const ev = raw as IGameEvent;
   if (ev.state) {
@@ -88,30 +91,41 @@ function eventToSnapshot(raw: unknown): IGameSnapshot | null {
       lastActionDice: state.lastActionDice ?? ev.dice ?? null,
     };
   }
-  // Bare snapshot (legacy) or compact event with tokenPositions
-  if (ev.tokenPositions && Object.keys(ev.tokenPositions).length > 0) {
+  // Compact event: merge board from previous when ROLL/PASS omit tokenPositions
+  const tokenPositions =
+    ev.tokenPositions && Object.keys(ev.tokenPositions).length > 0
+      ? ev.tokenPositions
+      : previous?.tokenPositions;
+  if (tokenPositions && Object.keys(tokenPositions).length > 0) {
     const snap: IGameSnapshot = {
-      roomId: ev.roomId || "",
-      phase: ev.phase || "AWAITING_ROLL",
-      currentSeatIndex: ev.currentSeatIndex ?? 0,
-      currentColor: "",
+      roomId: ev.roomId || previous?.roomId || "",
+      phase: ev.phase || previous?.phase || "AWAITING_ROLL",
+      currentSeatIndex: ev.currentSeatIndex ?? previous?.currentSeatIndex ?? 0,
+      currentColor: previous?.currentColor || "",
       diceValue: ev.dice ?? 0,
-      diceList: ev.diceList || [],
-      tokenPositions: ev.tokenPositions,
-      seatColors: ev.seatColors,
+      diceList: ev.diceList?.length
+        ? ev.diceList
+        : ev.phase === "AWAITING_MOVE"
+          ? previous?.diceList || []
+          : ev.diceList || [],
+      tokenPositions,
+      seatColors: ev.seatColors?.length
+        ? ev.seatColors
+        : previous?.seatColors,
       legalTokenIndexes: ev.legalTokenIndexes || [],
       legalMoves: ev.legalMoves,
-      finished: ev.finished,
-      eliminated: ev.eliminated,
-      winnerSeat: ev.winnerSeat,
-      isBot: ev.isBot,
-      standings: ev.standings,
-      userIds: ev.userIds,
-      usernames: ev.usernames,
-      turnStartedAt: ev.turnStartedAt,
-      turnSecondsRemaining: ev.turnSecondsRemaining,
+      finished: ev.finished ?? previous?.finished,
+      eliminated: ev.eliminated ?? previous?.eliminated,
+      winnerSeat: ev.winnerSeat ?? previous?.winnerSeat,
+      isBot: ev.isBot ?? previous?.isBot,
+      standings: ev.standings ?? previous?.standings,
+      userIds: ev.userIds?.length ? ev.userIds : previous?.userIds,
+      usernames: ev.usernames?.length ? ev.usernames : previous?.usernames,
+      turnStartedAt: ev.turnStartedAt ?? previous?.turnStartedAt,
+      turnSecondsRemaining:
+        ev.turnSecondsRemaining ?? previous?.turnSecondsRemaining,
       consecutiveSixes: ev.consecutiveSixes,
-      consecutiveTimeouts: ev.consecutiveTimeouts,
+      consecutiveTimeouts: ev.consecutiveTimeouts ?? previous?.consecutiveTimeouts,
       lastActionType: ev.lastActionType || ev.type || null,
       lastActionSeat: ev.seat,
       lastActionTokenIndex: ev.tokenIndex,
@@ -175,6 +189,9 @@ export function useGameSocket(
     legalTokenIndexes?: number[];
     diceList?: number[];
   }>({});
+  const lastBoardRef = useRef<IGameSnapshot | null>(
+    normalizeSnapshot(initialSnapshot)
+  );
 
   const releaseActionGate = useCallback(() => {
     inFlightActionRef.current = false;
@@ -191,7 +208,7 @@ export function useGameSocket(
       snap && typeof snap === "object" && "type" in (snap as object)
         ? (snap as IGameEvent)
         : null;
-    const normalized = eventToSnapshot(snap);
+    const normalized = eventToSnapshot(snap, lastBoardRef.current);
     if (!normalized) return false;
 
     const merged: IGameSnapshot = {
@@ -205,6 +222,10 @@ export function useGameSocket(
       seatColors: normalized.seatColors?.length
         ? normalized.seatColors
         : lastIdentityRef.current.seatColors,
+      // Miss chances are match-total — never drop them on compact events.
+      consecutiveTimeouts:
+        normalized.consecutiveTimeouts ??
+        lastBoardRef.current?.consecutiveTimeouts,
       legalMoves:
         normalized.legalMoves?.length
           ? normalized.legalMoves
@@ -274,6 +295,7 @@ export function useGameSocket(
 
     lastSigRef.current = sig;
     lastSeqRef.current = Math.max(lastSeqRef.current, nextSeq);
+    lastBoardRef.current = merged;
     if (fromWs) lastWsAtRef.current = Date.now();
     onlinePerf.markSnapshotApplied(fromWs, nextSeq);
     if (event) setLastEvent(event);
