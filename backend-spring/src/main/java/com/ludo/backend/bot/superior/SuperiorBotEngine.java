@@ -171,8 +171,7 @@ public final class SuperiorBotEngine {
   }
 
   /**
-   * Hard priorities: (1) match-winning move, (2) any legal kill/capture,
-   * then best expected value among the rest.
+   * Hard priorities: (1) match-winning move, then best expected value among the rest.
    */
   private static MoveEvaluation selectPriorityMove(
       List<SuperiorPlayerState> players,
@@ -190,17 +189,6 @@ public final class SuperiorBotEngine {
     }
     if (!winningMoves.isEmpty()) {
       return tieBreak(winningMoves, random);
-    }
-
-    // If a kill is legal this turn, always take it (highest priority after win).
-    List<MoveEvaluation> captureMoves = new ArrayList<>();
-    for (MoveEvaluation evaluation : evaluations) {
-      if (!captureTargets(players, playerIndex, evaluation.move).isEmpty()) {
-        captureMoves.add(evaluation);
-      }
-    }
-    if (!captureMoves.isEmpty()) {
-      return tieBreak(captureMoves, random);
     }
 
     return tieBreak(evaluations, random);

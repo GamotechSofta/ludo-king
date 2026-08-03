@@ -7,8 +7,8 @@ import java.util.List;
  *
  * <p>Legal capture moves are <strong>never</strong> filtered out — if a kill
  * chance exists (1st, 2nd, or later opportunity), it stays selectable and bots
- * already prioritize capture via {@code BotService}. Counters remain available
- * for future tuning but do not suppress kills.
+ * already use staged kill hunts and EV-based move choice via {@code BotService}.
+ * Counters remain available for future tuning but do not suppress kills.
  *
  * <p>Does not change dice, movement physics, or capture resolution.
  */

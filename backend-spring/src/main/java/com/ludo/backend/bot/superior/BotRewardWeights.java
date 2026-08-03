@@ -4,12 +4,12 @@ package com.ludo.backend.bot.superior;
 public final class BotRewardWeights {
 
   public double winGame = 10_000.0;
-  public double tokenHome = 1_200.0;
+  public double tokenHome = 2_200.0;
   public double captureBase = 2_500.0;
   public double escapeThreat = 500.0;
   public double createBlockade = 400.0;
   public double breakOpponentBlockade = 350.0;
-  public double enterHomePath = 300.0;
+  public double enterHomePath = 500.0;
   public double landSafe = 220.0;
   public double saveThreatened = 200.0;
   public double createCaptureThreat = 220.0;
@@ -22,12 +22,12 @@ public final class BotRewardWeights {
   public double ignoreGuaranteedCapture = -2_000.0;
   public double leaveSafetyIntoDanger = -250.0;
   public double twoPlayerAttackMultiplier = 1.60;
-  public double huntReward = 650.0;
+  public double huntReward = 750.0;
   public double dangerProbabilityPenalty = -900.0;
   public double tokenDiversityReward = 180.0;
-  public int huntHorizonTurns = 3;
+  public int huntHorizonTurns = 4;
   public int expectimaxDepth = 2;
-  public long maxDecisionMillis = 45;
+  public long maxDecisionMillis = 300;
 
   public BotRewardWeights() {}
 }

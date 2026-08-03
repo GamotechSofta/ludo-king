@@ -20,8 +20,12 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.HashMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
+import com.ludo.backend.bot.BotDiceBias;
+import com.ludo.backend.bot.BotKillStalk;
+import com.ludo.backend.bot.KillStalkPlan;
 import com.ludo.backend.bot.ai.HumanBehaviorEngine;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -122,6 +126,14 @@ public class GameEngineService {
     final int[] earlyKillSkipCount;
     /** When true, cross-side capture moves are filtered out for this seat's move phase. */
     final boolean[] earlyKillSuppressActive;
+    /** Per-seat match dice rolls (for six balancing / first-six window). */
+    final int[] matchDiceRollCount;
+    /** Per-seat match six count (for six balancing). */
+    final int[] matchSixCount;
+    /** In-flight kill-stalk hunts keyed by hunter seat index. */
+    final Map<Integer, KillStalkPlan> botStalkPlans = new HashMap<>();
+    /** Token the rolling bot must move to keep a stalk on track (cleared after move). */
+    Integer botForcedTokenIndex;
     final List<Integer> diceList = new ArrayList<>();
     final ReentrantLock lock = new ReentrantLock();
     int currentSeat;
@@ -155,6 +167,8 @@ public class GameEngineService {
       this.jailExitAssistsUsed = new int[maxPlayers];
       this.earlyKillSkipCount = new int[maxPlayers];
       this.earlyKillSuppressActive = new boolean[maxPlayers];
+      this.matchDiceRollCount = new int[maxPlayers];
+      this.matchSixCount = new int[maxPlayers];
       this.lastActionType = null;
       this.lastActionSeat = null;
       this.lastActionTokenIndex = null;
@@ -401,6 +415,79 @@ public class GameEngineService {
     rt.lock.lock();
     try {
       return rollInternal(rt, seat, forcedValue);
+    } finally {
+      rt.lock.unlock();
+    }
+  }
+
+  public KillStalkPlan getBotStalkPlan(String roomId, int seat) {
+    MatchRuntime rt = require(roomId);
+    rt.lock.lock();
+    try {
+      return rt.botStalkPlans.get(seat);
+    } finally {
+      rt.lock.unlock();
+    }
+  }
+
+  public void setBotStalkPlan(String roomId, int seat, KillStalkPlan plan) {
+    MatchRuntime rt = require(roomId);
+    rt.lock.lock();
+    try {
+      BotKillStalk.upsertStalkPlan(rt.botStalkPlans, seat, plan);
+    } finally {
+      rt.lock.unlock();
+    }
+  }
+
+  public Integer getBotForcedTokenIndex(String roomId) {
+    MatchRuntime rt = require(roomId);
+    rt.lock.lock();
+    try {
+      return rt.botForcedTokenIndex;
+    } finally {
+      rt.lock.unlock();
+    }
+  }
+
+  public void setBotForcedTokenIndex(String roomId, Integer tokenIndex) {
+    MatchRuntime rt = require(roomId);
+    rt.lock.lock();
+    try {
+      rt.botForcedTokenIndex = tokenIndex;
+    } finally {
+      rt.lock.unlock();
+    }
+  }
+
+  /** Returns the forced token index and clears it (after move selection). */
+  public Integer consumeBotForcedTokenIndex(String roomId) {
+    MatchRuntime rt = require(roomId);
+    rt.lock.lock();
+    try {
+      Integer forced = rt.botForcedTokenIndex;
+      rt.botForcedTokenIndex = null;
+      return forced;
+    } finally {
+      rt.lock.unlock();
+    }
+  }
+
+  public int[] getMatchDiceRollCounts(String roomId) {
+    MatchRuntime rt = require(roomId);
+    rt.lock.lock();
+    try {
+      return Arrays.copyOf(rt.matchDiceRollCount, rt.matchDiceRollCount.length);
+    } finally {
+      rt.lock.unlock();
+    }
+  }
+
+  public int[] getMatchSixCounts(String roomId) {
+    MatchRuntime rt = require(roomId);
+    rt.lock.lock();
+    try {
+      return Arrays.copyOf(rt.matchSixCount, rt.matchSixCount.length);
     } finally {
       rt.lock.unlock();
     }
@@ -672,6 +759,17 @@ public class GameEngineService {
       if (jailExitSix != null) {
         value = jailExitSix;
         rt.jailExitAssistsUsed[seat] += 1;
+      } else if (humanSeat) {
+        GameSnapshot preRollSnap = snapshot(rt);
+        var players =
+            BotDiceBias.buildPlayers(
+                preRollSnap, rt.matchDiceRollCount, rt.matchSixCount);
+        var ctx = BotDiceBias.buildDiceRollContext(players, seat);
+        int killFavor =
+            BotDiceBias.BotDiceSettings.DEFAULT.userKillFavorFor(rt.maxPlayers);
+        value =
+            BotDiceBias.rollUserDice(
+                rt.consecutiveSixes, players, seat, killFavor, ctx, secureRandom);
       } else {
         value = secureRandom.nextInt(6) + 1;
       }
@@ -686,6 +784,10 @@ public class GameEngineService {
       }
     }
     // Miss chances are match-total — do not reset on a successful roll.
+    rt.matchDiceRollCount[seat] += 1;
+    if (value == 6) {
+      rt.matchSixCount[seat] += 1;
+    }
     rt.lastDice = value;
     rt.diceList.clear();
     rt.diceList.add(value);
@@ -740,6 +842,10 @@ public class GameEngineService {
     int dice = rt.diceList.get(diceIndex);
     if (!isAllowedMove(rt, seat, tokenIndex, diceIndex)) {
       throw new IllegalStateException("Illegal move");
+    }
+
+    if (rt.isBot[seat]) {
+      rt.botForcedTokenIndex = null;
     }
 
     boolean usedSix = dice == 6;

@@ -4,6 +4,10 @@ import static com.ludo.backend.game.BoardConstants.JAIL;
 import static com.ludo.backend.game.BoardConstants.isHome;
 import static com.ludo.backend.game.BoardConstants.isJail;
 
+import com.ludo.backend.bot.BotBoardMath;
+import com.ludo.backend.bot.BotDiceBias;
+import com.ludo.backend.bot.BotDiceDecision;
+import com.ludo.backend.bot.KillStalkPlan;
 import com.ludo.backend.bot.superior.SuperiorBotBridge;
 import com.ludo.backend.game.GameEngineService;
 import com.ludo.backend.game.GameSnapshot;
@@ -11,7 +15,6 @@ import com.ludo.backend.game.LudoColor;
 import com.ludo.backend.room.BotDifficulty;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,9 +24,9 @@ import org.springframework.stereotype.Service;
  * Bot action executor. Delays live in {@link BotTurnCoordinator} (LudoGame-style
  * deadlines) — this class never sleeps, so workers stay free under load.
  *
- * <p>Fair dice by default; one exception: when a human has 2+ pawns home and a
- * human pawn is in kill range 1–5, force that capture die. Move pick uses
- * SuperiorBotEngine (kill-first among legal moves).
+ * <p>Bot dice uses {@link BotDiceBias} (kill stalk, home finish favor, six balancing).
+ * Move pick uses {@link SuperiorBotBridge} / {@link com.ludo.backend.bot.superior.SuperiorBotEngine}
+ * with win-only hard priority (no forced kills).
  */
 @Service
 public class BotService {
@@ -61,22 +64,18 @@ public class BotService {
 
     try {
       if (GameEngineService.PHASE_ROLL.equals(snap.getPhase())) {
-        // Home finish 1–4 first; else existing human-2-home kill assist.
-        Integer forced =
-            BotHomeDiceAssist.maybeForceHomeDice(
+        KillStalkPlan existingPlan = gameEngineService.getBotStalkPlan(roomId, seat);
+        BotDiceDecision decision =
+            BotDiceBias.rollBotDice(
                 snap,
                 seat,
-                (token, dice) ->
-                    gameEngineService.canBotUseDiceForAssist(roomId, seat, token, dice));
-        if (forced == null) {
-          forced =
-              BotKillDiceAssist.maybeForceKillDiceWhenHumanHasTwoHome(
-                  snap,
-                  seat,
-                  (token, dice) ->
-                      gameEngineService.canBotUseDiceForAssist(roomId, seat, token, dice));
-        }
-        snap = gameEngineService.rollDiceAsSeat(roomId, seat, forced);
+                snap.getConsecutiveSixes(),
+                gameEngineService.getMatchDiceRollCounts(roomId),
+                gameEngineService.getMatchSixCounts(roomId),
+                existingPlan);
+        gameEngineService.setBotStalkPlan(roomId, seat, decision.stalkPlan());
+        gameEngineService.setBotForcedTokenIndex(roomId, decision.forcedTokenIndex());
+        snap = gameEngineService.rollDiceAsSeat(roomId, seat, decision.dice());
         publish(onStep, snap);
         return snap;
       }
@@ -179,24 +178,37 @@ public class BotService {
     List<int[]> sole = soleActivePawnOnlyMoves(moves, ownPositions);
     List<int[]> candidates = sole != null ? sole : moves;
 
-    // Exact home finish (1–4 assist): always take home when legal.
+    // Exact home finish: always take home when legal.
     List<int[]> homes = homeFinishMoves(snap, colorName, ownPositions, candidates);
     if (!homes.isEmpty()) {
       return homes.get(0);
     }
 
-    // Hard rule on real board cells: if any legal move kills, always take a kill.
-    List<int[]> kills = captureMoves(snap, seat, colorName, ownPositions, candidates);
-    if (!kills.isEmpty()) {
-      if (kills.size() == 1) {
-        return kills.get(0);
+    Integer forcedToken = gameEngineService.consumeBotForcedTokenIndex(roomId);
+    if (forcedToken != null) {
+      List<int[]> forcedMoves = movesForToken(candidates, forcedToken);
+      if (!forcedMoves.isEmpty()) {
+        if (forcedMoves.size() == 1) {
+          return forcedMoves.get(0);
+        }
+        int[] amongForced =
+            superiorBotBridge.chooseMove(snap, seat, forcedMoves, difficulty);
+        return amongForced != null ? amongForced : forcedMoves.get(0);
       }
-      int[] amongKills = superiorBotBridge.chooseMove(snap, seat, kills, difficulty);
-      return amongKills != null ? amongKills : kills.get(0);
     }
 
     int[] chosen = superiorBotBridge.chooseMove(snap, seat, candidates, difficulty);
     return chosen != null ? chosen : candidates.get(0);
+  }
+
+  private static List<int[]> movesForToken(List<int[]> moves, int tokenIndex) {
+    List<int[]> out = new ArrayList<>();
+    for (int[] m : moves) {
+      if (m != null && m.length >= 2 && m[0] == tokenIndex) {
+        out.add(m);
+      }
+    }
+    return out;
   }
 
   /** Legal moves that land exactly on HOME. */
@@ -230,43 +242,6 @@ public class BotService {
       }
     }
     return homes;
-  }
-
-  /** Legal moves that land on a capturable opponent (unsafe main cell, single token). */
-  private static List<int[]> captureMoves(
-      GameSnapshot snap,
-      int seat,
-      String colorName,
-      List<Integer> ownPositions,
-      List<int[]> moves) {
-    LudoColor color = BotBoardMath.parseColor(colorName);
-    if (color == null || moves == null || snap.getDiceList() == null) {
-      return List.of();
-    }
-    Map<String, List<Integer>> all = snap.getTokenPositions();
-    List<String> colors = snap.getSeatColors();
-    boolean[] isBot = snap.getIsBot();
-    List<int[]> kills = new ArrayList<>();
-    for (int[] m : moves) {
-      if (m == null || m.length < 2) {
-        continue;
-      }
-      int token = m[0];
-      int diceIndex = m[1];
-      if (token < 0 || token >= ownPositions.size()) {
-        continue;
-      }
-      if (diceIndex < 0 || diceIndex >= snap.getDiceList().size()) {
-        continue;
-      }
-      int from = ownPositions.get(token) == null ? JAIL : ownPositions.get(token);
-      int dice = snap.getDiceList().get(diceIndex);
-      int to = BotBoardMath.applySteps(color, from, dice);
-      if (BotBoardMath.findCaptureVictim(seat, to, all, colors, isBot) != null) {
-        kills.add(m);
-      }
-    }
-    return kills;
   }
 
   private static List<int[]> soleActivePawnOnlyMoves(

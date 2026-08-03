@@ -696,9 +696,15 @@ const OnlineGame = ({
             prev?.currentSeatIndex
           )
         );
-        // Keep prior tokenPositions as display source of truth
+        // Keep prior tokenPositions AND the pre-move seat so bot→human
+        // handoff still sees a seat change after the hop finishes.
         prevSnapRef.current = {
           ...boardSnap,
+          currentSeatIndex:
+            prev?.currentSeatIndex ??
+            (snap.lastActionSeat != null
+              ? snap.lastActionSeat
+              : boardSnap.currentSeatIndex),
           tokenPositions:
             prev?.tokenPositions && Object.keys(prev.tokenPositions).length
               ? prev.tokenPositions
@@ -1180,6 +1186,9 @@ const OnlineGame = ({
           lastAutoMoveKeyRef.current = "";
           applyDiceOwnerTurn(snap, snap.currentSeatIndex);
           setPlayers(playersForView(snap, mySeat, roomId));
+          // Human roll: never keep a stale busy lock from the previous bot turn.
+          isBusyRef.current = false;
+          setIsBusy(false);
           setActionsTurn((prev) => {
             const base = actionsTurnFromSnapshot(snap, mySeat, prev);
             return {
@@ -1193,6 +1202,11 @@ const OnlineGame = ({
           }
           humanMoveDoneFallbackRef.current = window.setTimeout(() => {
             humanMoveDoneFallbackRef.current = null;
+            // Guarantee unlock even if RenderDice skips onDoneDice.
+            isBusyRef.current = false;
+            setIsBusy(false);
+            finishDiceRollAnimation();
+            rollingRef.current = false;
             handleDoneDiceRef.current();
           }, DICE_ROLL_ANIM_MS + DICE_ROLL_SETTLE_MS + 80);
           prevSnapRef.current = {
@@ -1503,12 +1517,35 @@ const OnlineGame = ({
         isBusyRef.current = false;
         finishDiceRollAnimation();
         rollingRef.current = false;
+        const moverSeatDone = moved.seat;
         if (
-          snap.currentSeatIndex !== moved.seat &&
+          snap.currentSeatIndex !== moverSeatDone &&
           snap.phase === "AWAITING_ROLL"
         ) {
-          await rafDelay(turnPassDelayForSeat(snap, moved.seat), animCancelRef.current);
+          await rafDelay(turnPassDelayForSeat(snap, moverSeatDone), animCancelRef.current);
           if (cancelled) return;
+          // Ensure bot→human (or any seat handoff) resets die to idle rollable.
+          if (prevSnapRef.current) {
+            prevSnapRef.current = {
+              ...prevSnapRef.current,
+              currentSeatIndex: moverSeatDone,
+            };
+          }
+          diceOwnerSeatRef.current = snap.currentSeatIndex;
+          applyDiceOwnerTurn(snap, snap.currentSeatIndex);
+          setActionsTurn((prevActions) => ({
+            ...actionsTurnFromSnapshot(
+              snap,
+              mySeat,
+              prevActions,
+              moverSeatDone
+            ),
+            diceValue: 0,
+            diceRollNumber: 0,
+            optimisticRolling: false,
+            disabledDice: onlineDiceDisabled(snap, mySeat),
+            actionsBoardGame: EActionsBoardGame.ROLL_DICE,
+          }));
         }
         syncBoardFromSnapshot(snap, false, true);
         const next = pendingSnapRef.current.shift();
@@ -1555,14 +1592,26 @@ const OnlineGame = ({
       }
       cancelled = true;
     };
-  }, [snapshot, mySeat, resyncTick, abandonAnimation, syncBoardFromSnapshot, runMoveAnimation, runPostMoveCaptureReturn, beginDiceRollAnimation, waitForDiceRollAnimation, flashDiceOnSeat, playDiceRollingOnce]);
+  }, [snapshot, mySeat, resyncTick, abandonAnimation, syncBoardFromSnapshot, runMoveAnimation, runPostMoveCaptureReturn, beginDiceRollAnimation, finishDiceRollAnimation, waitForDiceRollAnimation, flashDiceOnSeat, playDiceRollingOnce]);
 
   const handleSelectDice = useCallback(
     (_diceValue?: TDicevalues) => {
       const live = snapshotRef.current ?? snapshot;
+      const humanRollTurn =
+        !!live &&
+        live.currentSeatIndex === mySeat &&
+        live.phase === "AWAITING_ROLL" &&
+        (live.diceList?.length ?? 0) === 0;
+      // On my roll turn, ignore a leftover tumble lock from the prior bot seat —
+      // otherwise the die looks ready but never accepts clicks.
+      if (humanRollTurn && diceRollPendingRef.current && !animatingRef.current) {
+        finishDiceRollAnimation();
+        isBusyRef.current = false;
+        setIsBusy(false);
+      }
       const localPlaybackPending =
         animatingRef.current ||
-        diceRollPendingRef.current ||
+        (!humanRollTurn && diceRollPendingRef.current) ||
         passFlashUntilRef.current > performance.now() ||
         pendingSnapRef.current.length > 0;
       if (
@@ -1883,25 +1932,35 @@ const OnlineGame = ({
       if (live.phase !== "AWAITING_ROLL") return;
       if (live.eliminated?.[mySeat] || live.finished?.[mySeat]) return;
       if (animatingRef.current || rollingRef.current) return;
-      if (diceRollPendingRef.current || isActionInFlight()) return;
       // Let a PASS roll-flash finish on the previous seat first
       if (passFlashUntilRef.current > performance.now()) return;
       // Bot/opponent snap still queued — human must not roll yet
       if (pendingSnapRef.current.length > 0) return;
       if (onlineDiceDisabled(live, mySeat)) return;
 
+      if (isActionInFlight()) return;
+
       // Pawns still carrying an earlier AWAITING_MOVE's selectable rings look
       // clickable but cannot move, so the board needs the resync too.
       const staleTokens = listTokensRef.current.some((group) =>
         group.tokens.some((t) => t.diceAvailable.length > 0)
       );
+      // Stuck tumble lock after bot handoff silently blocks the die forever.
       const stale =
         actionsTurnRef.current.disabledDice ||
         actionsTurnRef.current.isDisabledUI ||
         isBusyRef.current ||
-        staleTokens;
+        staleTokens ||
+        diceRollPendingRef.current ||
+        !!actionsTurnRef.current.optimisticRolling;
       if (!stale) return;
 
+      diceRollPendingRef.current = false;
+      setDiceRolling(false);
+      if (diceRollFallbackRef.current != null) {
+        window.clearTimeout(diceRollFallbackRef.current);
+        diceRollFallbackRef.current = null;
+      }
       isBusyRef.current = false;
       setIsBusy(false);
       if (staleTokens) {
@@ -1911,6 +1970,9 @@ const OnlineGame = ({
         ...prev,
         disabledDice: false,
         isDisabledUI: false,
+        optimisticRolling: false,
+        diceValue: 0,
+        diceRollNumber: 0,
       }));
     }, 400);
 
@@ -2041,12 +2103,16 @@ const OnlineGame = ({
     const nextTokens = listTokensFromSnapshot(live, mySeat, canMove);
     setListTokens(nextTokens);
     listTokensRef.current = nextTokens;
+    isBusyRef.current = false;
+    setIsBusy(false);
     setActionsTurn((prev) => ({
       ...prev,
       ...actionsTurnFromSnapshot(live, mySeat, prev),
       diceValue: prev.diceValue,
       diceRollNumber: prev.diceRollNumber,
       actionsBoardGame: EActionsBoardGame.SELECT_TOKEN,
+      disabledDice: true,
+      optimisticRolling: false,
     }));
 
     scheduleHumanAutoMove(live);
@@ -2240,6 +2306,12 @@ const OnlineGame = ({
     snapshot.currentSeatIndex === mySeat &&
     mySeat >= 0;
 
+  const isHumanAwaitingRoll =
+    snapshot?.phase === "AWAITING_ROLL" &&
+    snapshot.currentSeatIndex === mySeat &&
+    mySeat >= 0 &&
+    (snapshot.diceList?.length ?? 0) === 0;
+
   const profileHandlers = useMemo(
     () => ({
       handleTimer: () => undefined,
@@ -2257,12 +2329,16 @@ const OnlineGame = ({
     turnColor,
     actionsTurn: {
       ...actionsTurn,
-      // Keep dice locked while bot/opponent local playback (busy/rolling) runs.
-      disabledDice:
-        !!actionsTurn.disabledDice ||
-        diceRolling ||
-        isBusy ||
-        (snapshot != null && onlineDiceDisabled(snapshot, mySeat)),
+      // Mirror roll-gate: on my AWAITING_ROLL, do not keep the die locked on a
+      // leftover isBusy from bot playback. Still lock while tumble is spinning.
+      disabledDice: isHumanAwaitingRoll
+        ? diceRolling ||
+          !!actionsTurn.optimisticRolling ||
+          (snapshot != null && onlineDiceDisabled(snapshot, mySeat))
+        : !!actionsTurn.disabledDice ||
+          diceRolling ||
+          isBusy ||
+          (snapshot != null && onlineDiceDisabled(snapshot, mySeat)),
       timerActivated:
         snapshot?.phase === "AWAITING_ROLL" ||
         snapshot?.phase === "AWAITING_MOVE",
@@ -2436,8 +2512,10 @@ const OnlineGame = ({
             <Tokens
               isDisabledUI={
                 actionsTurn.isDisabledUI ||
-                diceRolling ||
-                (isBusy && !isHumanAwaitingMove)
+                // While human must pick a pawn, never block clicks on leftover
+                // diceRolling/isBusy from the tumble or prior bot turn.
+                (!isHumanAwaitingMove &&
+                  (diceRolling || isBusy))
               }
               listTokens={listTokens}
               diceList={actionsTurn.diceList}

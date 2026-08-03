@@ -103,17 +103,37 @@ function eventToSnapshot(
       currentSeatIndex: ev.currentSeatIndex ?? previous?.currentSeatIndex ?? 0,
       currentColor: previous?.currentColor || "",
       diceValue: ev.dice ?? 0,
+      // Compact ROLL may send `dice` without `diceList` — synthesize so clients
+      // can enter AWAITING_MOVE with a usable face + pawn options.
       diceList: ev.diceList?.length
         ? ev.diceList
-        : ev.phase === "AWAITING_MOVE"
-          ? previous?.diceList || []
-          : ev.diceList || [],
+        : typeof ev.dice === "number" &&
+            ev.dice >= 1 &&
+            ev.dice <= 6 &&
+            (ev.phase === "AWAITING_MOVE" || ev.type === "ROLL")
+          ? [ev.dice]
+          : ev.phase === "AWAITING_MOVE"
+            ? previous?.diceList || []
+            : ev.diceList || [],
       tokenPositions,
       seatColors: ev.seatColors?.length
         ? ev.seatColors
         : previous?.seatColors,
-      legalTokenIndexes: ev.legalTokenIndexes || [],
-      legalMoves: ev.legalMoves,
+      legalTokenIndexes: ev.legalTokenIndexes?.length
+        ? ev.legalTokenIndexes
+        : ev.phase === "AWAITING_MOVE" &&
+            ev.actionSeq != null &&
+            ev.actionSeq === previous?.actionSeq
+          ? previous?.legalTokenIndexes || []
+          : ev.legalTokenIndexes || [],
+      legalMoves:
+        ev.legalMoves?.length
+          ? ev.legalMoves
+          : ev.phase === "AWAITING_MOVE" &&
+              ev.actionSeq != null &&
+              ev.actionSeq === previous?.actionSeq
+            ? previous?.legalMoves
+            : ev.legalMoves,
       finished: ev.finished ?? previous?.finished,
       eliminated: ev.eliminated ?? previous?.eliminated,
       winnerSeat: ev.winnerSeat ?? previous?.winnerSeat,
