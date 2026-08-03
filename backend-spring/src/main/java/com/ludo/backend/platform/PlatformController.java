@@ -1,6 +1,10 @@
 package com.ludo.backend.platform;
 
+import com.ludo.backend.platform.operator.OperatorGatewayClient;
+import com.ludo.backend.platform.operator.OperatorGatewayException;
+import com.ludo.backend.platform.operator.UserDetailResponse;
 import com.ludo.backend.platform.wallet.MatchEconomyService;
+import com.ludo.backend.platform.wallet.WalletProperties;
 import com.ludo.backend.user.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
@@ -10,6 +14,7 @@ import java.util.Map;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -23,7 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * Aakda platform integration: launch binding + live wallet proxy.
+ * Platform / Operator integration: launch binding + live wallet proxy.
  */
 @RestController
 @RequestMapping("/api/platform")
@@ -39,15 +44,21 @@ public class PlatformController {
   private final MatchEconomyService matchEconomy;
   private final UserService userService;
   private final GameHistoryService gameHistoryService;
+  private final WalletProperties walletProperties;
+  private final ObjectProvider<OperatorGatewayClient> operatorGateway;
 
   public PlatformController(
       MatchEconomyService matchEconomy,
       UserService userService,
-      GameHistoryService gameHistoryService
+      GameHistoryService gameHistoryService,
+      WalletProperties walletProperties,
+      ObjectProvider<OperatorGatewayClient> operatorGateway
   ) {
     this.matchEconomy = matchEconomy;
     this.userService = userService;
     this.gameHistoryService = gameHistoryService;
+    this.walletProperties = walletProperties;
+    this.operatorGateway = operatorGateway;
   }
 
   public record LaunchRequest(
@@ -63,6 +74,14 @@ public class PlatformController {
   /** Bind platform query params into the HTTP session (called by WebView frontend). */
   @PostMapping("/launch")
   public Map<String, Object> launch(@RequestBody LaunchRequest body, HttpServletRequest request) {
+    if (walletProperties.isOperatorMode()) {
+      return launchOperator(body, request);
+    }
+    return launchLegacyWallet(body, request);
+  }
+
+  /** Existing legacy wallet launch path — behavior unchanged. */
+  private Map<String, Object> launchLegacyWallet(LaunchRequest body, HttpServletRequest request) {
     String userId = requireValidUserId(body.userId());
     String gameId = blankTo(body.gameId(), "LUDO");
     String displayName = blankTo(body.displayName(), "Player");
@@ -76,7 +95,9 @@ public class PlatformController {
         blankTo(body.sessionId(), null),
         blankTo(body.token(), null),
         sanitizeReturnUrl(body.returnUrl()),
-        displayName
+        displayName,
+        null,
+        null
     );
     HttpSession session = request.getSession(true);
     session.setAttribute(PlatformLaunchContext.SESSION_KEY, ctx);
@@ -98,6 +119,76 @@ public class PlatformController {
       }
     }
 
+    return launchResponse(ctx, balance, balanceError);
+  }
+
+  /**
+   * Operator mode: authenticate via {@code GET /service/user/detail} using the player token.
+   * Stores userId, operatorId, token, balance in the HTTP session only.
+   */
+  private Map<String, Object> launchOperator(LaunchRequest body, HttpServletRequest request) {
+    String token = blankTo(body.token(), null);
+    if (token == null) {
+      throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid token");
+    }
+
+    OperatorGatewayClient client = operatorGateway.getIfAvailable();
+    if (client == null) {
+      throw new ResponseStatusException(
+          HttpStatus.INTERNAL_SERVER_ERROR, "Operator gateway not available");
+    }
+
+    UserDetailResponse detail;
+    try {
+      detail = client.fetchUserDetail(token);
+    } catch (OperatorGatewayException e) {
+      log.warn("operator launch userDetail rejected: {}", e.getMessage());
+      throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid token", e);
+    }
+
+    UserDetailResponse.User user = detail.user();
+    String userId = requireValidUserId(user.userId());
+    String operatorId = user.operatorId().trim();
+    double balance = user.balance();
+
+    String gameId = blankTo(body.gameId(), "LUDO");
+    String displayName = blankTo(body.displayName(), userId);
+    if (displayName.length() > 64) {
+      displayName = displayName.substring(0, 64);
+    }
+
+    PlatformLaunchContext ctx = new PlatformLaunchContext(
+        userId,
+        gameId,
+        blankTo(body.sessionId(), null),
+        token,
+        sanitizeReturnUrl(body.returnUrl()),
+        displayName,
+        operatorId,
+        balance
+    );
+    HttpSession session = request.getSession(true);
+    session.setAttribute(PlatformLaunchContext.SESSION_KEY, ctx);
+    try {
+      userService.upsertPlatformProfile(userId, displayName);
+    } catch (Exception e) {
+      log.warn("platform profile upsert failed userId={}: {}", userId, e.getMessage());
+    }
+    log.info(
+        "platform operator launch userId={} operatorId={} gameId={} sessionId={} balance={}",
+        userId,
+        operatorId,
+        gameId,
+        ctx.sessionId(),
+        balance
+    );
+
+    return launchResponse(ctx, balance, null);
+  }
+
+  private Map<String, Object> launchResponse(
+      PlatformLaunchContext ctx, Double balance, String balanceError
+  ) {
     Map<String, Object> res = new LinkedHashMap<>();
     res.put("success", true);
     res.put("userId", ctx.userId());
@@ -105,11 +196,14 @@ public class PlatformController {
     res.put("sessionId", ctx.sessionId());
     res.put("displayName", ctx.displayName());
     res.put("returnUrl", ctx.returnUrl());
-    res.put("walletEnabled", matchEconomy.isLive());
+    res.put("walletEnabled", matchEconomy.isLive() || walletProperties.isOperatorMode());
     res.put("entryFee", matchEconomy.entryFee());
     res.put("betOptions", matchEconomy.betOptions());
     res.put("balance", balance);
     res.put("balanceError", balanceError);
+    if (ctx.operatorId() != null) {
+      res.put("operatorId", ctx.operatorId());
+    }
     return res;
   }
 
@@ -126,8 +220,14 @@ public class PlatformController {
     res.put("sessionId", ctx.sessionId());
     res.put("displayName", ctx.displayName());
     res.put("returnUrl", ctx.returnUrl());
-    res.put("walletEnabled", matchEconomy.isLive());
+    res.put("walletEnabled", matchEconomy.isLive() || walletProperties.isOperatorMode());
     res.put("entryFee", matchEconomy.entryFee());
+    if (ctx.operatorId() != null) {
+      res.put("operatorId", ctx.operatorId());
+    }
+    if (ctx.balance() != null) {
+      res.put("balance", ctx.balance());
+    }
     return res;
   }
 
@@ -135,21 +235,37 @@ public class PlatformController {
   public Map<String, Object> economy() {
     Map<String, Object> res = new LinkedHashMap<>();
     res.put("success", true);
-    res.put("walletEnabled", matchEconomy.isLive());
+    res.put("walletEnabled", matchEconomy.isLive() || walletProperties.isOperatorMode());
     res.put("entryFee", matchEconomy.entryFee());
     res.put("betOptions", matchEconomy.betOptions());
     res.put("gameId", matchEconomy.gameId());
     return res;
   }
 
-  /** Live Aakda wallet balance (never trust client). */
+  /** Live wallet balance (never trust client). Legacy wallet path unchanged. */
   @GetMapping("/balance")
   public Map<String, Object> balance(
       @RequestParam String userId,
-      @RequestHeader(value = "X-Platform-Key", required = false) String platformKey
+      @RequestHeader(value = "X-Platform-Key", required = false) String platformKey,
+      HttpServletRequest request
   ) {
     assertPlatformKey(platformKey);
     requireValidUserId(userId);
+    if (walletProperties.isOperatorMode()) {
+      PlatformLaunchContext ctx = current(request);
+      if (ctx == null || ctx.balance() == null || !userId.equals(ctx.userId())) {
+        throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "No operator session");
+      }
+      Map<String, Object> res = new LinkedHashMap<>();
+      res.put("success", true);
+      res.put("status", "SUCCESS");
+      res.put("userId", userId);
+      res.put("balance", ctx.balance());
+      res.put("currency", "INR");
+      res.put("walletEnabled", true);
+      res.put("mock", false);
+      return res;
+    }
     if (!matchEconomy.isLive()) {
       Map<String, Object> res = new LinkedHashMap<>();
       res.put("success", true);

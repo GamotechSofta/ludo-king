@@ -19,16 +19,16 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
 /**
- * Aakda wallet HTTP client — Aakda is the money source of truth.
+ * Legacy external wallet HTTP client — the configured wallet API is the money source of truth.
  *
- * <p>Base URL must be the API host ({@code https://api.aakda.in}). The player
- * frontend host answers every wallet path with an empty 200, so responses are
- * validated strictly and a wrong host is reported as a config error.
+ * <p>Base URL must be the wallet API host (not a player frontend SPA). Frontend hosts often
+ * answer wallet paths with an empty 200, so responses are validated strictly and a wrong host
+ * is reported as a config error when {@code ludo.wallet.frontend-hosts} matches.
  */
 @Service
-public class AakdaWalletClient {
+public class LegacyWalletClient {
 
-  private static final Logger log = LoggerFactory.getLogger(AakdaWalletClient.class);
+  private static final Logger log = LoggerFactory.getLogger(LegacyWalletClient.class);
 
   /** Body prefix length kept in logs when a response cannot be parsed. */
   private static final int LOG_BODY_CHARS = 200;
@@ -37,7 +37,7 @@ public class AakdaWalletClient {
   private final RestTemplate restTemplate;
   private final ObjectMapper mapper = new ObjectMapper();
 
-  public AakdaWalletClient(WalletProperties props, RestTemplateBuilder builder) {
+  public LegacyWalletClient(WalletProperties props, RestTemplateBuilder builder) {
     this.props = props;
     this.restTemplate = builder
         .setConnectTimeout(java.time.Duration.ofSeconds(5))
@@ -53,13 +53,13 @@ public class AakdaWalletClient {
       return;
     }
     if (base.isBlank()) {
-      log.warn("wallet base URL blank — set AAKDA_WALLET_BASE_URL=https://api.aakda.in to charge entry fees");
+      log.warn("wallet base URL blank — set LEGACY_WALLET_BASE_URL to the wallet API host to charge entry fees");
       return;
     }
     if (props.wrongHost()) {
       log.error(
-          "wallet base URL {} is Aakda's player frontend, not its API — every wallet call will "
-              + "return an empty 200. Set AAKDA_WALLET_BASE_URL=https://api.aakda.in",
+          "wallet base URL {} matches a configured frontend host, not the wallet API — every wallet call will "
+              + "return an empty 200. Set LEGACY_WALLET_BASE_URL to the API host",
           base
       );
       return;
@@ -86,9 +86,9 @@ public class AakdaWalletClient {
   }
 
   /**
-   * Reverses a debit through Aakda's dedicated rollback endpoint, which is
+   * Reverses a debit through the wallet's dedicated rollback endpoint, which is
    * idempotent per original transactionId. Never falls back to a plain credit:
-   * Aakda treats every credit as fresh money, so retrying that way after an
+   * the wallet treats every credit as fresh money, so retrying that way after an
    * ambiguous failure (timeout, unreadable body) would refund twice.
    */
   public WalletResult rollback(String userId, String originalTransactionId, double amount, String gameId, String roundId) {
@@ -109,12 +109,12 @@ public class AakdaWalletClient {
 
   private WalletResult post(String path, Map<String, Object> body, String op) {
     if (!props.enabled() || props.base().isBlank()) {
-      log.warn("wallet {} skipped — wallet disabled or AAKDA_WALLET_BASE_URL blank body={}", op, body);
+      log.warn("wallet {} skipped — wallet disabled or LEGACY_WALLET_BASE_URL blank body={}", op, body);
       return WalletResult.disabled();
     }
     if (props.wrongHost()) {
       log.error(
-          "wallet {} refused — AAKDA_WALLET_BASE_URL={} is the Aakda frontend host. Use https://api.aakda.in",
+          "wallet {} refused — LEGACY_WALLET_BASE_URL={} is a configured frontend host. Use the wallet API host",
           op,
           props.base()
       );
@@ -122,7 +122,7 @@ public class AakdaWalletClient {
           false, WalletResult.CONFIG_ERROR, 0, txnOf(body), false, "Wallet base URL points at the frontend host");
     }
 
-    // Aakda is idempotent per transactionId, so replaying the identical body is
+    // Wallet APIs are idempotent per transactionId, so replaying the identical body is
     // safe — but only worth doing when the failure was transport-level.
     WalletResult result = attempt(path, body, op);
     if (result.retryable()) {
@@ -148,7 +148,7 @@ public class AakdaWalletClient {
         log.error("wallet {} SERVER ERROR url={} status={} body={}", op, url, status, trim(payload));
         return new WalletResult(false, WalletResult.SERVER_ERROR, 0, txnOf(body), false, "Wallet server error");
       }
-      // A 4xx is Aakda's verdict (invalid userId, user not found, low balance);
+      // A 4xx is the wallet's verdict (invalid userId, user not found, low balance);
       // only treat it as a config problem when it is not the documented JSON.
       return parse(url, op, status, contentType(e.getResponseHeaders()), payload, body);
     } catch (ResourceAccessException e) {
@@ -162,7 +162,7 @@ public class AakdaWalletClient {
   }
 
   /**
-   * Accepts only Aakda's documented envelope. An empty, HTML or fieldless body
+   * Accepts only the documented wallet JSON envelope. An empty, HTML or fieldless body
    * means we are talking to the wrong host or path, which must not be reported
    * as a busy wallet.
    */
@@ -212,7 +212,7 @@ public class AakdaWalletClient {
       Map<String, Object> body) {
     log.error(
         "wallet {} CONFIG ERROR ({}) url={} httpStatus={} contentType={} bodyPrefix={} "
-            + "— expected Aakda JSON. Check AAKDA_WALLET_BASE_URL points at https://api.aakda.in",
+            + "— expected wallet API JSON. Check LEGACY_WALLET_BASE_URL points at the API host",
         op, reason, url, httpStatus, contentType, trim(raw)
     );
     return new WalletResult(
@@ -244,7 +244,7 @@ public class AakdaWalletClient {
       double balance,
       String transactionId,
       boolean mock,
-      /** Aakda's own explanation, e.g. "Invalid userId" — empty when transport failed. */
+      /** Wallet provider explanation, e.g. "Invalid userId" — empty when transport failed. */
       String message
   ) {
     static final String CONFIG_ERROR = "WALLET_CONFIG_ERROR";
@@ -261,7 +261,7 @@ public class AakdaWalletClient {
       return CONFIG_ERROR.equals(status);
     }
 
-    /** Transport-level failure; safe to replay because Aakda keys on transactionId. */
+    /** Transport-level failure; safe to replay because the wallet keys on transactionId. */
     public boolean retryable() {
       return SERVER_ERROR.equals(status) || CONNECTION_ERROR.equals(status);
     }

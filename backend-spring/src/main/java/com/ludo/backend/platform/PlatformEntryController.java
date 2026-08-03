@@ -46,7 +46,7 @@ public class PlatformEntryController {
     try {
       PlatformController.requireValidUserId(userId);
     } catch (Exception e) {
-      writeErrorPage(response, 400, "Open this game from Aakda app");
+      writeErrorPage(response, 400, "Open this game from the platform app");
       return;
     }
 
@@ -71,7 +71,7 @@ public class PlatformEntryController {
       HttpServletResponse response
   ) throws IOException {
     if (userId == null || userId.isBlank()) {
-      writeErrorPage(response, 400, "Open this game from Aakda app");
+      writeErrorPage(response, 400, "Open this game from the platform app");
       return;
     }
     rootEntry(userId, allParams, response);
@@ -116,7 +116,7 @@ public class PlatformEntryController {
     response.getWriter().write(
         "<!DOCTYPE html><html><head>"
             + "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/>"
-            + "<title>Aakda</title></head>"
+            + "<title>Ludo</title></head>"
             + "<body style=\"font-family:sans-serif;padding:24px;text-align:center;\">"
             + "<h1>" + escape(message) + "</h1>"
             + "<p>Missing or invalid launch parameters.</p></body></html>"

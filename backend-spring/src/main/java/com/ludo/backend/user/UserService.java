@@ -27,7 +27,7 @@ public class UserService {
   }
 
   /**
-   * Persist platform player display name (Aakda userId) so admin P&amp;L can show real names.
+   * Persist platform player display name (platform userId) so admin P&amp;L can show real names.
    */
   public User upsertPlatformProfile(String userId, String displayName) {
     if (userId == null || userId.isBlank()) {

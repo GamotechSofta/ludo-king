@@ -27,9 +27,9 @@ export interface PlatformQuery {
   players?: TPlayers;
   /** Optional preselect ?bet=20 */
   bet?: number;
-  /** Aakda / launch query: displayName | name | username */
+  /** Platform launch query: displayName | name | username */
   displayName?: string;
-  /** Aakda-supplied balance, shown before the wallet answers. */
+  /** Platform-supplied balance, shown before the wallet answers. */
   launchBalance?: number;
   currency?: string;
 }
@@ -46,7 +46,7 @@ interface Props {
 
 const FIXED_ENTRY_FEE = 100;
 
-/** Binds the Aakda session and hands the player to the normal lobby screens. */
+/** Binds the platform session and hands the player to the normal lobby screens. */
 const PlatformLaunch = ({ query, onReady, onError }: Props) => {
   useWindowResize();
   const [message, setMessage] = useState(
@@ -68,7 +68,7 @@ const PlatformLaunch = ({ query, onReady, onError }: Props) => {
     (async () => {
       try {
         if (!query.userId?.trim()) {
-          onError("Open this game from Aakda app");
+          onError("Open this game from the platform app");
           return;
         }
         setMessage("Connecting…");
@@ -119,7 +119,7 @@ const PlatformLaunch = ({ query, onReady, onError }: Props) => {
           (launched.displayName && launched.displayName.trim()) || displayName;
 
         // platformLaunch already upserts this identity under the authoritative
-        // Aakda userId. Creating a second guest here produced an orphan profile.
+        // platform userId. Creating a second guest here produced an orphan profile.
         const guest: IGuestUser = {
           id: launched.userId,
           username: resolvedName,

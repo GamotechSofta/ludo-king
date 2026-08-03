@@ -147,7 +147,7 @@ export interface IPlatformLaunchResult {
   balanceError?: string | null;
 }
 
-/** Bind Aakda launch params into Spring HTTP session (cookies). */
+/** Bind platform launch params into Spring HTTP session (cookies). */
 export const platformLaunch = (body: {
   userId: string;
   gameId?: string;

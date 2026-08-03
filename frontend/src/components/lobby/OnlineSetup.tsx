@@ -18,7 +18,7 @@ interface OnlineSetupProps {
     roomCode: string,
     maxPlayers: TPlayers
   ) => void;
-  /** Aakda identity — present only on a platform launch. */
+  /** Platform identity — present only on a platform launch. */
   platformGuest?: IGuestUser | null;
   /** Real-money stake; 0 keeps local play free. */
   entryFee?: number;
@@ -40,7 +40,7 @@ const OnlineSetup = ({
   const winAmount = WIN_BY_PLAYERS[maxPlayers];
 
   const ensureGuest = async () => {
-    // A platform launch already bound the authoritative Aakda userId; creating
+    // A platform launch already bound the authoritative platform userId; creating
     // a guest here would queue the match under an orphan profile.
     if (platformGuest?.id) {
       return platformGuest;

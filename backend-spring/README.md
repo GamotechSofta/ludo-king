@@ -130,19 +130,19 @@ POST /api/game/test/{roomId}/move?seat=0&token=0&diceIndex=0
 GET  /api/game/test/{roomId}
 ```
 
-## Platform integration (Aakda WebView)
+## Platform integration (Platform WebView)
 
 ### Entry URL (put this in platform `launchBaseUrl`)
 
 Prefer the **frontend** Render URL (playable UI):
 
 ```
-https://YOUR-FRONTEND-ON-RENDER/?userId=USER_MONGO_ID&gameId=LUDO&sessionId=SESSION_ID&token=JWT_OR_SIGNED_TOKEN&returnUrl=https://www.aakda.in/games
+https://YOUR-FRONTEND-ON-RENDER/?userId=USER_MONGO_ID&gameId=LUDO&sessionId=SESSION_ID&token=JWT_OR_SIGNED_TOKEN&returnUrl=https://platform.example.com/games
 ```
 
 If `launchBaseUrl` points at the **Spring** Render service instead, use the same query string on `/` or `/play` — Spring redirects to `CLIENT_URL` with params preserved.
 
-`userId` is required. Without it the UI shows: **Open this game from Aakda app**.
+`userId` is required. Without it the UI shows: **Open this game from the platform app**.
 
 Local play (no query params) is unchanged (home → modes → play).
 
@@ -153,7 +153,7 @@ Local play (no query params) is unchanged (home → modes → play).
 
 ### Wallet — Model A (entry fee per match)
 
-Aakda `/api/wallet/*` is the **source of truth**. Spring only keeps a local ledger (`match_economy`) for idempotency / refunds.
+Legacy wallet `/api/wallet/*` is the **source of truth**. Spring only keeps a local ledger (`match_economy`) for idempotency / refunds.
 
 Flow:
 1. Platform launch → fetch live balance
@@ -167,7 +167,7 @@ Txn id formats (idempotent):
 - Refund: `LUDO_REFUND_{matchId}_{userId}` (or `ROLLBACK_{entryTxn}`)
 
 APIs on Spring:
-- `GET /api/platform/balance?userId=...` → proxies Aakda balance
+- `GET /api/platform/balance?userId=...` → proxies legacy wallet balance
 - `GET /api/platform/economy` → `{ entryFee, walletEnabled, gameId }`
 
 ### Render env vars
@@ -177,9 +177,11 @@ APIs on Spring:
 | `PORT` | Set by Render |
 | `MONGO_URL` | Required |
 | `CLIENT_URL` | Frontend origin(s) |
-| `CORS_ALLOWED_ORIGINS` | Aakda + local |
+| `CORS_ALLOWED_ORIGINS` | Platform hosts + local |
 | `PLATFORM_SHARED_SECRET` | Optional `X-Platform-Key` on balance |
-| `AAKDA_WALLET_BASE_URL` | Must be `https://api.aakda.in` — never `aakda.in` (see below) |
+| `LEGACY_WALLET_BASE_URL` | Wallet API host (not the player SPA) |
+| `WALLET_MODE` | `LEGACY` (default) or `OPERATOR` |
+| `WALLET_FRONTEND_HOSTS` | Optional comma-separated SPA hosts blocked as API base |
 | `LUDO_WALLET_ENABLED` | `true` to charge entry fees |
 | `GAME_ID` | `LUDO` |
 | `ENTRY_FEE` | e.g. `10` |
@@ -191,19 +193,18 @@ Frontend: `REACT_APP_API_URL=https://YOUR-SPRING-ON-RENDER`
 
 ### CORS / iframe
 
-- Allowed patterns include Aakda origins + `http://localhost:*`
-- `X-Frame-Options` disabled; CSP `frame-ancestors` allows Aakda + local parents
+- Allowed patterns include platform origins + `http://localhost:*`
+- `X-Frame-Options` disabled; CSP `frame-ancestors` allows platform + local parents
 - API fetch uses `credentials: "include"` so launch binds to HTTP session
 
 ### Wallet host
 
-`AAKDA_WALLET_BASE_URL` must be the API host `https://api.aakda.in`. The player
-frontend (`aakda.in`, `www.aakda.in`) serves the React SPA and answers every
-`/api/wallet/*` path with an empty `200`, which used to surface as
-"Wallet busy, retry". Startup now logs the resolved base URL and refuses calls to
-the frontend host with a `WALLET_CONFIG_ERROR`.
+`LEGACY_WALLET_BASE_URL` must be the wallet **API** host (e.g. `https://api.example-wallet.com`).
+A player frontend SPA often answers every `/api/wallet/*` path with an empty `200`,
+which used to surface as "Wallet busy, retry". Startup logs the resolved base URL and
+refuses calls to hosts listed in `WALLET_FRONTEND_HOSTS` with a `WALLET_CONFIG_ERROR`.
 
-Contract (POST, `application/json`, no auth headers while Aakda runs with
+Contract (POST, `application/json`, no auth headers while the wallet provider runs with
 `GAP_SIGNATURE_ENABLED=false`):
 
 | Path | Body |
@@ -218,7 +219,7 @@ Success is `{"success":true,"status":"SUCCESS","balance":150.5}`; failures retur
 idempotent per `transactionId`, so retries reuse the same id. Refunds always go
 through `/api/wallet/rollback` — a `ROLLBACK_`-prefixed credit would pay twice.
 
-### Launch query params (from Aakda)
+### Launch query params (from the platform)
 
 `userId` (used verbatim as the wallet id), `username`, `name`, `balance`,
 `currency`, `phone`, `gameId` (alias `game_id`), `sessionId`, `returnUrl`, and
@@ -228,9 +229,9 @@ optimistically, then reconciles against `/api/wallet/balance`.
 
 ### Quick test (wallet)
 
-1. Set `AAKDA_WALLET_BASE_URL` + `ENTRY_FEE=10` on Spring Render
-2. Open from Aakda Play (iframe) or:  
-   `https://ludo-king-frontend.onrender.com/?userId=REAL_MONGO_ID&gameId=LUDO&returnUrl=https://www.aakda.in/games`
+1. Set `LEGACY_WALLET_BASE_URL` + `ENTRY_FEE=10` on Spring Render
+2. Open from platform Play (iframe) or:  
+   `https://ludo-king-frontend.onrender.com/?userId=REAL_MONGO_ID&gameId=LUDO&returnUrl=https://platform.example.com/games`
 3. Balance shows → join debits entry → win credits pot → leave lobby refunds
 4. Insufficient balance → cannot join
 5. Local play (no query params) unchanged when wallet off / no platform launch

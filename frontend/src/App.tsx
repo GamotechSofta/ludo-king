@@ -27,8 +27,8 @@ import { startBackgroundMusic, stopBackgroundMusic } from "./utils/sounds";
 
 type HistoryState = { screen: TLobbyScreen };
 
-/** Detect Aakda WebView launch params. userId required for platform flow. */
-/** Reads the `id` claim from Aakda's HS256 launch token without verifying it. */
+/** Detect Platform WebView launch params. userId required for platform flow. */
+/** Reads the `id` claim from the platform HS256 launch token without verifying it. */
 function claimsFromToken(token: string | null): Record<string, unknown> | null {
   if (!token) return null;
   const payload = token.split(".")[1];
@@ -44,7 +44,7 @@ function claimsFromToken(token: string | null): Record<string, unknown> | null {
 
 function parsePlatformQuery(): PlatformQuery | "missing-userid" | null {
   const params = new URLSearchParams(window.location.search);
-  // Aakda sends the same JWT as `token`; `id` is the PotLudo-compatible alias.
+  // Platform sends the same JWT as `token`; `id` is the PotLudo-compatible alias.
   const token = params.get("token") || params.get("id");
   const claims = claimsFromToken(token);
   const claimUserId = typeof claims?.id === "string" ? claims.id : null;
@@ -131,7 +131,7 @@ const App = () => {
   );
   const [platformError, setPlatformError] = useState<string | null>(
     initialPlatform === "missing-userid"
-      ? "Open this game from Aakda app"
+      ? "Open this game from the platform app"
       : null
   );
   const [platformReturnUrl, setPlatformReturnUrl] = useState<string | null>(
@@ -141,7 +141,7 @@ const App = () => {
   );
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
   const [entryFee, setEntryFee] = useState(0);
-  /** True once an Aakda launch bound this session, even without a returnUrl. */
+  /** True once a platform launch bound this session, even without a returnUrl. */
   const [platformSession, setPlatformSession] = useState(false);
   const [initialTurn, setInitialTurn] = useState(0);
 
@@ -153,8 +153,8 @@ const App = () => {
     // Fallback page for WebView without returnUrl
     document.body.innerHTML =
       '<div style="font-family:sans-serif;padding:24px;text-align:center">' +
-      "<h2>Return to Aakda</h2>" +
-      "<p>You can close this screen and go back to the Aakda app.</p></div>";
+      "<h2>Return to platform</h2>" +
+      "<p>You can close this screen and go back to the platform app.</p></div>";
   }, [platformReturnUrl]);
 
   /** Release server room so the same userId can queue a fresh match. */
@@ -380,8 +380,8 @@ const App = () => {
         }}
       >
         <h2 style={{ marginBottom: 8 }}>
-          {platformError === "Open this game from Aakda app"
-            ? "Open this game from Aakda app"
+          {platformError === "Open this game from the platform app"
+            ? "Open this game from the platform app"
             : "Can't start match"}
         </h2>
         <p style={{ opacity: 0.85 }}>{platformError}</p>

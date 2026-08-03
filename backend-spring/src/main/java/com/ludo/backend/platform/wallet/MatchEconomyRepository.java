@@ -10,4 +10,6 @@ public interface MatchEconomyRepository extends MongoRepository<MatchEconomyEntr
   List<MatchEconomyEntry> findByMatchId(String matchId);
 
   List<MatchEconomyEntry> findByUserId(String userId);
+
+  List<MatchEconomyEntry> findByStatusAndPublishStatus(String status, String publishStatus);
 }

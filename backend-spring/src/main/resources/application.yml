@@ -31,11 +31,15 @@ ludo:
   platform:
     # If set, /api/platform/balance requires header X-Platform-Key
     shared-secret: ${PLATFORM_SHARED_SECRET:}
-    cors-allowed-origins: ${CORS_ALLOWED_ORIGINS:https://www.aakda.in,https://aakda.in,http://localhost:5173}
+    cors-allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
   wallet:
-    # Model A — entry fee per match. Aakda /api/wallet/* is the ledger.
+    # Model A — entry fee per match. Legacy `/api/wallet/*` is the ledger.
+    # mode=LEGACY (default) keeps current behavior; OPERATOR enables Phase 2+ wiring.
+    mode: ${WALLET_MODE:LEGACY}
     enabled: ${LUDO_WALLET_ENABLED:true}
-    base-url: ${AAKDA_WALLET_BASE_URL:}
+    base-url: ${LEGACY_WALLET_BASE_URL:}
+    # Optional SPA hosts that must not be used as wallet API base-url
+    frontend-hosts: ${WALLET_FRONTEND_HOSTS:}
     game-id: ${GAME_ID:LUDO}
     entry-fee: ${ENTRY_FEE:100}
     # Selectable bets shown in UI (comma-separated)
@@ -43,6 +47,25 @@ ludo:
     # 0 = winner-takes-pot. Or set WIN_PAYOUT / WIN_MULTIPLIER.
     win-multiplier: ${WIN_MULTIPLIER:0}
     win-payout: ${WIN_PAYOUT:0}
+  # Operator Gateway HTTP (bound in Phase 1; client in Phase 2). Unused when mode=LEGACY.
+  operator:
+    base-url: ${OPERATOR_BASE_URL:}
+    user-detail-path: ${OPERATOR_USER_DETAIL_PATH:/service/user/detail}
+    balance-path: ${OPERATOR_BALANCE_PATH:/service/operator/user/balance/v2}
+    connect-timeout-ms: ${OPERATOR_CONNECT_TIMEOUT_MS:5000}
+    read-timeout-ms: ${OPERATOR_READ_TIMEOUT_MS:5000}
+  # Cashout queue props (bound in Phase 1; publisher/AMQP beans in a later phase).
+  rabbit-cashout:
+    broker-uri: ${RABBITMQ_URI:}
+    exchange: ${RABBIT_CASHOUT_EXCHANGE:games_cashout}
+    exchange-type: ${RABBIT_CASHOUT_EXCHANGE_TYPE:x-delayed-message}
+    delayed-type: ${RABBIT_CASHOUT_DELAYED_TYPE:direct}
+    queue: ${RABBIT_CASHOUT_QUEUE:games_cashout}
+    routing-key: ${RABBIT_CASHOUT_ROUTING_KEY:games_cashout}
+    confirm-timeout-ms: ${RABBIT_CASHOUT_CONFIRM_TIMEOUT_MS:5000}
+    retry-delay-ms: ${RABBIT_CASHOUT_RETRY_DELAY_MS:15000}
+    # Token hold TTL in Redis (seconds). Session fallback uses HTTP session TTL instead.
+    hold-ttl-seconds: ${OPERATOR_HOLD_TTL_SECONDS:86400}
   admin:
     email: ${ADMIN_EMAIL:admin@ludo.local}
     password: ${ADMIN_PASSWORD:admin123}

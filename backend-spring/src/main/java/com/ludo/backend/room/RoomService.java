@@ -163,7 +163,7 @@ public class RoomService {
     String playerAvatar = avatarId == null || avatarId.isBlank() ? "default" : avatarId.trim();
 
     // Serialize seat assignment per bucket; wallet HTTP stays OUTSIDE the lock
-    // so one slow Aakda debit cannot stall every other join on this stake tier.
+    // so one slow wallet debit cannot stall every other join on this stake tier.
     String bucket = maxPlayers + "|" + tier;
     Object joinLock = joinLocks.computeIfAbsent(bucket, k -> new Object());
 

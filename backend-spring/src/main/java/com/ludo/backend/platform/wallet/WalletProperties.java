@@ -13,7 +13,16 @@ public record WalletProperties(
     double winMultiplier,
     double winPayout,
     /** Comma-separated bet amounts, e.g. "10,20,50,100" */
-    String betOptions
+    String betOptions,
+    /**
+     * Wallet transport mode. Defaults to {@link WalletMode#LEGACY}.
+     */
+    WalletMode mode,
+    /**
+     * Comma-separated SPA hostnames that must not be used as {@code base-url}
+     * (they often return empty 200 for API paths).
+     */
+    String frontendHosts
 ) {
   public WalletProperties {
     if (gameId == null || gameId.isBlank()) {
@@ -25,6 +34,20 @@ public record WalletProperties(
     if (betOptions == null || betOptions.isBlank()) {
       betOptions = "10,20,50,100";
     }
+    if (mode == null) {
+      mode = WalletMode.LEGACY;
+    }
+    if (frontendHosts == null) {
+      frontendHosts = "";
+    }
+  }
+
+  public boolean isOperatorMode() {
+    return mode == WalletMode.OPERATOR;
+  }
+
+  public boolean isLegacyMode() {
+    return mode == null || mode == WalletMode.LEGACY;
   }
 
   public String base() {
@@ -36,13 +59,19 @@ public record WalletProperties(
   }
 
   /**
-   * True when the configured host is Aakda's player frontend instead of its API.
-   * That host serves the React SPA and answers wallet paths with an empty 200,
-   * which looks like a flaky wallet rather than a misconfiguration.
+   * True when the configured host is listed in {@link #frontendHosts()}.
    */
   public boolean wrongHost() {
     String host = host();
-    return "aakda.in".equals(host) || "www.aakda.in".equals(host);
+    if (host.isBlank()) {
+      return false;
+    }
+    for (String h : frontendHostList()) {
+      if (host.equalsIgnoreCase(h)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   public String host() {
@@ -56,6 +85,17 @@ public record WalletProperties(
     } catch (IllegalArgumentException e) {
       return "";
     }
+  }
+
+  public List<String> frontendHostList() {
+    if (frontendHosts == null || frontendHosts.isBlank()) {
+      return List.of();
+    }
+    return Arrays.stream(frontendHosts.split(","))
+        .map(String::trim)
+        .filter(s -> !s.isEmpty())
+        .map(String::toLowerCase)
+        .toList();
   }
 
   /** Live when wallet URL configured (bet amount chosen at join). */

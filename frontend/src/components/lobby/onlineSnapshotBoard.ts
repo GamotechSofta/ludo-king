@@ -77,7 +77,7 @@ export function displayPlayerName(
   isBot = false
 ): string {
   // A later authoritative snapshot may replace the initial generic fallback
-  // with the authenticated Aakda name. Never let the cache hide that update.
+  // with the authenticated platform name. Never let the cache hide that update.
   if (rawName && !isGenericBotLabel(rawName) && !isGenericPlayerLabel(rawName)) {
     const stable = rawName.trim();
     displayNameCache.set(seatKey, stable);
