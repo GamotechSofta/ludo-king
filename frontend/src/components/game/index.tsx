@@ -4,6 +4,7 @@ import type {
   IListTokens,
   IPlayer,
   ISelectTokenValues,
+  ITypeChatMessage,
   IUser,
   TBoardColors,
   TDicevalues,
@@ -26,6 +27,8 @@ import { playSound, preloadGameSounds, stopBackgroundMusic } from "../../utils/s
 import { runReturnToJailAnimations } from "../lobby/captureReturnAnim";
 import { runCellByCellSteps, nextFrame } from "../lobby/onlineAnimate";
 import MusicToggle from "../lobby/MusicToggle";
+import GameChat from "./components/gameChat";
+import type { GameChatSendPayload } from "./components/gameChat";
 import {
   lostStatusLabel,
   partitionResults,
@@ -547,6 +550,26 @@ const Game = ({
     );
   }, []);
 
+  const [localChat, setLocalChat] = useState<{
+    message: string;
+    type: ITypeChatMessage;
+    counter: number;
+  } | null>(null);
+
+  const handleChatSend = useCallback((payload: GameChatSendPayload) => {
+    setLocalChat((prev) => ({
+      message: payload.message,
+      type: payload.type,
+      counter: (prev?.counter ?? 0) + 1,
+    }));
+  }, []);
+
+  useEffect(() => {
+    if (!localChat) return;
+    const timer = window.setTimeout(() => setLocalChat(null), 3500);
+    return () => window.clearTimeout(timer);
+  }, [localChat]);
+
   const handleTimer = useCallback(
     (ends = false, playerIndex?: number) => {
       if (busyRef.current || gameOverRef.current) return;
@@ -717,7 +740,23 @@ const Game = ({
     [handleTimer, handleSelectDice, handleDoneDice, handleMuteChat]
   );
 
-  const profileProps = { players, totalPlayers, currentTurn, actionsTurn };
+  const profileProps = {
+    players: localChat
+      ? players.map((p) =>
+          p.index === 0
+            ? {
+                ...p,
+                chatMessage: localChat.message,
+                typeMessage: localChat.type,
+                counterMessage: localChat.counter,
+              }
+            : p
+        )
+      : players,
+    totalPlayers,
+    currentTurn,
+    actionsTurn,
+  };
 
   const offlineResultEntries = players.map((p) => ({
     rank: p.ranking === 1 ? 1 : 0,
@@ -734,6 +773,7 @@ const Game = ({
   return (
     <PageWrapper>
       <MusicToggle className="music-toggle-game" resumeOnEnable />
+      <GameChat onSend={handleChatSend} />
       {onExit && (
         <button
           className="game-back-arrow"

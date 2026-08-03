@@ -11,7 +11,10 @@ import type {
   ThandleSelectDice,
   ThandleTimer,
 } from "../../../../../../interfaces";
-import { MAX_PLAYER_CHANCES } from "../../../../../../utils/constants";
+import {
+  MAX_PLAYER_CHANCES,
+  TYPES_CHAT_MESSAGES,
+} from "../../../../../../utils/constants";
 
 interface ProfileProps {
   basePosition: TPositionProfiles;
@@ -53,8 +56,23 @@ const Profile = ({
     if (hasTurn) handleSelectDice();
   }, [hasTurn, handleSelectDice]);
 
+  const chatText = (player.chatMessage || "").trim();
+  const showChatBubble = !!chatText && !player.isMuted;
+  const chatIsEmoji = player.typeMessage === TYPES_CHAT_MESSAGES.EMOJI;
+
   return (
     <div className={className}>
+      {showChatBubble && (
+        <div
+          key={player.counterMessage}
+          className={`game-profile-chat-bubble${
+            chatIsEmoji ? " is-emoji" : ""
+          }`}
+          role="status"
+        >
+          {chatText}
+        </div>
+      )}
       <div className="game-profile-dice-name">
         <Image
           player={player}

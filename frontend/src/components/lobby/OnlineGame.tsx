@@ -12,6 +12,7 @@ import type {
   IListTokens,
   IPlayer,
   ISelectTokenValues,
+  ITypeChatMessage,
   TDicevalues,
   TTotalPlayers,
 } from "../../interfaces";
@@ -50,6 +51,8 @@ import Results from "./Results";
 import LostSummaryPopup from "./LostSummaryPopup";
 import LeaveMatchConfirmPopup from "./LeaveMatchConfirmPopup";
 import MusicToggle from "./MusicToggle";
+import GameChat from "../game/components/gameChat";
+import type { GameChatSendPayload } from "../game/components/gameChat";
 import { fetchWalletBalance, leaveRoom, ensureGameSnapshot } from "../../api/ludoApi";
 import {
   placeVictimsInJail,
@@ -137,6 +140,11 @@ const OnlineGame = ({
   const [voluntaryExit, setVoluntaryExit] = useState(false);
   const [listTokens, setListTokens] = useState<IListTokens[]>([]);
   const [players, setPlayers] = useState<IPlayer[]>([]);
+  const [localChat, setLocalChat] = useState<{
+    message: string;
+    type: ITypeChatMessage;
+    counter: number;
+  } | null>(null);
   const [actionsTurn, setActionsTurn] = useState<IActionsTurn>(() =>
     actionsTurnFromSnapshot(
       {
@@ -2126,12 +2134,39 @@ const OnlineGame = ({
   }, [matchEnded, showResults, resultEntries, voluntaryExit]);
 
   // Local perspective: compact profile list (my home = bottom-left).
-  const renderPlayers =
-    players.length > 0
-      ? players
-      : snapshot && mySeat >= 0
-      ? playersForView(snapshot, mySeat, roomId)
-      : [];
+  const renderPlayers = useMemo(() => {
+    const list =
+      players.length > 0
+        ? players
+        : snapshot && mySeat >= 0
+          ? playersForView(snapshot, mySeat, roomId)
+          : [];
+    if (!localChat) return list;
+    return list.map((p) =>
+      p.index === 0
+        ? {
+            ...p,
+            chatMessage: localChat.message,
+            typeMessage: localChat.type,
+            counterMessage: localChat.counter,
+          }
+        : p
+    );
+  }, [players, snapshot, mySeat, roomId, localChat]);
+
+  useEffect(() => {
+    if (!localChat) return;
+    const timer = window.setTimeout(() => setLocalChat(null), 3500);
+    return () => window.clearTimeout(timer);
+  }, [localChat]);
+
+  const handleChatSend = useCallback((payload: GameChatSendPayload) => {
+    setLocalChat((prev) => ({
+      message: payload.message,
+      type: payload.type,
+      counter: (prev?.counter ?? 0) + 1,
+    }));
+  }, []);
 
   if (snapshot && mySeat >= 0 && lockedBoardColorRef.current === null) {
     lockedBoardColorRef.current = boardColorForSnapshot(snapshot, mySeat);
@@ -2265,6 +2300,7 @@ const OnlineGame = ({
   return (
     <PageWrapper>
       <MusicToggle className="music-toggle-game" resumeOnEnable />
+      <GameChat onSend={handleChatSend} />
       <button
         className="game-back-arrow"
         type="button"

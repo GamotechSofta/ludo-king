@@ -131,3 +131,55 @@
   left: 8px;
   right: auto;
 }
+
+.game-profile-chat-bubble {
+  position: absolute;
+  left: 8px;
+  bottom: calc(100% + 8px);
+  z-index: 6;
+  max-width: min(180px, 70vw);
+  padding: 8px 12px;
+  border-radius: 14px 14px 14px 4px;
+  background: #fff;
+  color: #0d2149;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.25;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  animation: game-profile-chat-pop 0.28s ease-out;
+  word-break: break-word;
+}
+
+.game-profile.right .game-profile-chat-bubble {
+  left: auto;
+  right: 8px;
+  border-radius: 14px 14px 4px 14px;
+}
+
+.game-profile.top .game-profile-chat-bubble {
+  bottom: auto;
+  top: calc(100% + 8px);
+  border-radius: 4px 14px 14px 14px;
+}
+
+.game-profile.top.right .game-profile-chat-bubble {
+  border-radius: 14px 4px 14px 14px;
+}
+
+.game-profile-chat-bubble.is-emoji {
+  font-size: 1.55rem;
+  line-height: 1;
+  padding: 8px 10px;
+}
+
+@keyframes game-profile-chat-pop {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
