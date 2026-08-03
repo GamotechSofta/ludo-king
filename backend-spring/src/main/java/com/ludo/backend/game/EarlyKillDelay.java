@@ -4,14 +4,17 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Early-game kill delay for Bot vs Human matches only.
+ * Early-game kill delay for <em>bot</em> seats in Bot vs Human matches only.
  *
- * <p>Each seat has its own counter. The first three legal cross-side capture
- * opportunities are skipped (capture moves removed from the legal set); the
- * fourth is allowed. Counter resets after a successful capture.
+ * <p>The first three legal cross-side capture opportunities for a bot are
+ * skipped (capture moves removed from the legal set); the fourth is allowed.
+ * Counter resets after a successful capture.
+ *
+ * <p>Humans always keep kill moves selectable — filtering human captures made
+ * kill pawns look "inactive" in the UI.
  *
  * <p>Does not change dice, movement physics, or capture resolution — only which
- * otherwise-legal moves are offered during the delayed opportunities.
+ * otherwise-legal moves are offered to bots during the delayed opportunities.
  */
 final class EarlyKillDelay {
 
@@ -37,9 +40,9 @@ final class EarlyKillDelay {
   }
 
   /**
-   * Called once per roll that yields legal moves: if this seat has a cross-side
+   * Called once per bot roll that yields legal moves: if this bot has a cross-side
    * capture opportunity and still has skips remaining, increment the counter and
-   * arm suppress for this move phase.
+   * arm suppress for this move phase. No-op for human seats.
    */
   static void noteOpportunity(
       GameEngineService.MatchRuntime rt, int seat, List<int[]> rawMoves, CaptureProbe probe
@@ -48,7 +51,7 @@ final class EarlyKillDelay {
       return;
     }
     rt.earlyKillSuppressActive[seat] = false;
-    if (!isBotVsHumanMatch(rt.isBot)) {
+    if (!rt.isBot[seat] || !isBotVsHumanMatch(rt.isBot)) {
       return;
     }
     if (rawMoves == null || rawMoves.isEmpty()) {

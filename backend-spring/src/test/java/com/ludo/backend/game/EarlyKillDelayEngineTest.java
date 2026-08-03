@@ -3,7 +3,6 @@ package com.ludo.backend.game;
 import static com.ludo.backend.game.BoardConstants.JAIL;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.ludo.backend.bot.ai.HumanBehaviorEngine;
@@ -15,8 +14,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
 
 /**
- * Engine-level: first 3 cross-side kill opportunities skipped for human and bot;
- * 4th allowed; counter resets after capture. Bot vs Human only.
+ * Engine-level: first 3 cross-side kill opportunities skipped for bot only;
+ * human kills stay legal; 4th bot kill allowed; counter resets after capture.
  */
 class EarlyKillDelayEngineTest {
 
@@ -52,27 +51,15 @@ class EarlyKillDelayEngineTest {
   }
 
   @Test
-  void humanSkipsFirstThreeKillOpportunitiesThenCapturesOnFourth() {
+  void humanKillMovesStaySelectable() {
     String room = "ekd-human";
     createBotVsHuman(room);
 
-    for (int i = 0; i < 3; i++) {
-      // Human YELLOW seat 1 at 14 can kill bot RED at 16 with dice 2; also has pawn at 20
-      prepareTurn(room, 1, List.of(16, JAIL, JAIL, JAIL), List.of(14, 20, JAIL, JAIL));
-      GameSnapshot rolled = engine.rollDiceAsSeat(room, 1, 2);
-      assertEquals(GameEngineService.PHASE_MOVE, rolled.getPhase());
-      assertFalse(legalContainsCaptureOn(room, 16), "human kill suppressed on opportunity " + (i + 1));
-      assertThrows(
-          IllegalStateException.class,
-          () -> engine.moveTokenAsSeat(room, 1, 0, 0),
-          "direct kill move must be rejected while delayed");
-      // Non-kill: token 1 from 20 + 2 → 22
-      engine.moveTokenAsSeat(room, 1, 1, 0);
-    }
-
+    // Human YELLOW seat 1 at 14 can kill bot RED at 16 with dice 2
     prepareTurn(room, 1, List.of(16, JAIL, JAIL, JAIL), List.of(14, 20, JAIL, JAIL));
-    engine.rollDiceAsSeat(room, 1, 2);
-    assertTrue(legalContainsCaptureOn(room, 16));
+    GameSnapshot rolled = engine.rollDiceAsSeat(room, 1, 2);
+    assertEquals(GameEngineService.PHASE_MOVE, rolled.getPhase());
+    assertTrue(legalContainsCaptureOn(room, 16), "human kill must stay activated");
     GameSnapshot after = engine.moveTokenAsSeat(room, 1, 0, 0);
     assertEquals(JAIL, after.getTokenPositions().get("RED").get(0));
   }

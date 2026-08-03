@@ -42,7 +42,8 @@ class EarlyKillDelayTest {
   }
 
   @Test
-  void separateCountersPerSeat() {
+  void separateCountersPerBotSeatOnly() {
+    // seat0 bot, seat1 human — only bot opportunities are counted
     GameEngineService.MatchRuntime rt = runtime(true, false);
     rt.diceList.add(3);
     List<int[]> raw = List.of(new int[] {0, 0});
@@ -54,7 +55,20 @@ class EarlyKillDelayTest {
 
     EarlyKillDelay.noteOpportunity(rt, 1, raw, always);
     assertEquals(1, rt.earlyKillSkipCount[0]);
-    assertEquals(1, rt.earlyKillSkipCount[1]);
+    assertEquals(0, rt.earlyKillSkipCount[1]);
+    assertFalse(rt.earlyKillSuppressActive[1]);
+  }
+
+  @Test
+  void doesNotSuppressHumanKillMoves() {
+    GameEngineService.MatchRuntime rt = runtime(true, false);
+    rt.diceList.add(2);
+    List<int[]> raw = List.of(new int[] {0, 0}, new int[] {1, 0});
+    EarlyKillDelay.CaptureProbe killOnToken0 = (seat, token, dice) -> token == 0;
+
+    EarlyKillDelay.noteOpportunity(rt, 1, raw, killOnToken0);
+    assertEquals(0, rt.earlyKillSkipCount[1]);
+    assertEquals(raw, EarlyKillDelay.filterMoves(rt, 1, raw, killOnToken0));
   }
 
   @Test
