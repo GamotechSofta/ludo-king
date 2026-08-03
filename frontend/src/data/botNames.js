@@ -1,6 +1,6 @@
 /**
- * Indian-style online Ludo player names for computer opponents.
- * Male and female pools are kept separate so every match gets a gender mix.
+ * Indian male first names for computer / bot opponents.
+ * Format: <MaleName><10-99> e.g. Saurabh63, Rohit27.
  */
 
 export const MALE_BOT_NAMES = [
@@ -83,7 +83,6 @@ export const MALE_BOT_NAMES = [
   "Vishal",
   "Wasim",
   "Yatin",
-  "Zayn",
   "Bhavesh",
   "Chetan",
   "Dinesh",
@@ -104,216 +103,69 @@ export const MALE_BOT_NAMES = [
   "Taran",
   "Uday",
   "Vivek",
-  // Gaming-style handles
-  "AaravOP",
-  "KabirX",
-  "RahulYT",
-  "RohanPro",
-  "YashGaming",
-  "AtharvaX",
-  "KunalOP",
-  "OmPlays",
-  "ArjunPro",
-  "VihaanX",
-  "AdityaOP",
-  "HarshYT",
-  "VedantPro",
-  "ParthOP",
-  "RudraGaming",
-  "AkashPro",
-  "NikhilX",
-  "ShubhamOP",
-  "AyushPro",
-  "KartikYT",
-  "ManavPlays",
-  "TusharX",
-  "VarunLive",
-  "DeepakOP",
-  "PranavX",
-  "SaurabhPro",
-  "TanmayGaming",
-  "AbhishekOP",
-  "MohitLive",
-  "RitikYT",
-  "PiyushX",
-  "AmanPro",
-  "NitinGaming",
+  "Rohit",
+  "Rushi",
+  "Prathamesh",
+  "Aakash",
+  "Virat",
+  "Suresh",
+  "Nilesh",
+  "Sanket",
+  "Amol",
+  "Ajay",
+  "Vijay",
+  "Sandeep",
+  "Rajesh",
+  "Mahesh",
+  "Ganesh",
+  "Prashant",
+  "Saurav",
+  "Hitesh",
+  "Ketan",
+  "Paresh",
+  "Rupesh",
+  "Yogesh",
+  "Mandar",
+  "Siddhesh",
+  "Onkar",
+  "Shreyash",
+  "Adarsh",
+  "Harshad",
+  "Vinay",
+  "Suraj",
+  "Kiran",
 ];
 
-export const FEMALE_BOT_NAMES = [
-  "Ananya",
-  "Aadhya",
-  "Diya",
-  "Kiara",
-  "Kavya",
-  "Siya",
-  "Riya",
-  "Sneha",
-  "Pooja",
-  "Neha",
-  "Meera",
-  "Anvi",
-  "Ishita",
-  "Nandini",
-  "Khushi",
-  "Saanvi",
-  "Prachi",
-  "Vaishnavi",
-  "Shruti",
-  "Aarti",
-  "Komal",
-  "Rutuja",
-  "Sakshi",
-  "Payal",
-  "Simran",
-  "Tanisha",
-  "Mitali",
-  "Isha",
-  "Shreya",
-  "Palak",
-  "Bhavya",
-  "Jiya",
-  "Avni",
-  "Riddhi",
-  "Ankita",
-  "Priya",
-  "Muskan",
-  "Nikita",
-  "Pallavi",
-  "Divya",
-  "Aisha",
-  "Myra",
-  "Aarohi",
-  "Pari",
-  "Navya",
-  "Ira",
-  "Sara",
-  "Tara",
-  "Zara",
-  "Mira",
-  "Aditi",
-  "Radhika",
-  "Sanya",
-  "Tanvi",
-  "Vanya",
-  "Esha",
-  "Gauri",
-  "Heena",
-  "Jhanvi",
-  "Kritika",
-  "Lavanya",
-  "Mahika",
-  "Nisha",
-  "Oorja",
-  "Prisha",
-  "Rhea",
-  "Suhani",
-  "Trisha",
-  "Urvi",
-  "Veda",
-  "Yashika",
-  "Zoya",
-  "Amrita",
-  "Bhavika",
-  "Chitra",
-  "Deepa",
-  "Ekta",
-  "Falguni",
-  "Gargi",
-  "Hiral",
-  "Indira",
-  "Jaya",
-  "Kirti",
-  "Lata",
-  "Madhavi",
-  "Naina",
-  "Ojasvi",
-  "Prerna",
-  "Rashmi",
-  "Swati",
-  "Tanya",
-  "Uma",
-  "Vidya",
-  // Gaming-style handles
-  "AnanyaGaming",
-  "DiyaLive",
-  "ShreyaYT",
-  "PriyaGaming",
-  "KavyaLive",
-  "RiyaGaming",
-  "SnehaX",
-  "KhushiPlays",
-  "MeeraLive",
-  "SakshiYT",
-  "AnviGaming",
-  "PallaviLive",
-  "SimranX",
-  "NandiniOP",
-  "IshaGaming",
-  "AvniPro",
-  "MuskanYT",
-  "JiyaGaming",
-  "RiddhiLive",
-  "DivyaYT",
-  "BhavyaX",
-  "PalakPlays",
-  "AnkitaPro",
-  "SiyaGaming",
-  "PayalOP",
-  "TanishaLive",
-  "KomalYT",
-];
+/** @deprecated Female bots are no longer used; kept empty for any legacy imports. */
+export const FEMALE_BOT_NAMES = [];
 
-export const BOT_NAMES = [...MALE_BOT_NAMES, ...FEMALE_BOT_NAMES];
+export const BOT_NAMES = [...MALE_BOT_NAMES];
 
-function shuffle(list) {
-  const arr = [...list];
-  for (let i = arr.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr;
+function randomSuffix() {
+  return Math.floor(Math.random() * 90) + 10; // 10–99
 }
 
-/** Unused names per gender for the current cycle; reshuffled when empty. */
-const pools = {
-  male: [],
-  female: [],
-};
-
-function takeFromPool(gender, blocked) {
-  const source = gender === "male" ? MALE_BOT_NAMES : FEMALE_BOT_NAMES;
-
-  for (let attempt = 0; attempt < source.length * 2; attempt += 1) {
-    if (pools[gender].length === 0) {
-      pools[gender] = shuffle(source);
-    }
-    const name = pools[gender].pop();
-    if (!blocked.has(name)) {
-      return name;
-    }
-  }
-  return null;
+function buildName(base) {
+  return `${base}${randomSuffix()}`;
 }
 
 /**
- * Builds a randomized male/female sequence for the requested bot count.
- * With 2+ bots at least one of each gender is guaranteed.
+ * Picks a unique male bot name not present in {@code blocked}.
  */
-function genderSequence(botCount) {
-  if (botCount <= 0) return [];
-  if (botCount === 1) {
-    return [Math.random() < 0.5 ? "male" : "female"];
+function pickUniqueMaleName(blocked) {
+  for (let attempt = 0; attempt < 400; attempt += 1) {
+    const base =
+      MALE_BOT_NAMES[Math.floor(Math.random() * MALE_BOT_NAMES.length)];
+    const candidate = buildName(base);
+    if (!blocked.has(candidate)) {
+      return candidate;
+    }
   }
-  const seq = ["male", "female"];
-  for (let i = 2; i < botCount; i += 1) {
-    seq.push(Math.random() < 0.5 ? "male" : "female");
-  }
-  return shuffle(seq);
+  return `Player${randomSuffix()}`;
 }
 
 /**
- * Returns unique bot display names for a match.
+ * Returns unique male bot display names for a match.
  * playerCount: 2 → 1 bot, 3 → 2 bots, 4 → 3 bots.
  */
 export function getRandomBotNames(playerCount) {
@@ -323,27 +175,17 @@ export function getRandomBotNames(playerCount) {
   const blocked = new Set();
   const picked = [];
 
-  for (const gender of genderSequence(botCount)) {
-    const name =
-      takeFromPool(gender, blocked) ??
-      takeFromPool(gender === "male" ? "female" : "male", blocked);
-    if (name) {
-      blocked.add(name);
-      picked.push(name);
-    }
+  for (let i = 0; i < botCount; i += 1) {
+    const name = pickUniqueMaleName(blocked);
+    blocked.add(name);
+    picked.push(name);
   }
   return picked;
 }
 
 /**
- * Picks one unused bot name of a random gender, avoiding names already in use.
+ * Picks one unused male bot name, avoiding names already in use.
  */
 export function getOneBotName(exclude = []) {
-  const blocked = new Set(exclude);
-  const gender = Math.random() < 0.5 ? "male" : "female";
-  const name =
-    takeFromPool(gender, blocked) ??
-    takeFromPool(gender === "male" ? "female" : "male", blocked);
-
-  return name ?? `Player${Math.floor(Math.random() * 900) + 100}`;
+  return pickUniqueMaleName(new Set(exclude));
 }
