@@ -96,12 +96,12 @@ public class CashoutPublisherService {
         throw new CashoutPublishException(
             "cashout publish confirm missing txnId=" + payload.txnId());
       }
-      if (!confirm.ack()) {
+      if (!confirm.isAck()) {
         throw new CashoutPublishException(
             "cashout publish nack txnId="
                 + payload.txnId()
                 + " reason="
-                + (confirm.reason() == null ? "" : confirm.reason()));
+                + (confirm.getReason() == null ? "" : confirm.getReason()));
       }
       if (correlation.getReturned() != null) {
         throw new CashoutPublishException(
