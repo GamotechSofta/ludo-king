@@ -526,6 +526,13 @@ const OnlineLobby = ({
               <span className="find-players-stopwatch" aria-hidden />
               <span>{formatTimer(searchRemainingSec)}</span>
             </div>
+            <button
+              type="button"
+              className="find-players-cancel"
+              onClick={handleBack}
+            >
+              Cancel
+            </button>
           </>
         ) : null}
 

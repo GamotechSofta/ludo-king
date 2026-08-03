@@ -26,7 +26,7 @@ public class GameSnapshot {
   private int consecutiveSixes;
   private List<Integer> consecutiveTimeouts = new ArrayList<>();
   private boolean[] finished;
-  /** True when removed for AFK (3 consecutive timeouts). */
+  /** True when removed for AFK (2 consecutive timeouts). */
   private boolean[] eliminated;
   private boolean[] isBot;
   private List<String> userIds = new ArrayList<>();

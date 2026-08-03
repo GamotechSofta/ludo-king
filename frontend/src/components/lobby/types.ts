@@ -68,7 +68,7 @@ export interface IGameSnapshot {
   userIds?: string[];
   usernames?: string[];
   finished?: boolean[];
-  /** AFK removed after 3 consecutive timeouts. */
+  /** AFK removed after 2 consecutive timeouts. */
   eliminated?: boolean[];
   isBot?: boolean[];
   standings?: number[];

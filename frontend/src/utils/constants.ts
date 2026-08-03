@@ -133,7 +133,7 @@ export const DICE_VALUE_GET_OUT_JAIL: TDicevalues = 6;
 export const MAXIMUM_DICE_PER_TURN = 3;
 
 /** Turn timeouts before AFK elimination (matches server MAX_CONSECUTIVE_TIMEOUTS). */
-export const MAX_PLAYER_CHANCES = 3;
+export const MAX_PLAYER_CHANCES = 2;
 
 /** Legacy display payout; live wallet stakes come from platform economy config. */
 export const ONLINE_WIN_AMOUNT: Record<2 | 4, number> = { 2: 180, 4: 320 };

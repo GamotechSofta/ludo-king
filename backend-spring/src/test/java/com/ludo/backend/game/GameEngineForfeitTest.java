@@ -95,4 +95,20 @@ class GameEngineForfeitTest {
     assertEquals(GameEngineService.PHASE_FINISHED, again.getPhase());
     assertEquals(Integer.valueOf(1), again.getWinnerSeat());
   }
+
+  @Test
+  void forfeitEndsTwoPlayerBotMatchWithOpponentWin() {
+    List<GameEngineService.SeatInfo> seats = List.of(
+        new GameEngineService.SeatInfo("u1", "Player 1", LudoColor.RED, false),
+        new GameEngineService.SeatInfo("bot1", "Bot", LudoColor.YELLOW, true)
+    );
+    engine.createMatch("room-forfeit-bot", seats);
+
+    GameSnapshot snap = engine.forfeitOnExit("room-forfeit-bot", "u1");
+
+    assertEquals(GameEngineService.PHASE_FINISHED, snap.getPhase());
+    assertEquals(Integer.valueOf(1), snap.getWinnerSeat());
+    assertTrue(snap.getEliminated()[0]);
+    assertEquals("FORFEIT", snap.getLastActionType());
+  }
 }

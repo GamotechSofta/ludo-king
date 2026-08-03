@@ -289,28 +289,25 @@ public class RoomService {
       if (trySettleFinishedRoom(room)) {
         return;
       }
-      // Human-only exit: mark LOST, skip from turns (4P) or end match (2P)
-      if (isAllHumanRoom(room)) {
-        try {
-          ensureLiveMatch(room);
-        } catch (RuntimeException ignored) {
-          if (!gameEngineService.hasMatch(roomId)) {
-            markDisconnected(roomId, userId);
-            return;
-          }
-        }
-        try {
-          GameSnapshot snap = gameEngineService.forfeitOnExit(roomId, userId);
-          gameEventBus.publishSnapshotAndMeta(roomId, snap);
-          if (GameEngineService.PHASE_FINISHED.equals(snap.getPhase())) {
-            settleIfFinishedAsync(roomId, snap);
-          }
+      // Mid-match leave: mark LOST (2P ends match; 4P continues without leaver)
+      try {
+        ensureLiveMatch(room);
+      } catch (RuntimeException ignored) {
+        if (!gameEngineService.hasMatch(roomId)) {
+          markDisconnected(roomId, userId);
           return;
-        } catch (RuntimeException ignored) {
-          // Fall through to disconnect-only path
         }
       }
-      // Bot mix mid-match leave: disconnect so enqueue won't reuse this room
+      try {
+        GameSnapshot snap = gameEngineService.forfeitOnExit(roomId, userId);
+        gameEventBus.publishSnapshotAndMeta(roomId, snap);
+        if (GameEngineService.PHASE_FINISHED.equals(snap.getPhase())) {
+          settleIfFinishedAsync(roomId, snap);
+        }
+        return;
+      } catch (RuntimeException ignored) {
+        // Fall through to disconnect-only path
+      }
       markDisconnected(roomId, userId);
       return;
     }
@@ -1073,14 +1070,7 @@ public class RoomService {
     return code;
   }
 
-  private boolean isAllHumanRoom(Room room) {
-    if (room.getPlayers() == null || room.getPlayers().isEmpty()) {
-      return false;
-    }
-    return room.getPlayers().stream().noneMatch(RoomPlayer::isBot);
-  }
-
-  /** Restore in-memory engine from Mongo/Redis when a human 2P exit needs forfeit. */
+  /** Restore in-memory engine from Mongo/Redis when a mid-match exit needs forfeit. */
   private void ensureLiveMatch(Room room) {
     if (gameEngineService.hasMatch(room.getId())) {
       return;

@@ -13,6 +13,8 @@ interface LostSummaryPopupProps {
   exitReason?: "timeout" | "left";
   onExit: () => void;
   onWatch: () => void;
+  /** Start fresh matchmaking for a new match. */
+  onPlayAgain?: () => void;
 }
 
 const LostSummaryPopup = ({
@@ -22,6 +24,7 @@ const LostSummaryPopup = ({
   exitReason = "timeout",
   onExit,
   onWatch,
+  onPlayAgain,
 }: LostSummaryPopupProps) => {
   const you = entries.find((e) => e.isYou);
   const others = entries.filter((e) => !e.isYou);
@@ -129,6 +132,15 @@ const LostSummaryPopup = ({
         </div>
 
         <div className="lost-summary-actions">
+          {onPlayAgain && (
+            <button
+              className="lobby-btn primary lost-summary-btn"
+              type="button"
+              onClick={onPlayAgain}
+            >
+              Play Again
+            </button>
+          )}
           {canWatch && (
             <button
               className="lobby-btn secondary lost-summary-btn"
@@ -139,7 +151,7 @@ const LostSummaryPopup = ({
             </button>
           )}
           <button
-            className="lobby-btn primary lost-summary-btn"
+            className="lobby-btn secondary lost-summary-btn"
             type="button"
             onClick={onExit}
           >

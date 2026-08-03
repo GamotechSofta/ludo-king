@@ -54,7 +54,7 @@ public class GameEngineService {
   public static final String PHASE_FINISHED = "FINISHED";
 
   public static final int TURN_TIMEOUT_SECONDS = 20;
-  public static final int MAX_CONSECUTIVE_TIMEOUTS = 3;
+  public static final int MAX_CONSECUTIVE_TIMEOUTS = 2;
   /** Only rank assigned besides LOST (0). */
   public static final int RANK_WIN = 1;
   public static final int RANK_LOST = 0;
@@ -558,7 +558,7 @@ public class GameEngineService {
   }
 
   /**
-   * Intentional exit during a live human-only match.
+   * Intentional exit during a live match (human or bot-mix).
    * 2P: leaver LOST, opponent WIN, match ends.
    * 4P: leaver LOST + skipped from rotation; match continues until first winner.
    */
@@ -568,9 +568,6 @@ public class GameEngineService {
     try {
       if (PHASE_FINISHED.equals(rt.phase)) {
         return snapshot(rt);
-      }
-      if (!isAllHumanRuntime(rt)) {
-        throw new IllegalStateException("Forfeit only applies to human-only matches");
       }
       int seat = seatOfUser(rt, userId);
       if (seat < 0) {
@@ -845,7 +842,7 @@ public class GameEngineService {
     Arrays.fill(rt.tokens[seat], JAIL);
   }
 
-  /** 3 timeouts used → remove player from the match. */
+  /** 2 timeouts used → remove player from the match. */
   private void eliminateAfk(MatchRuntime rt, int seat) {
     if (rt.finished[seat]) {
       return;

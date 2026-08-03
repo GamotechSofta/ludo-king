@@ -3,22 +3,18 @@ import "./styles.css";
 
 interface LeaveMatchConfirmPopupProps {
   isTwoPlayer?: boolean;
-  isHumanMatch?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }
 
 const LeaveMatchConfirmPopup = ({
   isTwoPlayer = false,
-  isHumanMatch = true,
   onConfirm,
   onCancel,
 }: LeaveMatchConfirmPopupProps) => {
-  const warningText = isHumanMatch
-    ? isTwoPlayer
-      ? "You will be marked as LOST and your opponent will win."
-      : "You will be marked as LOST and removed from the match."
-    : "You will leave this match.";
+  const warningText = isTwoPlayer
+    ? "If you leave now you will be marked as LOST and your opponent will win."
+    : "If you leave now you will be marked as LOST and removed from the match.";
 
   return (
     <div
@@ -47,7 +43,7 @@ const LeaveMatchConfirmPopup = ({
             type="button"
             onClick={onConfirm}
           >
-            Leave Match
+            Leave &amp; Lose
           </button>
           <button
             className="lobby-btn secondary lost-summary-btn"

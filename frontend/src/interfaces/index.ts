@@ -112,7 +112,7 @@ export interface IPlayer extends IUser {
   counterMessage: number;
   /** Consecutive turn timeouts used (online); drives chance dots under name. */
   timeoutStreak?: number;
-  /** Removed from match after 3 timeouts (online). */
+  /** Removed from match after 2 timeouts (online). */
   isEliminated?: boolean;
 }
 

@@ -2045,7 +2045,6 @@ const OnlineGame = ({
 
     const live = snapshotRef.current;
     const inMatch = !!live && live.phase !== "FINISHED";
-    const humanMatch = isHumanOnlineMatch(live);
 
     if (roomId) {
       try {
@@ -2058,18 +2057,20 @@ const OnlineGame = ({
       }
     }
 
-    if (inMatch && humanMatch && roomId) {
+    // Any mid-match leave is a forfeit → show LOST, then Play Again can rematch.
+    if (inMatch && roomId) {
       try {
         const updated = await ensureGameSnapshot(roomId);
         setSnapshot(updated);
         void refreshBalance();
-        lostSummaryShownRef.current = true;
-        setVoluntaryExit(true);
-        setShowLostSummary(true);
-        return;
       } catch {
-        // fall through to lobby
+        // Snapshot may already be settled; still show local LOST UI.
       }
+      lostSummaryShownRef.current = true;
+      setVoluntaryExit(true);
+      setShowLostSummary(true);
+      playSound("playerLost");
+      return;
     }
 
     onExit();
@@ -2093,6 +2094,11 @@ const OnlineGame = ({
     }
     void confirmLeaveMatch();
   }, [boardReady, confirmLeaveMatch]);
+
+  const handlePlayAgainFromLost = useCallback(() => {
+    setShowLostSummary(false);
+    onPlayAgain();
+  }, [onPlayAgain]);
 
   const matchPlayerCount = useMemo(() => {
     if (snapshot?.seatColors?.length) return snapshot.seatColors.length;
@@ -2288,7 +2294,6 @@ const OnlineGame = ({
         {showLeaveConfirm && (
           <LeaveMatchConfirmPopup
             isTwoPlayer={isTwoPlayerMatch}
-            isHumanMatch={isHumanOnlineMatch(snapshot)}
             onConfirm={() => void confirmLeaveMatch()}
             onCancel={() => setShowLeaveConfirm(false)}
           />
@@ -2398,6 +2403,7 @@ const OnlineGame = ({
           entryAmount={entryFee}
           isTwoPlayer={isTwoPlayerMatch}
           exitReason={voluntaryExit ? "left" : "timeout"}
+          onPlayAgain={handlePlayAgainFromLost}
           onExit={() => {
             if (isTwoPlayerMatch) {
               setShowLostSummary(false);
@@ -2425,7 +2431,6 @@ const OnlineGame = ({
       {showLeaveConfirm && (
         <LeaveMatchConfirmPopup
           isTwoPlayer={isTwoPlayerMatch}
-          isHumanMatch={isHumanOnlineMatch(snapshot)}
           onConfirm={() => void confirmLeaveMatch()}
           onCancel={() => setShowLeaveConfirm(false)}
         />

@@ -1206,7 +1206,12 @@
 .find-players-lobby.lobby {
   justify-content: flex-start;
   overflow: hidden;
-  padding: 4px 14px 10px;
+  padding: 28px 14px 16px;
+}
+
+.find-players-lobby .music-toggle-float {
+  top: 28px;
+  right: 14px;
 }
 
 .find-players-lobby {
@@ -1256,7 +1261,7 @@
     1px -1px 0 #1a1a1a,
     -1px 1px 0 #1a1a1a,
     1px 1px 0 #1a1a1a;
-  top: 0;
+  top: 2px;
   width: 34px;
   z-index: 2;
 }
@@ -1265,7 +1270,7 @@
   display: block;
   flex-shrink: 1;
   height: auto;
-  margin: 12px auto 0;
+  margin: 22px auto 0;
   max-height: clamp(44px, 10vh, 72px);
   max-width: clamp(180px, 58vw, 260px);
   min-height: 0;
@@ -1646,6 +1651,46 @@
   gap: 6px;
   margin: 0;
   padding: 5px 12px 5px 8px;
+}
+
+.find-players-cancel {
+  align-items: center;
+  background: linear-gradient(180deg, #e53935 0%, #b71c1c 100%);
+  border: 2px solid #ffcc00;
+  border-radius: 999px;
+  box-shadow:
+    0 0 8px rgba(255, 204, 0, 0.28),
+    0 3px 0 rgba(0, 0, 0, 0.28);
+  color: #fff;
+  cursor: pointer;
+  display: inline-flex;
+  flex-shrink: 0;
+  font-family: "Fredoka", sans-serif;
+  font-size: 0.95rem;
+  font-weight: 800;
+  justify-content: center;
+  letter-spacing: 0.04em;
+  margin-top: 4px;
+  min-width: 140px;
+  padding: 10px 28px;
+  text-shadow:
+    -1px -1px 0 #1a1a1a,
+    1px -1px 0 #1a1a1a,
+    -1px 1px 0 #1a1a1a,
+    1px 1px 0 #1a1a1a;
+  text-transform: uppercase;
+}
+
+.find-players-cancel:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow:
+    0 0 6px rgba(255, 204, 0, 0.22),
+    0 1px 0 rgba(0, 0, 0, 0.28);
+}
+
+.find-players-cancel:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .find-players-stopwatch {
