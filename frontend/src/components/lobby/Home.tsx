@@ -47,7 +47,6 @@ const Home = ({ onPlay, userId }: HomeProps) => {
           <div className="lobby-crown" aria-hidden />
           <h1 className="lobby-title">
             LUDO
-            <span>KING</span>
           </h1>
           <p className="lobby-tagline">Roll · Race · Rule the board</p>
         </div>
