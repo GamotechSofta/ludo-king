@@ -2572,7 +2572,13 @@ const OnlineGame = ({
           entries={resultEntries}
           onPlayAgain={onPlayAgain}
           onHome={onExit}
-          potAmount={entryFee * matchPlayerCount}
+          potAmount={
+            matchPlayerCount === 2
+              ? 180
+              : matchPlayerCount === 4
+                ? 360
+                : entryFee * matchPlayerCount
+          }
           balance={liveBalance}
           playOutcomeSound={false}
         />
