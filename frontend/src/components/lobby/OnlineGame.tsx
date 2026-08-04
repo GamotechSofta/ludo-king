@@ -1289,9 +1289,10 @@ const OnlineGame = ({
         if (
           rolledValue != null &&
           rolledValue >= 1 &&
-          rolledValue <= 6 &&
-          rollerSeat !== snap.currentSeatIndex
+          rolledValue <= 6
         ) {
+          // Jail / no-move PASS: ADVANCING keeps roller as currentSeat, so do not
+          // require seat !== current (that skipped bot dice tumble while all jailed).
           if (rollerSeat === mySeat) {
             if (rollRecoveryTimerRef.current != null) {
               window.clearTimeout(rollRecoveryTimerRef.current);
