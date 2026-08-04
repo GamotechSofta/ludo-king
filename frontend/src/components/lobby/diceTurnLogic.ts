@@ -204,21 +204,22 @@ export function buildRollDedupKey(
   return `${snapshot.actionSeq ?? 0}:${snapshot.currentSeatIndex}:${diceRollNumber}:${diceValue}`;
 }
 
-/** Turn passed to next seat — idle die, no roll animation. */
+/** Turn passed / no-move — idle die after roll flash (includes luzo ADVANCING). */
 export function isStableTurnPass(
   snap: IGameSnapshot,
   prev: IGameSnapshot | null | undefined
 ): boolean {
   if (!prev || (snap.actionSeq ?? 0) === (prev.actionSeq ?? 0)) return false;
-  if (snap.phase !== "AWAITING_ROLL") return false;
   if ((snap.diceList?.length ?? 0) > 0) return false;
   const passType = snap.lastActionType;
   if (passType !== "PASS" && passType !== "TIMEOUT" && passType !== "ELIMINATED") {
     return false;
   }
-  // The snapshot itself says who lost the turn. `prev` can still lag a full
-  // action behind (its own pass flash is mid-delay), and comparing seats
-  // against it silently swallowed the roller's die.
+  // Luzo: no-move roll enters ADVANCING while still on the roller seat.
+  if (snap.phase === "ADVANCING") {
+    return true;
+  }
+  if (snap.phase !== "AWAITING_ROLL") return false;
   if (snap.lastActionSeat != null) {
     return snap.lastActionSeat !== snap.currentSeatIndex;
   }
@@ -230,7 +231,7 @@ export function isNoMovePassSnapshot(snap: IGameSnapshot): boolean {
   const passType = snap.lastActionType;
   return (
     (passType === "PASS" || passType === "TIMEOUT" || passType === "ELIMINATED") &&
-    snap.phase === "AWAITING_ROLL" &&
+    (snap.phase === "AWAITING_ROLL" || snap.phase === "ADVANCING") &&
     (snap.diceList?.length ?? 0) === 0
   );
 }
@@ -243,8 +244,11 @@ export function isTurnSeatHandoff(
   if (!prev || (snap.actionSeq ?? 0) === (prev.actionSeq ?? 0)) return false;
   if (snap.phase !== "AWAITING_ROLL") return false;
   if ((snap.diceList?.length ?? 0) > 0) return false;
+  // ADVANCING → ROLL (bonus same seat) or seat change after TURN_CHANGE
+  if (prev.phase === "ADVANCING") {
+    return true;
+  }
   if (prev.currentSeatIndex === snap.currentSeatIndex) return false;
-  // PASS/TIMEOUT (jail non-6, void 6, timeout) — show roll flash first
   if (isNoMovePassSnapshot(snap)) return false;
   return true;
 }

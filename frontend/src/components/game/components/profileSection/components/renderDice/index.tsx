@@ -4,7 +4,7 @@ import {
   DICE_ROLL_SETTLE_MS,
   ROLL_TIME_VALUE,
 } from "../../../../../../utils/constants";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import ReactDice, { ReactDiceRef } from "react-dice-complete";
 import type { TDicevalues } from "../../../../../../interfaces";
 
@@ -143,7 +143,8 @@ const RenderDice = ({
   );
 
   // Tumble only on the active seat after a *new* roll (click / server flash).
-  useEffect(() => {
+  // useLayoutEffect: mark spinning before paint so optimistic→3D handoff has no idle bob flash.
+  useLayoutEffect(() => {
     if (!hasTurn) return;
     if (value === 0 || diceRollNumber === 0) return;
     // Same roll# as when the seat gained turn → leftover from previous player.
@@ -160,7 +161,7 @@ const RenderDice = ({
         activeRollRef.current = rollKey;
         lastAnimatedRollRef.current = rollKey;
         setSpinning(true);
-        // Next frame: start tumble after bob class has been removed from DOM.
+        // Next frame: start tumble after bob/optimistic class has left the DOM.
         requestAnimationFrame(() => {
           if (cancelled || !refDice.current) return;
           refDice.current.rollAll([value]);
@@ -183,6 +184,8 @@ const RenderDice = ({
       }
     };
 
+    // Spinning immediately so CSS leaves optimistic/idle before first paint.
+    setSpinning(true);
     requestAnimationFrame(() => {
       requestAnimationFrame(() => kick(0));
     });

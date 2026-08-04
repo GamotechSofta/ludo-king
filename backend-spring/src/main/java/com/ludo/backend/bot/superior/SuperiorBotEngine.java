@@ -32,10 +32,34 @@ public final class SuperiorBotEngine {
 
   private static final Logger log = LoggerFactory.getLogger(SuperiorBotEngine.class);
 
+  /** Soften bot↔bot captures (luzo BOT_VS_BOT_CAPTURE_SCORE_MULTIPLIER). */
+  private static final double BOT_VS_BOT_CAPTURE_SCORE_MULTIPLIER = 0.28;
+  /** Pack-hunt (2+ bots + human) soft multipliers from luzo BotDiceBias. */
+  private static final double PACK_HUNT_HUMAN_CAPTURE_MULT = 1.32;
+
   private static volatile BotRewardWeights weights = new BotRewardWeights();
   private static volatile SuperiorBotDifficulty difficulty = SuperiorBotDifficulty.SUPER;
 
   private SuperiorBotEngine() {}
+
+  static boolean isPackHuntHumanTable(List<SuperiorPlayerState> players) {
+    if (players == null || players.isEmpty()) {
+      return false;
+    }
+    int bots = 0;
+    int humans = 0;
+    for (SuperiorPlayerState p : players) {
+      if (p == null || p.abandoned) {
+        continue;
+      }
+      if (p.isBot) {
+        bots++;
+      } else {
+        humans++;
+      }
+    }
+    return bots >= 2 && humans >= 1;
+  }
 
   public static BotRewardWeights getWeights() {
     return weights;
@@ -525,6 +549,7 @@ public final class SuperiorBotEngine {
       boolean twoPlayer,
       BotRewardWeights weights) {
     double reward = 0.0;
+    boolean packHuntHuman = isPackHuntHumanTable(players);
     for (int[] capture : captures) {
       int opponentIndex = capture[0];
       int opponentProgress = capture[1];
@@ -539,6 +564,13 @@ public final class SuperiorBotEngine {
       double captureValue = weights.captureBase + progressBonus + nearHomeBonus + threatBonus;
       if (twoPlayer) {
         captureValue *= weights.twoPlayerAttackMultiplier;
+      }
+      SuperiorPlayerState opponent =
+          opponentIndex >= 0 && opponentIndex < players.size() ? players.get(opponentIndex) : null;
+      if (opponent != null && opponent.isBot) {
+        captureValue *= BOT_VS_BOT_CAPTURE_SCORE_MULTIPLIER;
+      } else if (packHuntHuman) {
+        captureValue *= PACK_HUNT_HUMAN_CAPTURE_MULT;
       }
       int landingTile =
           absoluteMainTile(resultingPlayers.get(playerIndex).color, move.toProgress);

@@ -22,6 +22,7 @@ import {
   EtypeTile,
   DICE_ROLL_ANIM_MS,
   DICE_ROLL_SETTLE_MS,
+  DICE_OPTIMISTIC_HOLD_MS,
   BOT_POST_DICE_DELAY_MS,
   ONLINE_TURN_PASS_DELAY_MS,
   BOT_TURN_PASS_DELAY_MS,
@@ -357,9 +358,8 @@ const OnlineGame = ({
       window.clearTimeout(diceRollFallbackRef.current);
       diceRollFallbackRef.current = null;
     }
-    setActionsTurn((prev) =>
-      prev.optimisticRolling ? { ...prev, optimisticRolling: false } : prev
-    );
+    // Do NOT clear optimisticRolling here — a short tumble fallback used to kill
+    // the human spin while still waiting on the server ROLL face.
     const waiters = diceRollWaitersRef.current.splice(0);
     waiters.forEach((resolve) => resolve());
   }, []);
@@ -377,17 +377,26 @@ const OnlineGame = ({
     finishDiceRollAnimation();
   }, [finishDiceRollAnimation]);
 
-  const beginDiceRollAnimation = useCallback(() => {
-    diceRollPendingRef.current = true;
-    setDiceRolling(true);
-    if (diceRollFallbackRef.current != null) {
-      window.clearTimeout(diceRollFallbackRef.current);
-    }
-    // Must cover full tumble + settle — shorter fallback cut spins mid-rotate.
-    diceRollFallbackRef.current = window.setTimeout(() => {
-      finishDiceRollAnimation();
-    }, DICE_ROLL_ANIM_MS + DICE_ROLL_SETTLE_MS);
-  }, [finishDiceRollAnimation]);
+  const beginDiceRollAnimation = useCallback(
+    (holdMs?: number) => {
+      diceRollPendingRef.current = true;
+      setDiceRolling(true);
+      if (diceRollFallbackRef.current != null) {
+        window.clearTimeout(diceRollFallbackRef.current);
+      }
+      const duration =
+        holdMs ?? DICE_ROLL_ANIM_MS + DICE_ROLL_SETTLE_MS;
+      // Must cover full tumble + settle — shorter fallback cut spins mid-rotate.
+      diceRollFallbackRef.current = window.setTimeout(() => {
+        // Still awaiting server face — keep pending; recovery timer clears click.
+        if (actionsTurnRef.current.optimisticRolling) {
+          return;
+        }
+        finishDiceRollAnimation();
+      }, duration);
+    },
+    [finishDiceRollAnimation]
+  );
 
   const playDiceRollingOnce = useCallback((soundKey: string) => {
     if (!soundKey) return;
@@ -1522,6 +1531,7 @@ const OnlineGame = ({
           snap.currentSeatIndex !== moverSeatDone &&
           snap.phase === "AWAITING_ROLL"
         ) {
+          // Human handoff only — bot→bot uses server ADVANCING (750ms).
           await rafDelay(turnPassDelayForSeat(snap, moverSeatDone), animCancelRef.current);
           if (cancelled) return;
           // Ensure bot→human (or any seat handoff) resets die to idle rollable.
@@ -1631,7 +1641,8 @@ const OnlineGame = ({
       }
       rollingRef.current = true;
       playSound("diceRolling");
-      beginDiceRollAnimation();
+      // Long hold so optimistic CSS spin is not killed before the server face.
+      beginDiceRollAnimation(DICE_OPTIMISTIC_HOLD_MS);
       setActionsTurn((prev) => ({
         ...prev,
         disabledDice: true,
@@ -1656,9 +1667,14 @@ const OnlineGame = ({
           setActionsTurn((prev) => ({
             ...prev,
             disabledDice: onlineDiceDisabled(latest, mySeat),
+            optimisticRolling: false,
           }));
+        } else {
+          setActionsTurn((prev) =>
+            prev.optimisticRolling ? { ...prev, optimisticRolling: false } : prev
+          );
         }
-      }, 2500);
+      }, DICE_OPTIMISTIC_HOLD_MS);
     },
     [
       snapshot,
@@ -1914,7 +1930,7 @@ const OnlineGame = ({
       isBusyRef.current = false;
       syncBoardFromSnapshot(live, false, true);
       lockSeqRef.current = { seq: live.actionSeq || 0, at: Date.now() };
-    }, 500);
+    }, 1000);
 
     return () => window.clearInterval(id);
   }, [finishDiceRollAnimation, syncBoardFromSnapshot, isActionInFlight]);
@@ -1974,7 +1990,7 @@ const OnlineGame = ({
         diceValue: 0,
         diceRollNumber: 0,
       }));
-    }, 400);
+    }, 1000);
 
     return () => window.clearInterval(id);
   }, [mySeat, isActionInFlight, syncBoardFromSnapshot]);

@@ -117,6 +117,7 @@ public class SuperiorBotBridge {
     Map<String, List<Integer>> positions = snap.getTokenPositions();
     boolean[] eliminated = snap.getEliminated();
     boolean[] finished = snap.getFinished();
+    boolean[] isBot = snap.getIsBot();
 
     List<SuperiorPlayerState> players = new ArrayList<>(seatColors.size());
     for (int seat = 0; seat < seatColors.size(); seat++) {
@@ -132,7 +133,8 @@ public class SuperiorBotBridge {
           (eliminated != null && seat < eliminated.length && eliminated[seat])
               || (finished != null && seat < finished.length && finished[seat])
               || tokens.length == 0;
-      players.add(new SuperiorPlayerState(color, tokens, abandoned));
+      boolean bot = isBot != null && seat < isBot.length && isBot[seat];
+      players.add(new SuperiorPlayerState(color, tokens, abandoned, bot));
     }
     return players;
   }

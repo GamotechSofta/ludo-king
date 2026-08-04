@@ -29,6 +29,7 @@ import com.ludo.backend.bot.KillStalkPlan;
 import com.ludo.backend.bot.ai.HumanBehaviorEngine;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
@@ -55,6 +56,11 @@ public class GameEngineService {
   public static final String PHASE_ROLL = "AWAITING_ROLL";
   /** Spec name: AWAITING_MOVE */
   public static final String PHASE_MOVE = "AWAITING_MOVE";
+  /**
+   * Luzo MatchPhase.ADVANCING — hold after MOVE / no-move roll before the next
+   * seat's ROLL so client hops/capture can finish without stacked client delays.
+   */
+  public static final String PHASE_ADVANCING = "ADVANCING";
   public static final String PHASE_FINISHED = "FINISHED";
 
   public static final int TURN_TIMEOUT_SECONDS = 20;
@@ -74,19 +80,25 @@ public class GameEngineService {
   private final SecureRandom secureRandom = new SecureRandom();
   private final ObjectProvider<HumanBehaviorEngine> humanBehaviorEngine;
   private final ObjectProvider<HumanJailExitAssist> humanJailExitAssist;
+  private final long advanceDelayMs;
+  private final long noMoveHoldMs;
 
   /** Test helper — jail-exit assist disabled. */
   public GameEngineService(ObjectProvider<HumanBehaviorEngine> humanBehaviorEngine) {
-    this(humanBehaviorEngine, null);
+    this(humanBehaviorEngine, null, 750L, 700L);
   }
 
   @Autowired
   public GameEngineService(
       ObjectProvider<HumanBehaviorEngine> humanBehaviorEngine,
-      ObjectProvider<HumanJailExitAssist> humanJailExitAssist
+      ObjectProvider<HumanJailExitAssist> humanJailExitAssist,
+      @Value("${ludo.bot.advance-delay-ms:750}") long advanceDelayMs,
+      @Value("${ludo.bot.no-move-hold-ms:700}") long noMoveHoldMs
   ) {
     this.humanBehaviorEngine = humanBehaviorEngine;
     this.humanJailExitAssist = humanJailExitAssist;
+    this.advanceDelayMs = Math.max(0L, advanceDelayMs);
+    this.noMoveHoldMs = Math.max(0L, noMoveHoldMs);
   }
 
   public static class SeatInfo {
@@ -134,6 +146,10 @@ public class GameEngineService {
     final Map<Integer, KillStalkPlan> botStalkPlans = new HashMap<>();
     /** Token the rolling bot must move to keep a stalk on track (cleared after move). */
     Integer botForcedTokenIndex;
+    /** Luzo pendingNextPlayerIndex while {@link #PHASE_ADVANCING}. */
+    Integer pendingNextSeat;
+    /** When ADVANCING should complete (informational; coordinator uses fixed delay). */
+    Instant phaseDeadlineAt;
     final List<Integer> diceList = new ArrayList<>();
     final ReentrantLock lock = new ReentrantLock();
     int currentSeat;
@@ -804,12 +820,12 @@ public class GameEngineService {
     EarlyKillDelay.noteOpportunity(rt, seat, rawMoves, probe);
     List<int[]> moves = EarlyKillDelay.filterMoves(rt, seat, rawMoves, probe);
 
-    // No legal moves (including on a 6) → pass immediately; 6 does NOT grant extra roll
+    // No legal moves (including on a 6) → show roll briefly then advance (luzo ADVANCING).
     if (moves.isEmpty()) {
       rt.earlyKillSuppressActive[seat] = false;
       clearDice(rt);
-      nextTurn(rt);
       recordAction(rt, "PASS", seat, null, value);
+      enterAdvancing(rt, computeNextSeat(rt), noMoveHoldMs);
       return snapshot(rt);
     }
 
@@ -878,9 +894,9 @@ public class GameEngineService {
       return snapshot(rt);
     }
 
-    // Seat finished (all 4 home) → pass; no bonus
+    // Seat finished (all 4 home) → advance to next; no bonus
     if (rt.finished[seat]) {
-      nextTurn(rt);
+      enterAdvancing(rt, computeNextSeat(rt), advanceDelayMs);
       return snapshot(rt);
     }
 
@@ -893,14 +909,13 @@ public class GameEngineService {
         // Capture after non-six: six-streak does not continue
         rt.consecutiveSixes = 0;
       }
-      rt.phase = PHASE_ROLL;
-      rt.turnStartedAt = Instant.now();
-      touchTurnDeadline(rt);
+      // Luzo: always ADVANCING before the same seat rolls again.
+      enterAdvancing(rt, seat, advanceDelayMs);
       return snapshot(rt);
     }
 
     rt.consecutiveSixes = 0;
-    nextTurn(rt);
+    enterAdvancing(rt, computeNextSeat(rt), advanceDelayMs);
     return snapshot(rt);
   }
 
@@ -1070,29 +1085,96 @@ public class GameEngineService {
     if (PHASE_FINISHED.equals(rt.phase)) {
       return;
     }
+    int next = computeNextSeat(rt);
+    if (next < 0) {
+      rt.phase = PHASE_FINISHED;
+      clearTurnDeadline(rt.roomId);
+      return;
+    }
+    applySeatRollPhase(rt, next, true);
+  }
+
+  /**
+   * Clockwise next active seat, or {@code -1} if none (match should finish).
+   * When every other seat is finished, returns the current seat if still active.
+   */
+  private int computeNextSeat(MatchRuntime rt) {
     LudoColor current = rt.colors[rt.currentSeat];
     List<LudoColor> boardOrder = LudoColor.forPlayerCount(rt.maxPlayers);
     int startIdx = boardOrder.indexOf(current);
     if (startIdx < 0) {
       startIdx = 0;
     }
-    // Clockwise on the board: RED→GREEN→YELLOW→BLUE (2p/3p use subset)
     for (int step = 1; step <= boardOrder.size(); step++) {
       LudoColor nextColor = boardOrder.get((startIdx + step) % boardOrder.size());
       for (int s = 0; s < rt.maxPlayers; s++) {
-        if (rt.colors[s] == nextColor && !rt.finished[s]) {
-          rt.currentSeat = s;
-          rt.phase = PHASE_ROLL;
-          clearDice(rt);
-          rt.consecutiveSixes = 0;
-          rt.turnStartedAt = Instant.now();
-          touchTurnDeadline(rt);
-          return;
+        if (rt.colors[s] == nextColor && !rt.finished[s] && !rt.eliminated[s]) {
+          return s;
         }
       }
     }
-    rt.phase = PHASE_FINISHED;
+    if (!rt.finished[rt.currentSeat] && !rt.eliminated[rt.currentSeat]) {
+      return rt.currentSeat;
+    }
+    return -1;
+  }
+
+  /** Luzo ADVANCING: hold on the acting seat, then {@link #completeAdvance}. */
+  private void enterAdvancing(MatchRuntime rt, int nextSeat, long delayMs) {
+    if (PHASE_FINISHED.equals(rt.phase)) {
+      return;
+    }
+    if (nextSeat < 0) {
+      rt.phase = PHASE_FINISHED;
+      rt.pendingNextSeat = null;
+      rt.phaseDeadlineAt = null;
+      clearTurnDeadline(rt.roomId);
+      return;
+    }
+    rt.phase = PHASE_ADVANCING;
+    rt.pendingNextSeat = nextSeat;
+    rt.phaseDeadlineAt = Instant.now().plusMillis(Math.max(0L, delayMs));
+    clearDice(rt);
     clearTurnDeadline(rt.roomId);
+  }
+
+  /**
+   * Complete {@link #PHASE_ADVANCING} → {@link #PHASE_ROLL} for {@code pendingNextSeat}.
+   * Called by {@link com.ludo.backend.bot.BotTurnCoordinator} after advance delay.
+   */
+  public GameSnapshot completeAdvance(String roomId) {
+    MatchRuntime rt = require(roomId);
+    rt.lock.lock();
+    try {
+      assertActive(rt);
+      if (!PHASE_ADVANCING.equals(rt.phase)) {
+        return snapshot(rt);
+      }
+      Integer pending = rt.pendingNextSeat;
+      rt.pendingNextSeat = null;
+      rt.phaseDeadlineAt = null;
+      if (pending == null || pending < 0 || pending >= rt.maxPlayers) {
+        nextTurn(rt);
+        return snapshot(rt);
+      }
+      boolean seatChanged = pending != rt.currentSeat;
+      applySeatRollPhase(rt, pending, seatChanged);
+      recordAction(rt, "TURN_CHANGE", pending, null, null);
+      return snapshot(rt);
+    } finally {
+      rt.lock.unlock();
+    }
+  }
+
+  private void applySeatRollPhase(MatchRuntime rt, int seat, boolean clearSixStreak) {
+    rt.currentSeat = seat;
+    rt.phase = PHASE_ROLL;
+    clearDice(rt);
+    if (clearSixStreak) {
+      rt.consecutiveSixes = 0;
+    }
+    rt.turnStartedAt = Instant.now();
+    touchTurnDeadline(rt);
   }
 
   private List<int[]> computeLegalMoves(MatchRuntime rt, int seat) {

@@ -222,9 +222,13 @@ ludo:
       history: ${LUDO_BOT_BEHAVIOR_HISTORY:30}
       maxInfluence: ${LUDO_BOT_BEHAVIOR_MAX_INFLUENCE:0.10}
       confidenceThreshold: ${LUDO_BOT_BEHAVIOR_CONFIDENCE:0.65}
-    # LudoGame-style deadline delays (workers free during wait — no Thread.sleep).
+    # Luzo-style deadline delays (workers free during wait — no Thread.sleep).
     roll-delay-ms: ${BOT_ROLL_DELAY_MS:700}
     move-delay-ms: ${BOT_MOVE_DELAY_MS:850}
+    # Hold after MOVE / no-move roll before next seat (luzo advanceDelayMillis).
+    advance-delay-ms: ${BOT_ADVANCE_DELAY_MS:750}
+    # Brief hold when roll has no legal moves (luzo noMoveRollHoldMillis).
+    no-move-hold-ms: ${BOT_NO_MOVE_HOLD_MS:700}
     scheduler-pool-size: ${BOT_SCHEDULER_POOL_SIZE:0}
   human-jail-exit-assist:
     # Human-only: when a bot pawn is in jail/start range, force six so a pawn can exit (max 2).

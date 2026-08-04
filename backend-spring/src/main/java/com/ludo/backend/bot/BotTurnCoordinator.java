@@ -21,11 +21,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
- * LudoGame-style bot driver: deadline delays on a bounded scheduler — never
- * {@code Thread.sleep} on an unbounded CachedThreadPool (that exploded under load).
- *
- * <p>One in-flight chain per room; delays free the worker thread so hundreds of
- * rooms share a small pool.
+ * Luzo-style deadline driver: bot roll/move delays plus {@code ADVANCING} hold
+ * (advance / no-move). Never {@code Thread.sleep} on the worker.
  */
 @Service
 public class BotTurnCoordinator {
@@ -39,6 +36,8 @@ public class BotTurnCoordinator {
   private final ScheduledExecutorService botScheduler;
   private final long rollDelayMs;
   private final long moveDelayMs;
+  private final long advanceDelayMs;
+  private final long noMoveHoldMs;
 
   private final ConcurrentHashMap<String, AtomicBoolean> running = new ConcurrentHashMap<>();
   private final ConcurrentHashMap<String, AtomicBoolean> requested = new ConcurrentHashMap<>();
@@ -50,6 +49,8 @@ public class BotTurnCoordinator {
       GameEventBus gameEventBus,
       @Value("${ludo.bot.roll-delay-ms:700}") long rollDelayMs,
       @Value("${ludo.bot.move-delay-ms:850}") long moveDelayMs,
+      @Value("${ludo.bot.advance-delay-ms:750}") long advanceDelayMs,
+      @Value("${ludo.bot.no-move-hold-ms:700}") long noMoveHoldMs,
       @Value("${ludo.bot.scheduler-pool-size:0}") int poolSizeOverride
   ) {
     this.gameEngineService = gameEngineService;
@@ -58,6 +59,8 @@ public class BotTurnCoordinator {
     this.gameEventBus = gameEventBus;
     this.rollDelayMs = Math.max(0, rollDelayMs);
     this.moveDelayMs = Math.max(0, moveDelayMs);
+    this.advanceDelayMs = Math.max(0, advanceDelayMs);
+    this.noMoveHoldMs = Math.max(0, noMoveHoldMs);
 
     int cpus = Math.max(2, Runtime.getRuntime().availableProcessors());
     int poolSize =
@@ -76,10 +79,12 @@ public class BotTurnCoordinator {
     exec.setExecuteExistingDelayedTasksAfterShutdownPolicy(false);
     this.botScheduler = exec;
     log.info(
-        "Bot scheduler poolSize={} rollDelayMs={} moveDelayMs={} (LudoGame-style deadlines)",
+        "Bot scheduler poolSize={} roll={}ms move={}ms advance={}ms noMoveHold={}ms (luzo deadlines)",
         poolSize,
         this.rollDelayMs,
-        this.moveDelayMs);
+        this.moveDelayMs,
+        this.advanceDelayMs,
+        this.noMoveHoldMs);
   }
 
   public void schedule(String roomId) {
@@ -87,7 +92,7 @@ public class BotTurnCoordinator {
       return;
     }
     requested.computeIfAbsent(roomId, k -> new AtomicBoolean(false)).set(true);
-    tryKick(roomId, peekBotDelay(roomId));
+    tryKick(roomId, peekDelay(roomId));
   }
 
   private void tryKick(String roomId, long delayMs) {
@@ -98,13 +103,15 @@ public class BotTurnCoordinator {
     botScheduler.schedule(() -> tick(roomId), Math.max(0L, delayMs), TimeUnit.MILLISECONDS);
   }
 
-  /** LudoGame phaseDeadline: wait before roll / before move; 0 if not a bot turn. */
-  private long peekBotDelay(String roomId) {
+  private long peekDelay(String roomId) {
     try {
       if (!gameEngineService.hasMatch(roomId)) {
         return 0L;
       }
       GameSnapshot snap = gameEngineService.getSnapshot(roomId);
+      if (GameEngineService.PHASE_ADVANCING.equals(snap.getPhase())) {
+        return "PASS".equals(snap.getLastActionType()) ? noMoveHoldMs : advanceDelayMs;
+      }
       if (!isBotTurn(snap)) {
         return 0L;
       }
@@ -124,6 +131,24 @@ public class BotTurnCoordinator {
       requested.computeIfAbsent(roomId, k -> new AtomicBoolean(false)).set(false);
 
       GameSnapshot snap = gameEngineService.getSnapshot(roomId);
+
+      if (GameEngineService.PHASE_ADVANCING.equals(snap.getPhase())) {
+        long seqBefore = snap.getActionSeq();
+        snap = gameEngineService.completeAdvance(roomId);
+        gameEventBus.publishSnapshot(roomId, snap);
+        if (snap.getActionSeq() == seqBefore) {
+          finishRoom(roomId);
+          return;
+        }
+        if (needsCoordinator(snap)) {
+          long delay = peekDelayForSnap(snap);
+          botScheduler.schedule(() -> tick(roomId), delay, TimeUnit.MILLISECONDS);
+          return;
+        }
+        finishRoom(roomId);
+        return;
+      }
+
       if (!isBotTurn(snap)) {
         gameEventBus.publishSnapshot(roomId, snap);
         finishRoom(roomId);
@@ -137,16 +162,13 @@ public class BotTurnCoordinator {
               roomId, diff, step -> gameEventBus.publishSnapshot(roomId, step));
 
       if (snap.getActionSeq() == seqBefore) {
-        // No progress (race / illegal) — avoid hot loop
         log.debug("Bot tick no-op roomId={} seq={}", roomId, seqBefore);
         finishRoom(roomId);
         return;
       }
 
-      if (isBotTurn(snap)) {
-        long delay =
-            GameEngineService.PHASE_MOVE.equals(snap.getPhase()) ? moveDelayMs : rollDelayMs;
-        // Keep running=true while the delayed continuation is pending
+      if (needsCoordinator(snap)) {
+        long delay = peekDelayForSnap(snap);
         botScheduler.schedule(() -> tick(roomId), delay, TimeUnit.MILLISECONDS);
         return;
       }
@@ -166,6 +188,26 @@ public class BotTurnCoordinator {
     }
   }
 
+  private long peekDelayForSnap(GameSnapshot snap) {
+    if (GameEngineService.PHASE_ADVANCING.equals(snap.getPhase())) {
+      return "PASS".equals(snap.getLastActionType()) ? noMoveHoldMs : advanceDelayMs;
+    }
+    if (isBotTurn(snap)) {
+      return GameEngineService.PHASE_MOVE.equals(snap.getPhase()) ? moveDelayMs : rollDelayMs;
+    }
+    return 0L;
+  }
+
+  private static boolean needsCoordinator(GameSnapshot snap) {
+    if (snap == null) {
+      return false;
+    }
+    if (GameEngineService.PHASE_ADVANCING.equals(snap.getPhase())) {
+      return true;
+    }
+    return isBotTurn(snap);
+  }
+
   private void finishRoom(String roomId) {
     AtomicBoolean flag = running.get(roomId);
     if (flag != null) {
@@ -173,7 +215,7 @@ public class BotTurnCoordinator {
     }
     AtomicBoolean want = requested.get(roomId);
     if (want != null && want.get()) {
-      tryKick(roomId, peekBotDelay(roomId));
+      tryKick(roomId, peekDelay(roomId));
     }
   }
 
@@ -181,7 +223,8 @@ public class BotTurnCoordinator {
     if (snap == null || snap.getIsBot() == null) {
       return false;
     }
-    if (GameEngineService.PHASE_FINISHED.equals(snap.getPhase())) {
+    if (GameEngineService.PHASE_FINISHED.equals(snap.getPhase())
+        || GameEngineService.PHASE_ADVANCING.equals(snap.getPhase())) {
       return false;
     }
     if (!GameEngineService.PHASE_ROLL.equals(snap.getPhase())

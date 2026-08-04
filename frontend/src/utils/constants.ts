@@ -154,19 +154,20 @@ export const TIME_INTERVAL_CHRONOMETER = 100; // was 50 — half the re-renders,
  * Interval between pawn cell steps (ms).
  * One box at a time — slow enough to clearly see each cell.
  */
-export const TOKEN_MOVEMENT_INTERVAL_VALUE = 180;
+/** Luzo TOKEN_STEP_ANIMATION_MS — one board hop per step. */
+export const TOKEN_MOVEMENT_INTERVAL_VALUE = 200;
 
-/** Online: same cell-by-cell cadence as offline. */
-export const ONLINE_TOKEN_MOVEMENT_INTERVAL_VALUE = 180;
+/** Online: same cell-by-cell cadence as offline / luzo. */
+export const ONLINE_TOKEN_MOVEMENT_INTERVAL_VALUE = 200;
 
-/** Extra pause on each cell after the hop lands (ms). */
-export const TOKEN_STEP_PAUSE_MS = 10;
+/** Extra pause on each cell after the hop lands (ms). Luzo has none. */
+export const TOKEN_STEP_PAUSE_MS = 0;
 
 /**
- * Captured pawn return-to-yard: still cell-by-cell, much faster than a normal move.
+ * Captured pawn return-to-yard — luzo CAPTURE_RETURN_STEP_MS.
  * Keep ≤ CSS `.game-token.moving.returning` duration so hops don't overlap.
  */
-export const CAPTURE_RETURN_STEP_MS = 40;
+export const CAPTURE_RETURN_STEP_MS = 28;
 export const CAPTURE_RETURN_PAUSE_MS = 0;
 
 /**
@@ -174,13 +175,13 @@ export const CAPTURE_RETURN_PAUSE_MS = 0;
  * this budget glide one cell per frame instead of resting on each cell, so a
  * kill never drags on (or gets cut off by the next snapshot).
  */
-export const CAPTURE_RETURN_MAX_TOTAL_MS = 850;
+export const CAPTURE_RETURN_MAX_TOTAL_MS = 1100;
 /** rAF granularity — painting one cell already costs this much. */
 export const CAPTURE_RETURN_FRAME_MS = 16;
 
 /**
  * Dice spin duration (seconds) for react-dice-complete.
- * Luzo uses ~500ms min spin — keep settle buffer after tumble.
+ * Luzo DICE_ROLL_MIN_SPIN_MS = 500.
  */
 export const ROLL_TIME_VALUE = 0.5;
 
@@ -188,22 +189,34 @@ export const ROLL_TIME_VALUE = 0.5;
 export const DICE_ROLL_ANIM_MS = Math.round(ROLL_TIME_VALUE * 1000);
 
 /** Extra ms after tumble for face settle + library rollDone (OnlineGame waits). */
-export const DICE_ROLL_SETTLE_MS = 220;
+export const DICE_ROLL_SETTLE_MS = 200;
 
 /**
- * After bot/opponent dice tumble, pause before pawn starts moving.
- * Keep short — server BotTurnCoordinator already waited ~850ms before MOVE.
+ * Max wait while human optimistic spin awaits server face — must exceed typical RTT
+ * or finishDiceRollAnimation kills the spin mid-wait.
  */
-export const BOT_POST_DICE_DELAY_MS = 150;
+export const DICE_OPTIMISTIC_HOLD_MS = 2600;
 
-/** Pause before the die handoff to the next human (online) — luzo DICE_PASS ~500ms. */
+/**
+ * After bot/opponent dice tumble, pause before pawn hops.
+ * Server already waited bot-move-delay (850ms) — do not double-count.
+ */
+export const BOT_POST_DICE_DELAY_MS = 0;
+
+/** Pause before the die handoff to the next human — luzo DICE_PASS_DELAY_MS. */
 export const ONLINE_TURN_PASS_DELAY_MS = 500;
 
-/** After a bot seat finishes — align with luzo advance feel (~750 server + client). */
-export const BOT_TURN_PASS_DELAY_MS = 400;
+/**
+ * After a bot seat finishes. Server ADVANCING (750ms) owns pace — keep client
+ * handoff short so delays are not stacked.
+ */
+export const BOT_TURN_PASS_DELAY_MS = 0;
 
-/** Extra beat after a kill/capture return before the next turn plays. */
-export const POST_CAPTURE_TURN_DELAY_MS = 750;
+/**
+ * Extra beat after capture return. Server ADVANCING covers turn spacing —
+ * avoid stacking another 750ms of lag.
+ */
+export const POST_CAPTURE_TURN_DELAY_MS = 0;
 
 /**
  * Valor para el delay que se aplica antes de enviar la confirmación al socket

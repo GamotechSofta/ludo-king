@@ -136,6 +136,7 @@ public class GameEvent {
       case "PASS" -> PASS;
       case "TIMEOUT" -> TIMEOUT;
       case "ELIMINATED" -> ELIMINATED;
+      case "TURN_CHANGE" -> TURN_CHANGE;
       case "FORFEIT" -> GameEngineService.PHASE_FINISHED.equals(snap.getPhase())
           ? FINISHED
           : FORFEIT;
